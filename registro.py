@@ -105,9 +105,10 @@ def _dados_da_sessao(pasta):
     return buffer.getvalue()
 
 
-def registrar_treino(sessoes, treino, arquivo_modelo, pasta_gravacoes):
+def registrar_treino(sessoes, treino, arquivo_modelo, pastas):
     """`sessoes`: linhas de public.sessoes; `treino`: linha de public.treinos sem o
-    modelo. Devolve (frase para o log, id do treino ou None)."""
+    modelo; `pastas`: {id da sessão: pasta com as partes}. Devolve (frase para o
+    log, id do treino ou None)."""
     banco = Supabase.do_env()
     if banco is None:
         return "registro no Supabase desligado (crie o .env com SUPABASE_URL e SUPABASE_CHAVE)", None
@@ -121,7 +122,7 @@ def registrar_treino(sessoes, treino, arquivo_modelo, pasta_gravacoes):
                 sessao.pop("dados_arquivo", None)  # não apaga o que já está lá
                 continue
             caminho = f"{sessao['id']}.npz"
-            banco.enviar_bytes("sessoes", caminho, _dados_da_sessao(Path(pasta_gravacoes) / sessao["id"]))
+            banco.enviar_bytes("sessoes", caminho, _dados_da_sessao(pastas[sessao["id"]]))
             sessao["dados_arquivo"] = caminho
         # O upsert exige as mesmas colunas em todas as linhas de um envio
         novas = [s for s in sessoes if "dados_arquivo" in s]
@@ -161,6 +162,29 @@ def baixar_treino(treino_id, pasta):
         arquivo.parent.mkdir(parents=True, exist_ok=True)
         arquivo.write_bytes(banco.baixar("modelos", linhas[0]["modelo_arquivo"]))
     return arquivo, commit
+
+
+def marcar_torneio(treino_id, resultado):
+    """Guarda no treino o resultado da disputa (config.torneio), numa thread."""
+
+    def enviar():
+        banco = Supabase.do_env()
+        if banco is None or treino_id is None:
+            return
+        try:
+            linha = banco._pedir("GET", f"/rest/v1/treinos?id=eq.{treino_id}&select=config")[0]
+            config = linha.get("config") or {}
+            config["torneio"] = resultado
+            banco._pedir(
+                "PATCH", f"/rest/v1/treinos?id=eq.{treino_id}", {"config": config},
+                {"Prefer": "return=minimal"},
+            )
+        except Exception as e:
+            print(f"⚠ não consegui registrar o torneio no Supabase: {e}")
+
+    thread = threading.Thread(target=enviar, daemon=True)
+    thread.start()
+    return thread
 
 
 def registrar_partida(partida):

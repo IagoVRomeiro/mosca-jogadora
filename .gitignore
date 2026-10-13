@@ -8,6 +8,9 @@ __pycache__/
 
 # Dados gerados (grandes ou refeitos pelo treino)
 gravacoes/
+gravacoes_mosca/
+modelo_desafiante*
+torneio.json
 modelo_mosca*.npz
 modelos_baixados/
 treino.log

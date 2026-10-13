@@ -34,7 +34,7 @@ import numpy as np
 from PyQt6 import QtCore, QtGui, QtWidgets
 import pyqtgraph as pg
 
-from registro import baixar_treino, registrar_partida
+from registro import baixar_treino, marcar_torneio, registrar_partida
 
 # Todos os controles de jogo do Hollow Knight, com as teclas configuradas no jogo. Mapa, inventário e
 # Esc ficam de fora: são menus, não movimentos.
@@ -328,8 +328,11 @@ class CapturaJanela:
 # ---------------------------------------------------------------------------
 
 PASTA = Path(__file__).resolve().parent
-PASTA_GRAVACOES = PASTA / "gravacoes"
-ARQUIVO_MODELO = PASTA / "modelo_mosca.npz"
+PASTA_GRAVACOES = PASTA / "gravacoes"  # você jogando
+PASTA_GRAVACOES_MOSCA = PASTA / "gravacoes_mosca"  # a mosca jogando sozinha
+ARQUIVO_MODELO = PASTA / "modelo_mosca.npz"  # a campeã: a versão que joga
+ARQUIVO_DESAFIANTE = PASTA / "modelo_desafiante.npz"  # treinada, ainda disputando
+ARQUIVO_TORNEIO = PASTA / "torneio.json"  # placar da disputa (sobrevive a reabrir)
 OLHO = (90, 160)  # resolução da tela guardada na gravação e usada pelo olho
 GRADE_OLHO = (18, 32)  # o olho junta a tela em blocos de 5 x 5 pixels
 
@@ -575,6 +578,7 @@ class Imitacao:
         if self.w1.shape[0] != tamanho_entrada(self.versao_olho):
             raise ValueError(f"o modelo não bate com o olho versão {self.versao_olho}")
         self.treino_id = None  # número do treino no Supabase, se foi registrado
+        self.papel = None  # "campeã" ou "desafiante", quando está num torneio
 
     @classmethod
     def carregar(cls, arquivo=ARQUIVO_MODELO):
@@ -597,18 +601,23 @@ class Imitacao:
 
 
 class Gravador:
-    """Guarda (tela reduzida, teclas que você apertou) enquanto você joga.
+    """Guarda (tela reduzida, teclas apertadas) enquanto alguém joga: você
+    (gravacoes/) ou a mosca sozinha (gravacoes_mosca/).
 
-    Salva em gravacoes/<data>/parte_NNN.npz a cada QUADROS_POR_PARTE quadros,
+    Salva em <pasta>/<data>/parte_NNN.npz a cada QUADROS_POR_PARTE quadros,
     numa thread, para não travar o painel. As telas vão em tons de cinza:
     o olho não usa cor e o arquivo fica 3x menor (~8 KB por quadro).
     """
 
     QUADROS_POR_PARTE = 900  # ~30 s
 
-    def __init__(self):
-        self.pasta = PASTA_GRAVACOES / time.strftime("%Y-%m-%d_%H%M%S")
-        self.pasta.mkdir(parents=True, exist_ok=True)
+    def __init__(self, base=PASTA_GRAVACOES):
+        nome = time.strftime("%Y-%m-%d_%H%M%S")
+        self.pasta = base / nome
+        n = 2
+        while self.pasta.exists():  # duas gravações no mesmo segundo
+            self.pasta, n = base / f"{nome}_{n}", n + 1
+        self.pasta.mkdir(parents=True)
         self.inicio = time.monotonic()
         self.total = 0
         self._parte = 0
@@ -654,6 +663,111 @@ class Gravador:
             t.join()
         if self.total == 0:
             self.pasta.rmdir()
+
+
+class Torneio:
+    """Campeã x desafiante: a mosca só troca de cérebro quando o novo prova que
+    joga melhor.
+
+    Todo treino gera uma desafiante (modelo_desafiante.npz); a campeã
+    (modelo_mosca.npz) segue sendo a versão que joga. Com o "Controlar jogo"
+    ligado, as duas se alternam em rodadas de RODADA_S. Com MINIMO_S de jogo de
+    cada uma, compara a recompensa por minuto: a desafiante vira campeã se fizer
+    MARGEM a mais; é descartada se fizer MARGEM a menos, ou se chegar a MAXIMO_S
+    sem diferença clara. Descartada, continua guardada no Supabase.
+    """
+
+    RODADA_S = 60
+    MINIMO_S = 240
+    MAXIMO_S = 600
+    MARGEM = 0.5  # de recompensa por minuto
+    PAPEIS = ("campea", "desafiante")
+
+    def __init__(self, arquivo=ARQUIVO_TORNEIO, campea=ARQUIVO_MODELO, desafiante=ARQUIVO_DESAFIANTE):
+        self.arquivo, self.campea, self.desafiante = Path(arquivo), Path(campea), Path(desafiante)
+        self.estado = {"placar": self._placar_zerado(), "vez": "desafiante", "na_rodada": 0.0,
+                       "mosca_desde_treino": 0.0}
+        if self.arquivo.exists():
+            self.estado.update(json.loads(self.arquivo.read_text()))
+
+    def _placar_zerado(self):
+        return {papel: {"segundos": 0.0, "recompensa": 0.0} for papel in self.PAPEIS}
+
+    def salvar(self):
+        self.arquivo.write_text(json.dumps(self.estado))
+
+    @property
+    def em_disputa(self):
+        return self.desafiante.exists() and self.campea.exists()
+
+    def nova_desafiante(self):
+        """Uma desafiante acabou de ser treinada. Sem campeã ainda, ela já assume."""
+        self.estado.update(placar=self._placar_zerado(), vez="desafiante", na_rodada=0.0)
+        self.salvar()
+        if not self.campea.exists():
+            self._promover()
+            return "primeira versão treinada: já é a campeã"
+        return None
+
+    def quem_joga(self):
+        return self.estado["vez"] if self.em_disputa else "campea"
+
+    def contar(self, papel, segundos, recompensa):
+        """Um quadro de jogo da mosca. Devolve True quando é hora de trocar de versão."""
+        self.estado["mosca_desde_treino"] += segundos
+        if not self.em_disputa:
+            return False
+        placar = self.estado["placar"][papel]
+        placar["segundos"] += segundos
+        placar["recompensa"] += recompensa
+        self.estado["na_rodada"] += segundos
+        if self.estado["na_rodada"] >= self.RODADA_S:
+            self.estado["na_rodada"] = 0.0
+            self.estado["vez"] = "campea" if papel == "desafiante" else "desafiante"
+            self.salvar()
+            return True
+        return False
+
+    def por_minuto(self, papel):
+        p = self.estado["placar"][papel]
+        return p["recompensa"] / p["segundos"] * 60 if p["segundos"] else 0.0
+
+    def veredito(self):
+        """None (ainda disputando), "venceu" ou "perdeu" (para a desafiante)."""
+        if not self.em_disputa:
+            return None
+        tempos = [self.estado["placar"][p]["segundos"] for p in self.PAPEIS]
+        if min(tempos) < self.MINIMO_S:
+            return None
+        diferenca = self.por_minuto("desafiante") - self.por_minuto("campea")
+        if diferenca > self.MARGEM:
+            return "venceu"
+        if diferenca < -self.MARGEM or min(tempos) >= self.MAXIMO_S:
+            return "perdeu"
+        return None
+
+    def encerrar(self, resultado):
+        """Aplica o veredito: promove ou descarta a desafiante."""
+        if resultado == "venceu":
+            self._promover()
+        else:
+            for arquivo in (self.desafiante, self.desafiante.with_suffix(".json")):
+                arquivo.unlink(missing_ok=True)
+        self.estado.update(placar=self._placar_zerado(), vez="desafiante", na_rodada=0.0)
+        self.salvar()
+
+    def _promover(self):
+        info = self.desafiante.with_suffix(".json")
+        if info.exists():
+            os.replace(info, self.campea.with_suffix(".json"))
+        os.replace(self.desafiante, self.campea)
+
+    def ciclo_cumprido(self, segundos):
+        return self.estado["mosca_desde_treino"] >= segundos
+
+    def zerar_ciclo(self):
+        self.estado["mosca_desde_treino"] = 0.0
+        self.salvar()
 
 
 # ---------------------------------------------------------------------------
@@ -751,7 +865,8 @@ class CerebroDemo:
             return "regras fixas (sem treino)"
         n = f"{self.modelo.n_quadros:,}".replace(",", ".")
         treino = f"treino #{self.modelo.treino_id} · " if self.modelo.treino_id else ""
-        return f"{treino}{self.modelo.metodo}, {n} quadros"
+        papel = f"{self.modelo.papel} · " if self.modelo.papel else ""
+        return f"{papel}{treino}{self.modelo.metodo}, {n} quadros"
 
     # --- estímulos vindos do painel ---
 
@@ -1412,10 +1527,21 @@ class Painel(QtWidgets.QWidget):
 class Orquestrador(QtCore.QObject):
     """Um passo por quadro: jogo -> cérebro -> (mosca 3D, ações no jogo)."""
 
-    def __init__(self, jogo, cerebro, mosca):
+    CICLO_S = 600  # a cada ~10 min de jogo da mosca, treina uma nova desafiante
+
+    def __init__(self, jogo, cerebro, mosca, manual=False):
+        """`manual`: versão escolhida à mão (--treino N): sem torneio nem ciclo."""
         super().__init__()
         self.jogo, self.cerebro, self.mosca = jogo, cerebro, mosca
         self.painel = Painel(cerebro, mosca)
+        self.torneio = None
+        if hasattr(jogo, "controlando") and not manual:
+            self.torneio = Torneio()
+        self.modelos = {"campea": cerebro.modelo, "desafiante": None}
+        if self.torneio is not None and self.torneio.em_disputa:
+            self.modelos["desafiante"] = Imitacao.carregar(ARQUIVO_DESAFIANTE)
+        self.papel = "campea"
+        self.gravador_mosca = None  # as partidas da mosca, para ela aprender com elas
 
         cartao_mosca = self.painel.cartao_mosca
         cartao_mosca.bt_pausar.clicked.connect(lambda: self.alternar_pausa())
@@ -1455,10 +1581,104 @@ class Orquestrador(QtCore.QObject):
         if ligado:
             self.jogo.janelas_proprias.add(int(self.painel.winId()))
             self.jogo.focar()
+            if self.torneio is not None:
+                self._usar(self.torneio.quem_joga())
+                self.gravador_mosca = Gravador(PASTA_GRAVACOES_MOSCA)
             self._comecar_partida()
         else:
             self.jogo.soltar_tudo()
             self._terminar_partida()
+            self._parar_gravacao_mosca()
+
+    # --- torneio: campeã x desafiante, e o ciclo de aprender jogando ---
+
+    NOMES_PAPEIS = {"campea": "campeã", "desafiante": "desafiante"}
+
+    def _usar(self, papel):
+        """Põe a campeã ou a desafiante no cérebro da mosca."""
+        self.papel = papel
+        modelo = self.modelos[papel]
+        if modelo is not None:
+            modelo.papel = self.NOMES_PAPEIS[papel] if self.torneio and self.torneio.em_disputa else None
+        self.cerebro.modelo = modelo
+        self.painel.cartao_cerebro.atualizar_selecao()
+
+    def _nome(self, papel):
+        modelo = self.modelos[papel]
+        numero = f" #{modelo.treino_id}" if modelo is not None and modelo.treino_id else ""
+        return self.NOMES_PAPEIS[papel] + numero
+
+    def _avisar(self, texto, segundos=15):
+        self._info_treino, self._info_ate = texto, time.monotonic() + segundos
+
+    def _parar_gravacao_mosca(self):
+        if self.gravador_mosca is not None:
+            self.gravador_mosca.parar()
+            self.gravador_mosca = None
+
+    def _torneio_quadro(self):
+        """Depois de cada quadro em que a mosca jogou de fato."""
+        t = self.torneio
+        trocar = t.contar(self.papel, QUADRO_MS / 1000, self._recompensa_quadro)
+        resultado = t.veredito()
+        if resultado:
+            self._encerrar_torneio(resultado)
+        elif trocar:
+            self._terminar_partida()  # cada rodada vira uma partida com o seu treino
+            self._usar(t.quem_joga())
+            self._comecar_partida()
+            self._avisar(f"Vez da {self._nome(self.papel)}", 4)
+        if not t.em_disputa and self.treino is None and t.ciclo_cumprido(self.CICLO_S):
+            self._ciclo()
+
+    def _encerrar_torneio(self, resultado):
+        t = self.torneio
+        desafiante, campea = self.modelos["desafiante"], self.modelos["campea"]
+        placar = {
+            "resultado": resultado,
+            "contra_treino": campea.treino_id if campea else None,
+            "por_minuto": round(t.por_minuto("desafiante"), 2),
+            "por_minuto_campea": round(t.por_minuto("campea"), 2),
+            "minutos": round(t.estado["placar"]["desafiante"]["segundos"] / 60, 1),
+            "minutos_campea": round(t.estado["placar"]["campea"]["segundos"] / 60, 1),
+        }
+        nome_d, nome_c = self._nome("desafiante"), self._nome("campea")
+        self._terminar_partida()
+        t.encerrar(resultado)
+        self._envios.append(marcar_torneio(desafiante.treino_id if desafiante else None, placar))
+        if resultado == "venceu":
+            self.modelos["campea"] = desafiante
+            texto = (f"🏆 A {nome_d} venceu ({placar['por_minuto']:+.1f}/min contra "
+                     f"{placar['por_minuto_campea']:+.1f}/min) e virou a campeã")
+        else:
+            texto = (f"A {nome_d} perdeu ({placar['por_minuto']:+.1f}/min contra "
+                     f"{placar['por_minuto_campea']:+.1f}/min): a {nome_c} continua")
+        self.modelos["desafiante"] = None
+        self._usar("campea")
+        self._comecar_partida()
+        self._avisar(texto, 30)
+
+    def _ciclo(self):
+        """A mosca jogou o bastante desde o último treino: treina uma desafiante
+        com tudo, inclusive as partidas dela (salvas antes de treinar)."""
+        self._parar_gravacao_mosca()
+        if self.jogo.controlando:
+            self.gravador_mosca = Gravador(PASTA_GRAVACOES_MOSCA)
+        self.torneio.zerar_ciclo()
+        self.treinar()
+
+    def _texto_torneio(self):
+        t = self.torneio
+        if t is None or self.partida is None:
+            return None
+        if not t.em_disputa:
+            falta = max(0, self.CICLO_S - t.estado["mosca_desde_treino"]) / 60
+            return f"🏆 {self._nome('campea')} jogando · próximo treino em ~{falta:.0f} min de jogo"
+        partes = []
+        for papel in ("desafiante", "campea"):
+            minutos = t.estado["placar"][papel]["segundos"] / 60
+            partes.append(f"{self._nome(papel)} {t.por_minuto(papel):+.1f}/min ({minutos:.1f} min)")
+        return f"⚔ {self._nome(self.papel)} jogando · " + " × ".join(partes)
 
     # --- partidas: cada vez que a mosca joga sozinha vira uma linha no Supabase ---
 
@@ -1481,7 +1701,14 @@ class Orquestrador(QtCore.QObject):
         p["quadros"] += 1
         p["eventos"].update(eventos)
         p["recompensa"] += self._recompensa_quadro
-        p["teclas"] += [a in self.jogo.apertadas for a in ACOES]
+        teclas = np.array([a in self.jogo.apertadas for a in ACOES])
+        p["teclas"] += teclas
+        if self.gravador_mosca is not None:
+            self.gravador_mosca.adicionar(
+                self.cerebro.reduzida, teclas, self._recompensa_quadro, self.hud.vida
+            )
+        if self.torneio is not None:
+            self._torneio_quadro()
 
     def _terminar_partida(self):
         p, self.partida = self.partida, None
@@ -1550,10 +1777,7 @@ class Orquestrador(QtCore.QObject):
         (PASTA / "treino.log").write_text(log)  # a tabela de resultado fica aqui
         self.treino = None
         if codigo == 0 and "modelo salvo" in log:
-            self.cerebro.modelo = Imitacao.carregar()
-            self.painel.cartao_cerebro.atualizar_selecao()
-            n = f"{self.cerebro.modelo.n_quadros:,}".replace(",", ".")
-            self._info_treino = f"🧠 A mosca aprendeu com {n} quadros (resultado em treino.log)"
+            self._nova_desafiante()
         elif "mínimo" in log:
             self._info_treino = "🧠 Pouca gravação para treinar: grave um pouco mais"
         else:
@@ -1562,6 +1786,25 @@ class Orquestrador(QtCore.QObject):
         if self._treinar_de_novo:
             self._treinar_de_novo = False
             self.treinar()
+
+    def _nova_desafiante(self):
+        if self.torneio is None:  # versão escolhida à mão: não mexe em quem joga
+            self._info_treino = "🧠 Nova desafiante treinada; abra o painel sem --treino para ela disputar"
+            return
+        jogando = self.partida is not None
+        if jogando:
+            self._terminar_partida()
+        promovida = self.torneio.nova_desafiante()
+        if promovida:
+            self.modelos["campea"] = Imitacao.carregar()
+            self._info_treino = f"🧠 {promovida}"
+        else:
+            self.modelos["desafiante"] = Imitacao.carregar(ARQUIVO_DESAFIANTE)
+            self._info_treino = (f"⚔ Nova {self._nome('desafiante')} treinada: ela disputa com a "
+                                 f"{self._nome('campea')} quando a mosca jogar")
+        self._usar(self.torneio.quem_joga() if jogando else "campea")
+        if jogando:
+            self._comecar_partida()
 
     def _gravar(self):
         """Um quadro de gravação: só com o jogo em foco, senão gravaria teclas
@@ -1585,6 +1828,7 @@ class Orquestrador(QtCore.QObject):
         if self.gravador is not None:
             self.gravador.parar()  # salva o que falta
             self.gravador = None
+        self._parar_gravacao_mosca()
         if self.treino is not None:
             # O modelo só é trocado no fim do treino, então parar no meio é seguro
             self.treino.finished.disconnect()
@@ -1682,7 +1926,7 @@ class Orquestrador(QtCore.QObject):
             or getattr(self.jogo, "aviso", None)
             or getattr(self.jogo, "aviso_controle", None)
         )
-        info = None
+        info = self._texto_torneio()
         if self.treino is not None or time.monotonic() < self._info_ate:
             info = self._info_treino
         cartao_mosca.atualizar_metricas(
@@ -1724,7 +1968,7 @@ def main():
         jogo = JogoDemo()
     mosca = MoscaNoPC()
     app.aboutToQuit.connect(mosca.parar)
-    orq = Orquestrador(jogo, CerebroDemo(modelo=modelo), mosca)
+    orq = Orquestrador(jogo, CerebroDemo(modelo=modelo), mosca, manual=args.treino is not None)
     app.aboutToQuit.connect(orq.encerrar)  # nunca deixa tecla presa no jogo
 
     # Ctrl+C ou kill também passam pelo aboutToQuit (que solta as teclas). O timer

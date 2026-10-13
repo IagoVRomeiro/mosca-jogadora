@@ -18,6 +18,7 @@ recompensa. Sessões gravadas antes do leitor de HUD entram com peso 1.
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import time
 from datetime import datetime
@@ -25,8 +26,8 @@ from datetime import datetime
 import numpy as np
 
 from jogar import (
-    ACOES, ARQUIVO_MODELO, ATRASO_OLHO, FOVEA, GRADE_FOVEA, GRADE_OLHO, OLHO, PASTA,
-    PASTA_GRAVACOES, VERSAO_OLHO, entrada, retrato,
+    ACOES, ARQUIVO_DESAFIANTE, ATRASO_OLHO, FOVEA, GRADE_FOVEA, GRADE_OLHO, OLHO, PASTA,
+    PASTA_GRAVACOES, PASTA_GRAVACOES_MOSCA, VERSAO_OLHO, entrada, retrato,
 )
 from registro import registrar_treino
 
@@ -40,7 +41,15 @@ PESO_MAXIMO = 3  # peso máximo das teclas raras (ver treinar)
 DESCONTO = 0.98  # por quadro: um evento a ~1 s (30 quadros) conta pela metade
 FORCA_RECOMPENSA = 1.5  # peso = exp(FORCA x recompensa futura), limitado abaixo
 PESO_QUADRO = (0.25, 4.0)  # mínimo e máximo do peso de um quadro
-ARQUIVO_INFO_MODELO = ARQUIVO_MODELO.with_suffix(".json")  # qual treino gerou o modelo
+ARQUIVO_SAIDA = ARQUIVO_DESAFIANTE  # todo treino gera uma desafiante (ver jogar.Torneio)
+ARQUIVO_INFO_MODELO = ARQUIVO_SAIDA.with_suffix(".json")  # qual treino gerou o modelo
+# Partidas da própria mosca: entram com menos peso que as suas (ela erra mais) e
+# só as mais recentes, para o treino não crescer sem fim
+PESO_MOSCA = 0.5
+MAXIMO_QUADROS_MOSCA = 60_000  # ~33 min
+# Telas das partidas da mosca mais antigas que isto são apagadas (as teclas e
+# recompensas delas ficam no Supabase). As suas gravações nunca são apagadas.
+GUARDAR_QUADROS_MOSCA = 2 * MAXIMO_QUADROS_MOSCA
 
 
 def commit_do_codigo():
@@ -78,11 +87,40 @@ def versao_do_codigo():
     return h.hexdigest()[:12]
 
 
-def carregar_sessoes():
+def pastas_de_sessoes():
+    """{nome no registro: pasta}: as suas gravações e as partidas mais recentes
+    da mosca (nome "mosca_<data>"), até MAXIMO_QUADROS_MOSCA."""
+    pastas = {p.name: p for p in sorted(PASTA_GRAVACOES.glob("*")) if p.is_dir()}
+    quadros = 0
+    for p in sorted((p for p in PASTA_GRAVACOES_MOSCA.glob("*") if p.is_dir()), reverse=True):
+        if quadros >= MAXIMO_QUADROS_MOSCA:
+            break
+        for arquivo in p.glob("parte_*.npz"):
+            with np.load(arquivo) as parte:
+                quadros += len(parte["teclas"])
+        pastas[f"mosca_{p.name}"] = p
+    return pastas
+
+
+def limpar_partidas_antigas_da_mosca():
+    """Apaga as telas das partidas da mosca além de GUARDAR_QUADROS_MOSCA (as mais antigas)."""
+    quadros, apagadas = 0, []
+    for p in sorted((p for p in PASTA_GRAVACOES_MOSCA.glob("*") if p.is_dir()), reverse=True):
+        if quadros >= GUARDAR_QUADROS_MOSCA:
+            shutil.rmtree(p)
+            apagadas.append(p.name)
+            continue
+        for arquivo in p.glob("parte_*.npz"):
+            with np.load(arquivo) as parte:
+                quadros += len(parte["teclas"])
+    return apagadas
+
+
+def carregar_sessoes(pastas):
     """Lista de (nome, retratos, teclas, pesos) por sessão, na ordem em que foram
     gravadas. O retrato é tudo o que o olho extrai de um quadro (ver jogar.retrato)."""
     sessoes = []
-    for pasta in sorted(p for p in PASTA_GRAVACOES.glob("*") if p.is_dir()):
+    for nome, pasta in pastas.items():
         olhos, teclas, recompensas = [], [], []
         com_hud = True
         for arquivo in sorted(pasta.glob("parte_*.npz")):
@@ -103,13 +141,15 @@ def carregar_sessoes():
                 pesos = pesos_por_recompensa(np.concatenate(recompensas))
             else:
                 pesos = np.ones(len(olhos), dtype=np.float32)
+            if nome.startswith("mosca_"):
+                pesos = pesos * PESO_MOSCA
             sessoes.append(
-                (pasta.name, np.stack(olhos), np.array(teclas, dtype=np.float32), pesos.astype(np.float32))
+                (nome, np.stack(olhos), np.array(teclas, dtype=np.float32), pesos.astype(np.float32))
             )
     return sessoes
 
 
-def resumir_sessao(pasta):
+def resumir_sessao(nome, pasta):
     """Linha da tabela public.sessoes (sem abrir as telas, que são pesadas)."""
     teclas, recompensas = [], []
     for arquivo in sorted(pasta.glob("parte_*.npz")):
@@ -120,11 +160,11 @@ def resumir_sessao(pasta):
                 recompensas.append(parte["recompensas"])
     t = np.concatenate(teclas)
     try:
-        gravada_em = datetime.strptime(pasta.name, "%Y-%m-%d_%H%M%S").astimezone().isoformat()
+        gravada_em = datetime.strptime(pasta.name[:17], "%Y-%m-%d_%H%M%S").astimezone().isoformat()
     except ValueError:
         gravada_em = None
     linha = {
-        "id": pasta.name,
+        "id": nome,
         "gravada_em": gravada_em,
         "quadros": len(t),
         "minutos": round(len(t) / 30 / 60, 2),
@@ -265,8 +305,10 @@ def relatorio(p, dados):
 
 def main():
     inicio = time.time()
-    sessoes = carregar_sessoes()
+    pastas = pastas_de_sessoes()
+    sessoes = carregar_sessoes(pastas)
     total = sum(len(x) for _, x, _, _ in sessoes)
+    quadros_mosca = sum(len(x) for n, x, _, _ in sessoes if n.startswith("mosca_"))
     if total < MINIMO_QUADROS:
         print(
             f"Só {total} quadros gravados (mínimo {MINIMO_QUADROS}). Grave mais partidas com "
@@ -275,6 +317,9 @@ def main():
         return
     nomes_sessoes = [nome for nome, _, _, _ in sessoes]
     for nome, x, _, w in sessoes:
+        da_mosca = nome.startswith("mosca_")
+        if da_mosca:
+            w = w / PESO_MOSCA  # o peso fixo da mosca não é sobre recompensa
         if np.allclose(w, 1):
             efeito = "sem dados de recompensa (peso 1)"
         else:
@@ -283,7 +328,8 @@ def main():
                 f"{(w < 0.7).mean():.0%} dos quadros imitados com menos força (vieram antes de dano/parada), "
                 f"{(w > 1.3).mean():.0%} com mais (antes de acerto/geo)"
             )
-        print(f"sessão {nome}: {len(x):,} quadros ({len(x) / 30 / 60:.1f} min) · {efeito}".replace(",", "."))
+        origem = f" · partida da mosca (peso {PESO_MOSCA})" if da_mosca else ""
+        print(f"sessão {nome}: {len(x):,} quadros ({len(x) / 30 / 60:.1f} min){origem} · {efeito}".replace(",", "."))
 
     dados = Dados(sessoes)
     del sessoes  # os retratos já estão em `dados`; libera a memória
@@ -296,13 +342,13 @@ def main():
     metricas = relatorio(p, dados)
 
     # Salva num temporário e troca de uma vez: o painel nunca lê um modelo pela metade
-    temporario = ARQUIVO_MODELO.with_name("modelo_mosca.tmp.npz")
+    temporario = ARQUIVO_SAIDA.with_name(ARQUIVO_SAIDA.stem + ".tmp.npz")
     np.savez(
         temporario, **p, media=dados.media, desvio=dados.desvio, acoes=np.array(ACOES),
         n_quadros=total, metodo="imitação + recompensa", versao_olho=VERSAO_OLHO,
     )
-    os.replace(temporario, ARQUIVO_MODELO)
-    print(f"\nmodelo salvo em {ARQUIVO_MODELO.name} ({time.time() - inicio:.0f} s).")
+    os.replace(temporario, ARQUIVO_SAIDA)
+    print(f"\nmodelo salvo em {ARQUIVO_SAIDA.name} ({time.time() - inicio:.0f} s).")
 
     nomes = nomes_sessoes
     treino = {
@@ -323,16 +369,23 @@ def main():
             "desconto": DESCONTO, "forca_recompensa": FORCA_RECOMPENSA,
             "peso_quadro": list(PESO_QUADRO),
             "git_commit": commit_do_codigo(),
+            "papel": "desafiante", "quadros_mosca": quadros_mosca, "peso_mosca": PESO_MOSCA,
         },
         "codigo_versao": versao_do_codigo(),
     }
     mensagem, treino_id = registrar_treino(
-        [resumir_sessao(PASTA_GRAVACOES / n) for n in nomes], treino, ARQUIVO_MODELO, PASTA_GRAVACOES
+        [resumir_sessao(n, pastas[n]) for n in nomes], treino, ARQUIVO_SAIDA, pastas
     )
     print(mensagem)
     # O painel lê isto para dizer, nas partidas, qual treino estava jogando
     ARQUIVO_INFO_MODELO.write_text(json.dumps({"treino_id": treino_id, "n_quadros": total}))
-    print("O painel troca o cérebro sozinho quando o treino termina por lá; rodando à mão, reabra o painel.")
+    apagadas = limpar_partidas_antigas_da_mosca()
+    if apagadas:
+        print(f"apaguei as telas de {len(apagadas)} partidas antigas da mosca (as teclas e recompensas estão no Supabase)")
+    print(
+        "Nova desafiante. Ela só substitui a campeã se jogar melhor: ligue o "
+        "'Controlar jogo' no painel para as duas disputarem."
+    )
 
 
 if __name__ == "__main__":
