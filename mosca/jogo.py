@@ -1,0 +1,232 @@
+"""De onde vem o jogo: o jogo de demonstração e a captura da janela do Hollow Knight
+(que também manda as teclas da mosca para ele)."""
+
+import time
+
+import numpy as np
+
+from .config import ACOES, ACOES_JOGO, DURACAO_TOQUE_S, OPOSTAS, SEGURAR_MINIMO_S, TOQUE_S
+
+
+class JogoDemo:
+    """Plataforma 2D simples no lugar do Hollow Knight, para testar o fluxo."""
+
+    def __init__(self, w=480, h=270):
+        self.w, self.h = w, h
+        self.chao = h - 40
+        self.reiniciar()
+
+    def reiniciar(self):
+        self.x, self.y, self.vy = self.w / 2, self.chao, 0.0
+        self.inimigos = [[60.0, 1.5], [self.w - 60.0, -2.0]]
+        self.ataque = 0
+
+    def passo(self, acoes):
+        direcao = acoes["Direita"] - acoes["Esquerda"]
+        vx = 6 * direcao + (8 * np.sign(direcao) if acoes["Esquiva"] > 0.5 else 0)
+        self.x = float(np.clip(self.x + vx, 10, self.w - 10))
+        if acoes["Pular"] > 0.5 and self.y >= self.chao:
+            self.vy = -9
+        self.vy += 0.6
+        self.y = min(self.y + self.vy, self.chao)
+        self.ataque = 6 if acoes["Atacar"] > 0.5 else max(self.ataque - 1, 0)
+        for ini in self.inimigos:
+            ini[0] += ini[1]
+            if not 10 < ini[0] < self.w - 10:
+                ini[1] *= -1
+
+    def quadro(self):
+        img = np.zeros((self.h, self.w, 3), dtype=np.uint8)
+        img[:] = (18, 22, 40)
+        img[self.chao + 12 :] = (60, 60, 70)
+        yy, xx = np.mgrid[0 : self.h, 0 : self.w]
+        for ix, _ in self.inimigos:
+            m = ((xx - ix) / 14) ** 2 + ((yy - self.chao) / 10) ** 2 < 1
+            img[m] = (230, 120, 40)
+        x, y = int(self.x), int(self.y)
+        img[max(y - 22, 0) : y + 12, x - 7 : x + 7] = (235, 235, 245)
+        if self.ataque:
+            img[max(y - 10, 0) : y - 4, x + 7 : x + 32] = (250, 250, 180)
+        return img
+
+
+class CapturaJanela:
+    """Captura uma janela X11 pelo nome exato (ex.: o Hollow Knight no Proton).
+
+    Lê direto da janela, então funciona mesmo com outras janelas por cima. Só não
+    funciona com ela minimizada: aí o jogo não desenha nada. As teclas, ao
+    contrário, só chegam com o jogo em foco (ver `_foco`).
+    """
+
+    # Teclas padrão do Hollow Knight
+    TECLAS = {nome: a.tecla for nome, a in ACOES_JOGO.items()}
+    APERTAR, SOLTAR = 0.5, 0.35  # histerese para a tecla não ficar piscando
+
+    def __init__(self, nome="Hollow Knight"):
+        from Xlib import X, XK, display
+        from Xlib.ext import xtest
+        from Xlib.protocol import event
+
+        self._X, self._evento, self._xtest = X, event, xtest
+        self.nome = nome
+        self.display = display.Display()
+        self._wm_state = self.display.intern_atom("WM_STATE")
+        self._janela_ativa = self.display.intern_atom("_NET_ACTIVE_WINDOW")
+        self._codigos = {
+            acao: self.display.keysym_to_keycode(XK.string_to_keysym(tecla))
+            for acao, tecla in self.TECLAS.items()
+        }
+        self.janela = None
+        self.aviso = None
+        self.controlando = False  # só manda teclas quando ligado no painel
+        self.apertadas = set()  # teclas fisicamente apertadas agora
+        self._ativas = set()  # ações que a mosca quer (podem estar entre dois toques)
+        self._desde, self._apertou_em = {}, {}
+        self.janelas_proprias = set()  # o painel: pode devolver o foco ao jogo
+        self.aviso_controle = None
+        self._ultimo_foco = 0.0
+        self._vazio = np.zeros((360, 640, 3), dtype=np.uint8)
+
+    def reiniciar(self):
+        self.soltar_tudo()
+
+    # O jogo (Wine/Unity) ignora teclas enquanto não está em foco, então as teclas
+    # são simuladas com XTEST, como um teclado de verdade. Como o XTEST digita na
+    # janela em foco, só apertamos com o foco no jogo: nunca no VS Code etc.
+
+    def _foco(self):
+        prop = self.display.screen().root.get_full_property(self._janela_ativa, self._X.AnyPropertyType)
+        return prop.value[0] if prop is not None and len(prop.value) else None
+
+    def em_foco(self):
+        return self.janela is not None and self._foco() == self.janela.id
+
+    def teclas_do_usuario(self):
+        """Teclas de ação que estão apertadas agora (na ordem de ACOES)."""
+        mapa = self.display.query_keymap()
+        return np.array(
+            [bool(mapa[c // 8] & (1 << (c % 8))) for c in (self._codigos[a] for a in ACOES)]
+        )
+
+    def focar(self):
+        """Pede ao gerenciador de janelas para trazer o jogo para o foco."""
+        if self.janela is None or time.monotonic() - self._ultimo_foco < 0.5:
+            return
+        self._ultimo_foco = time.monotonic()
+        root = self.display.screen().root
+        ev = self._evento.ClientMessage(
+            window=self.janela, client_type=self._janela_ativa,
+            data=(32, [2, self._X.CurrentTime, 0, 0, 0]),  # 2 = pedido vindo de "ferramenta"
+        )
+        mascara = self._X.SubstructureRedirectMask | self._X.SubstructureNotifyMask
+        root.send_event(ev, event_mask=mascara)
+        self.display.flush()
+
+    def _tecla(self, acao, apertar):
+        tipo = self._X.KeyPress if apertar else self._X.KeyRelease
+        self._xtest.fake_input(self.display, tipo, self._codigos[acao])
+        if apertar:
+            self.apertadas.add(acao)
+        else:
+            self.apertadas.discard(acao)
+
+    def soltar_tudo(self):
+        try:
+            for acao in list(self.apertadas):
+                self._tecla(acao, False)  # soltar é seguro com qualquer foco
+            self.display.flush()
+        except Exception:
+            pass
+        self.apertadas.clear()
+        self._ativas.clear()
+
+    def passo(self, acoes):
+        self.aviso_controle = None
+        if not self.controlando or self.janela is None or self.aviso:
+            self.soltar_tudo()
+            return
+        desejadas = dict(acoes)
+        # Direções opostas juntas não fazem sentido: fica só a mais forte. A que já
+        # está apertada leva vantagem, senão o boneco fica trocando de lado
+        for a, b in OPOSTAS:
+            forca_a = acoes[a] + (0.2 if a in self._ativas else 0.0)
+            forca_b = acoes[b] + (0.2 if b in self._ativas else 0.0)
+            desejadas[a if forca_a < forca_b else b] = 0.0
+        try:
+            foco = self._foco()
+            if foco != self.janela.id:
+                self.soltar_tudo()  # nunca deixa tecla segurada fora do jogo
+                if any(desejadas[a] > self.APERTAR for a in self.TECLAS):
+                    if foco in self.janelas_proprias:
+                        self.focar()  # você clicou no painel: devolve o foco ao jogo
+                    else:
+                        self.aviso_controle = "Clique na janela do jogo para a mosca jogar"
+                return
+            agora = time.monotonic()
+            for acao in self.TECLAS:
+                apertar = self._decidir(acao, desejadas[acao], agora)
+                if apertar != (acao in self.apertadas):
+                    self._tecla(acao, apertar)
+                    if apertar:
+                        self._apertou_em[acao] = agora
+            self.display.flush()
+        except Exception:
+            self.soltar_tudo()
+            self.janela = None
+
+    def _decidir(self, acao, vontade, agora):
+        """A tecla deve estar apertada agora? Histerese na vontade, toques
+        repetidos (TOQUE_S) e tempo mínimo segurada (SEGURAR_MINIMO_S)."""
+        limiar = self.SOLTAR if acao in self._ativas else self.APERTAR
+        ativa = vontade > limiar
+        if ativa and acao not in self._ativas:
+            self._desde[acao] = agora
+        (self._ativas.add if ativa else self._ativas.discard)(acao)
+        if acao in TOQUE_S:
+            return ativa and (agora - self._desde[acao]) % TOQUE_S[acao] < DURACAO_TOQUE_S
+        if acao in SEGURAR_MINIMO_S and not ativa and acao in self.apertadas:
+            return agora - self._apertou_em[acao] < SEGURAR_MINIMO_S[acao]
+        return ativa
+
+    def _procurar(self, w):
+        try:
+            nome = w.get_wm_name()
+        except Exception:
+            nome = None
+        # Nome exato: "contém" pegaria, por exemplo, uma aba "Hollow Knight - Wiki"
+        # do navegador, e as teclas iriam parar lá
+        if nome == self.nome:
+            return w
+        for filho in w.query_tree().children:
+            achada = self._procurar(filho)
+            if achada:
+                return achada
+        return None
+
+    def _minimizada(self):
+        prop = self.janela.get_full_property(self._wm_state, self._X.AnyPropertyType)
+        return prop is not None and prop.value[0] == 3  # IconicState
+
+    def quadro(self):
+        try:
+            if self.janela is None:
+                self.janela = self._procurar(self.display.screen().root)
+                if self.janela is None:
+                    self.aviso = f"Janela \"{self.nome}\" não encontrada"
+                    return self._vazio
+            if self._minimizada():
+                self.aviso = f"{self.nome} está minimizado"
+                return self._vazio
+            g = self.janela.get_geometry()
+            raw = self.janela.get_image(0, 0, g.width, g.height, self._X.ZPixmap, 0xFFFFFFFF)
+        except Exception:  # janela fechou ou mudou: procura de novo no próximo quadro
+            self.janela = None
+            self.aviso = f"Janela \"{self.nome}\" não encontrada"
+            return self._vazio
+        self.aviso = None
+        bgra = np.frombuffer(raw.data, np.uint8).reshape(g.height, g.width, 4)
+        # O Wine desenha barra de título e borda; o filho marca onde começa o jogo
+        filhos = self.janela.query_tree().children
+        bx, by = (filhos[0].get_geometry().x, filhos[0].get_geometry().y) if filhos else (0, 0)
+        bgra = bgra[by : g.height - bx, bx : g.width - bx]
+        return bgra[::2, ::2, 2::-1]  # BGRA -> RGB, metade da resolução

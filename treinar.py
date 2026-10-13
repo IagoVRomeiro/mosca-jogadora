@@ -25,10 +25,8 @@ from datetime import datetime
 
 import numpy as np
 
-from jogar import (
-    ACOES, ARQUIVO_DESAFIANTE, QUADRO_MS, TOQUE_S, ATRASO_OLHO, FOVEA, GRADE_FOVEA, GRADE_OLHO, OLHO, PASTA,
-    PASTA_GRAVACOES, PASTA_GRAVACOES_MOSCA, VERSAO_OLHO, entrada, retrato,
-)
+from mosca.config import ACOES, ARQUIVO_DESAFIANTE, PASTA, PASTA_GRAVACOES, PASTA_GRAVACOES_MOSCA, QUADRO_MS, TOQUE_S
+from mosca.olho import ATRASO_OLHO, FOVEA, GRADE_FOVEA, GRADE_OLHO, OLHO, VERSAO_OLHO, entrada, retrato
 from registro import registrar_treino
 
 INTERNEURONIOS = 64

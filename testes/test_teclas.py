@@ -5,7 +5,8 @@ Não usa o X11: a CapturaJanela é montada sem conectar e as teclas são anotada
 
 import unittest
 
-from jogar import ACOES, CapturaJanela
+from mosca.config import ACOES
+from mosca.jogo import CapturaJanela
 
 QUADRO_S = 1 / 30
 

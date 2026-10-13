@@ -5,7 +5,10 @@ import unittest
 import numpy as np
 
 import treinar
-from jogar import ACOES, ATRASO_OLHO, Imitacao, JogoDemo, entrada, reduzir, retrato, tamanho_entrada
+from mosca.aprendizado import Imitacao
+from mosca.config import ACOES
+from mosca.jogo import JogoDemo
+from mosca.olho import ATRASO_OLHO, entrada, reduzir, retrato, tamanho_entrada
 
 
 class TestePesos(unittest.TestCase):

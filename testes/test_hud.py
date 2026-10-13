@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 
-from jogar import DetectorParada, LeitorHUD
+from mosca.estimulos import DetectorParada, LeitorHUD
 
 ALTURA, LARGURA = 523, 956  # o que a captura entrega com o jogo em 1920x1080
 

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from jogar import Torneio
+from mosca.aprendizado import Torneio
 
 QUADRO_S = 1 / 30
 

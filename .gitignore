@@ -24,3 +24,6 @@ supabase/.temp/
 
 # Vídeos gerados (mosca3d.py)
 *.mp4
+
+# Conectoma: anotações baixadas (31 MB) e dados gerados pelo preparar_conectoma.py
+dados_conectoma/
