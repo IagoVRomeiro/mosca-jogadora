@@ -34,6 +34,7 @@ import numpy as np
 from PyQt6 import QtCore, QtGui, QtWidgets
 import pyqtgraph as pg
 
+from comparar import melhoria_percentual
 from registro import baixar_treino, marcar_torneio, registrar_partida
 
 # Todos os controles de jogo do Hollow Knight, com as teclas configuradas no jogo. Mapa, inventário e
@@ -1722,8 +1723,12 @@ class Orquestrador(QtCore.QObject):
             "minutos": round(t.estado["placar"]["desafiante"]["segundos"] / 60, 1),
             "minutos_campea": round(t.estado["placar"]["campea"]["segundos"] / 60, 1),
             "incerteza": round(min(t.incerteza(), 99.0), 2),
+            "melhoria_pct": None,
             "rodadas": {p: [round(r, 2) for r in t.estado["rodadas"][p]] for p in t.PAPEIS},
         }
+        pct = melhoria_percentual(placar["por_minuto_campea"], placar["por_minuto"])
+        placar["melhoria_pct"] = None if pct is None else round(pct, 1)
+        melhoria = f" = {pct:+.0f}% de recompensa/min" if pct is not None else ""
         nome_d, nome_c = self._nome("desafiante"), self._nome("campea")
         self._terminar_partida()
         t.encerrar(resultado)
@@ -1731,10 +1736,10 @@ class Orquestrador(QtCore.QObject):
         if resultado == "venceu":
             self.modelos["campea"] = desafiante
             texto = (f"🏆 A {nome_d} venceu ({placar['por_minuto']:+.1f}/min contra "
-                     f"{placar['por_minuto_campea']:+.1f}/min) e virou a campeã")
+                     f"{placar['por_minuto_campea']:+.1f}/min{melhoria}) e virou a campeã")
         else:
             texto = (f"A {nome_d} perdeu ({placar['por_minuto']:+.1f}/min contra "
-                     f"{placar['por_minuto_campea']:+.1f}/min): a {nome_c} continua")
+                     f"{placar['por_minuto_campea']:+.1f}/min{melhoria}): a {nome_c} continua")
         self.modelos["desafiante"] = None
         self._usar("campea")
         self._comecar_partida()
