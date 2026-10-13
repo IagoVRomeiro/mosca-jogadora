@@ -470,6 +470,56 @@ class LeitorHUD:
         return sum(self.RECOMPENSA[e] for e in eventos), eventos
 
 
+# --- Olho versão 2: periferia + fóvea + memória curta -------------------------
+#
+# A periferia (ver) junta a tela toda em blocos grandes: um inimigo pequeno vira
+# borrão. A fóvea olha com 3x mais detalhe a região onde o Cavaleiro costuma
+# ficar (a câmera do jogo o segue: meio da tela, um pouco abaixo do centro). O
+# brilho de ATRASO_OLHO quadros atrás entra junto: comparando com o atual, a rede
+# percebe direção e velocidade das coisas.
+
+FOVEA = (slice(30, 84), slice(32, 128))  # região do Cavaleiro em OLHO (90 x 160)
+GRADE_FOVEA = (18, 24)  # blocos de 3 x 4 pixels
+ATRASO_OLHO = 5  # quadros (~170 ms)
+VERSAO_OLHO = 2  # a que o treinar.py usa agora; modelos antigos guardam a sua
+_N_PERIFERIA = 2 * GRADE_OLHO[0] * GRADE_OLHO[1]
+_N_FOVEA = GRADE_FOVEA[0] * GRADE_FOVEA[1]
+# Posições do brilho (periferia e fóvea) dentro de um retrato
+BRILHO_RETRATO = np.r_[0 : _N_PERIFERIA // 2, _N_PERIFERIA : _N_PERIFERIA + _N_FOVEA]
+
+
+def retrato(reduzida, anterior=None):
+    """Tudo o que o olho extrai de um quadro: periferia (`ver`) + fóvea (brilho e
+    movimento). As entradas de qualquer versão do olho saem daqui."""
+    periferia = ver(reduzida, anterior)
+    atual = cinza(reduzida)[FOVEA].astype(np.float32) / 255
+    gl, gc = GRADE_FOVEA
+    forma = (gl, atual.shape[0] // gl, gc, atual.shape[1] // gc)
+    brilho = atual.reshape(forma).mean(axis=(1, 3))
+    if anterior is None:
+        movimento = np.zeros_like(brilho)
+    else:
+        ant = cinza(anterior)[FOVEA].astype(np.float32) / 255
+        movimento = np.clip(np.abs(atual - ant).reshape(forma).mean(axis=(1, 3)) * 6, 0, 1)
+    return np.concatenate([periferia, brilho.ravel(), movimento.ravel()]).astype(np.float32)
+
+
+def entrada(versao, atual, passado):
+    """Entrada da rede a partir de retratos (aceita um quadro ou um lote).
+
+    versão 1: só a periferia do quadro atual (olho dos treinos #1 a #4).
+    versão 2: retrato atual + brilho de ATRASO_OLHO quadros atrás.
+    """
+    if versao == 1:
+        return atual[..., :_N_PERIFERIA]
+    return np.concatenate([atual, passado[..., BRILHO_RETRATO]], axis=-1)
+
+
+def tamanho_entrada(versao):
+    vazio = np.zeros(_N_PERIFERIA + 2 * _N_FOVEA, dtype=np.float32)
+    return entrada(versao, vazio, vazio).shape[-1]
+
+
 class DetectorParada:
     """Pune ficar parado: o jogo segue o Cavaleiro com a câmera, então andando a
     tela inteira se mexe e parado quase nada muda.
@@ -520,6 +570,10 @@ class Imitacao:
         self.acoes = [str(a) for a in pesos["acoes"]]
         self.n_quadros = int(pesos["n_quadros"])
         self.metodo = str(pesos["metodo"]) if "metodo" in pesos else "imitação"
+        # Modelos de antes do olho v2 não guardam a versão: são do olho 1
+        self.versao_olho = int(pesos["versao_olho"]) if "versao_olho" in pesos else 1
+        if self.w1.shape[0] != tamanho_entrada(self.versao_olho):
+            raise ValueError(f"o modelo não bate com o olho versão {self.versao_olho}")
         self.treino_id = None  # número do treino no Supabase, se foi registrado
 
     @classmethod
@@ -687,6 +741,7 @@ class CerebroDemo:
         self.dopamina_ate = {nome: 0.0 for nome in self.DOPAMINA}
         self.disparos = np.array([], dtype=int)
         self.reduzida = None  # última tela vista, em OLHO (o gravador reaproveita)
+        self.retratos = collections.deque(maxlen=ATRASO_OLHO + 1)  # memória curta do olho
         self.movimento_medio = 0.0
         self.t = 0.0
 
@@ -732,9 +787,10 @@ class CerebroDemo:
         reduzida = reduzir(imagem)
         if self.reduzida is not None and self.reduzida.shape != reduzida.shape:
             self.reduzida = None
-        olho = ver(reduzida, self.reduzida)
+        atual = retrato(reduzida, self.reduzida)
         self.reduzida = reduzida
-        movimento = olho[olho.size // 2 :]
+        self.retratos.append(atual)
+        movimento = atual[_N_PERIFERIA // 2 : _N_PERIFERIA]  # movimento da periferia
         self.movimento_medio = float(movimento.mean())  # o detector de parada usa
 
         alvo = np.full(self.n, self.ESPONTANEA)
@@ -742,7 +798,8 @@ class CerebroDemo:
         alvo[optico] += 150 * movimento[self.celula[optico]]
         if self.modelo is not None:
             # A rede treinada decide quanto cada zona de comando recebe
-            for nome, p in zip(self.modelo.acoes, self.modelo.prever(olho)):
+            x = entrada(self.modelo.versao_olho, atual, self.retratos[0])
+            for nome, p in zip(self.modelo.acoes, self.modelo.prever(x)):
                 if nome in self.zona:
                     alvo[self.zona[nome]] += 40 * p
         else:
@@ -1636,8 +1693,6 @@ def main():
         arquivo, commit = baixar_treino(args.treino, PASTA / "modelos_baixados")
         try:
             modelo = Imitacao.carregar(arquivo)
-            if modelo.w1.shape[0] != 2 * GRADE_OLHO[0] * GRADE_OLHO[1]:
-                raise ValueError("o olho mudou desde esse treino")
         except (KeyError, ValueError) as e:
             sys.exit(
                 f"O treino #{args.treino} não roda neste código ({e}). Rode a versão do código "

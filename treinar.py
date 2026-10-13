@@ -24,7 +24,10 @@ from datetime import datetime
 
 import numpy as np
 
-from jogar import ACOES, ARQUIVO_MODELO, GRADE_OLHO, OLHO, PASTA, PASTA_GRAVACOES, ver
+from jogar import (
+    ACOES, ARQUIVO_MODELO, ATRASO_OLHO, FOVEA, GRADE_FOVEA, GRADE_OLHO, OLHO, PASTA,
+    PASTA_GRAVACOES, VERSAO_OLHO, entrada, retrato,
+)
 from registro import registrar_treino
 
 INTERNEURONIOS = 64
@@ -76,7 +79,8 @@ def versao_do_codigo():
 
 
 def carregar_sessoes():
-    """Lista de (nome, olho, teclas, pesos) por sessão, na ordem em que foram gravadas."""
+    """Lista de (nome, retratos, teclas, pesos) por sessão, na ordem em que foram
+    gravadas. O retrato é tudo o que o olho extrai de um quadro (ver jogar.retrato)."""
     sessoes = []
     for pasta in sorted(p for p in PASTA_GRAVACOES.glob("*") if p.is_dir()):
         olhos, teclas, recompensas = [], [], []
@@ -91,7 +95,7 @@ def carregar_sessoes():
                 colunas = [acoes.index(a) if a in acoes else None for a in ACOES]
                 anterior = None
                 for tela, apertadas in zip(parte["telas"], parte["teclas"]):
-                    olhos.append(ver(tela, anterior))
+                    olhos.append(retrato(tela, anterior))
                     teclas.append([apertadas[c] if c is not None else False for c in colunas])
                     anterior = tela
         if olhos:
@@ -140,14 +144,44 @@ def resumir_sessao(pasta):
     return linha
 
 
-def separar(sessoes):
-    treino, valid = [], []
-    for _, x, y, w in sessoes:
-        corte = int(len(x) * (1 - VALIDACAO))
-        treino.append((x[:corte], y[:corte], w[:corte]))
-        valid.append((x[corte:], y[corte:]))
-    juntar = lambda partes: tuple(np.concatenate(p) for p in zip(*partes))
-    return juntar(treino), juntar(valid)
+class Dados:
+    """Todos os quadros juntos. A entrada da rede (retrato atual + brilho de
+    ATRASO_OLHO quadros atrás) é montada por lote, não de uma vez: inteira ela
+    ocuparia alguns GB de memória."""
+
+    def __init__(self, sessoes):
+        self.retratos = np.concatenate([r for _, r, _, _ in sessoes])
+        self.teclas = np.concatenate([y for _, _, y, _ in sessoes])
+        self.pesos = np.concatenate([w for _, _, _, w in sessoes])
+        passado, treino, valid, inicio = [], [], [], 0
+        for _, r, _, _ in sessoes:
+            n = len(r)
+            idx = np.arange(inicio, inicio + n)
+            # No começo da sessão não há passado ainda: usa o quadro mais antigo,
+            # como o painel faz com a memória curta ainda enchendo
+            passado.append(np.maximum(idx - ATRASO_OLHO, inicio))
+            corte = int(n * (1 - VALIDACAO))  # o fim de cada sessão fica para validar
+            treino.append(idx[:corte])
+            valid.append(idx[corte:])
+            inicio += n
+        self.passado = np.concatenate(passado)
+        self.treino, self.valid = np.concatenate(treino), np.concatenate(valid)
+        self.media = self.desvio = None
+
+    def entrada(self, idx):
+        x = entrada(VERSAO_OLHO, self.retratos[idx], self.retratos[self.passado[idx]])
+        return x if self.media is None else (x - self.media) / self.desvio
+
+    def normalizar(self, lote=4096):
+        """Média e desvio de cada entrada, calculados só com os quadros de treino."""
+        soma = soma2 = 0.0
+        for i in range(0, len(self.treino), lote):
+            x = self.entrada(self.treino[i : i + lote]).astype(np.float64)
+            soma, soma2 = soma + x.sum(0), soma2 + (x**2).sum(0)
+        n = len(self.treino)
+        media = soma / n
+        self.desvio = (np.sqrt(np.maximum(soma2 / n - media**2, 0)) + 0.05).astype(np.float32)
+        self.media = media.astype(np.float32)
 
 
 def frente(p, x):
@@ -155,18 +189,22 @@ def frente(p, x):
     return h, 1 / (1 + np.exp(-np.clip(h @ p["w2"] + p["b2"], -30, 30)))
 
 
-def perda(p, x, y, peso_pos, w=None):
-    _, prob = frente(p, x)
-    prob = np.clip(prob, 1e-6, 1 - 1e-6)
+def prever(p, dados, idx, lote=4096):
+    return np.concatenate([frente(p, dados.entrada(idx[i : i + lote]))[1] for i in range(0, len(idx), lote)])
+
+
+def perda(p, dados, idx, peso_pos, ponderar=False):
+    prob = np.clip(prever(p, dados, idx), 1e-6, 1 - 1e-6)
+    y = dados.teclas[idx]
     por_quadro = -(peso_pos * y * np.log(prob) + (1 - y) * np.log(1 - prob)).mean(axis=1)
-    return float(np.average(por_quadro, weights=w))
+    return float(np.average(por_quadro, weights=dados.pesos[idx] if ponderar else None))
 
 
-def treinar(xt, yt, wt, xv, yv):
-    """`wt`: peso de cada quadro de treino (recompensa futura). A validação não
-    usa peso: mede o quanto ela imita você, para comparar com treinos antigos."""
+def treinar(dados):
+    """Cada quadro de treino pesa pela recompensa futura (dados.pesos). A
+    validação não usa peso: mede o quanto ela imita você, para comparar treinos."""
     rng = np.random.default_rng(0)
-    n_ent, n_sai = xt.shape[1], yt.shape[1]
+    n_ent, n_sai = dados.entrada(dados.treino[:1]).shape[1], dados.teclas.shape[1]
     p = {
         "w1": rng.normal(0, np.sqrt(2 / n_ent), (n_ent, INTERNEURONIOS)).astype(np.float32),
         "b1": np.zeros(INTERNEURONIOS, np.float32),
@@ -175,16 +213,16 @@ def treinar(xt, yt, wt, xv, yv):
     }
     # Teclas raras pesam mais, senão a rede só aprende "nunca aperta"; mas pouco
     # mais (até 3x), senão ela aperta à toa teclas que não dá para prever
-    frac = yt.mean(axis=0)
+    frac = dados.teclas[dados.treino].mean(axis=0)
     peso_pos = np.clip((1 - frac) / np.maximum(frac, 1e-3), 1, PESO_MAXIMO).astype(np.float32)
     m = {k: np.zeros_like(v) for k, v in p.items()}
     v = {k: np.zeros_like(v) for k, v in p.items()}
     melhor, melhor_p, passo = np.inf, None, 0
     for epoca in range(EPOCAS):
-        ordem = rng.permutation(len(xt))
-        for i in range(0, len(xt), LOTE):
+        ordem = rng.permutation(dados.treino)
+        for i in range(0, len(ordem), LOTE):
             idx = ordem[i : i + LOTE]
-            x, y, w = xt[idx], yt[idx], wt[idx, None]
+            x, y, w = dados.entrada(idx), dados.teclas[idx], dados.pesos[idx, None]
             h, prob = frente(p, x)
             # gradiente da entropia cruzada com peso nos positivos e no quadro
             dz2 = w * (prob * (peso_pos * y + 1 - y) - peso_pos * y) / (len(x) * n_sai)
@@ -196,18 +234,19 @@ def treinar(xt, yt, wt, xv, yv):
                 v[k] = 0.999 * v[k] + 0.001 * grad[k] ** 2
                 mh, vh = m[k] / (1 - 0.9**passo), v[k] / (1 - 0.999**passo)
                 p[k] -= (TAXA * mh / (np.sqrt(vh) + 1e-8)).astype(np.float32)
-        pv = perda(p, xv, yv, peso_pos)
-        print(f"  época {epoca + 1:2d}/{EPOCAS}: perda treino {perda(p, xt, yt, peso_pos, wt):.4f} · validação {pv:.4f}")
+        pv = perda(p, dados, dados.valid, peso_pos)
+        amostra = rng.choice(dados.treino, min(5000, len(dados.treino)), replace=False)
+        pt = perda(p, dados, amostra, peso_pos, ponderar=True)
+        print(f"  época {epoca + 1:2d}/{EPOCAS}: perda treino {pt:.4f} · validação {pv:.4f}")
         if pv < melhor:
             melhor, melhor_p = pv, {k: a.copy() for k, a in p.items()}
     return melhor_p, melhor
 
 
-def relatorio(p, xv, yv):
+def relatorio(p, dados):
     """Compara a mosca com um "chute" que sempre faz a coisa mais comum."""
-    _, prob = frente(p, xv)
-    prev = prob > 0.5
-    real = yv > 0.5
+    prev = prever(p, dados, dados.valid) > 0.5
+    real = dados.teclas[dados.valid] > 0.5
     metricas = {}
     print(f"\n  {'tecla':<20}{'uso':>7}{'acerto mosca':>14}{'acerto chute':>14}{'pega quando você aperta':>26}")
     for j, nome in enumerate(ACOES):
@@ -234,6 +273,7 @@ def main():
             "o botão '⏺ Gravar' do painel."
         )
         return
+    nomes_sessoes = [nome for nome, _, _, _ in sessoes]
     for nome, x, _, w in sessoes:
         if np.allclose(w, 1):
             efeito = "sem dados de recompensa (peso 1)"
@@ -245,28 +285,30 @@ def main():
             )
         print(f"sessão {nome}: {len(x):,} quadros ({len(x) / 30 / 60:.1f} min) · {efeito}".replace(",", "."))
 
-    (xt, yt, wt), (xv, yv) = separar(sessoes)
-    media = xt.mean(axis=0)
-    desvio = xt.std(axis=0) + 0.05
-    xt, xv = (xt - media) / desvio, (xv - media) / desvio
-    print(f"\ntreinando com {len(xt):,} quadros, validando com {len(xv):,}".replace(",", "."))
-    p, perda_validacao = treinar(xt, yt, wt, xv, yv)
-    metricas = relatorio(p, xv, yv)
+    dados = Dados(sessoes)
+    del sessoes  # os retratos já estão em `dados`; libera a memória
+    dados.normalizar()
+    print(
+        f"\ntreinando com {len(dados.treino):,} quadros, validando com {len(dados.valid):,} "
+        f"(olho versão {VERSAO_OLHO}: {dados.entrada(dados.treino[:1]).shape[1]:,} entradas)".replace(",", ".")
+    )
+    p, perda_validacao = treinar(dados)
+    metricas = relatorio(p, dados)
 
     # Salva num temporário e troca de uma vez: o painel nunca lê um modelo pela metade
     temporario = ARQUIVO_MODELO.with_name("modelo_mosca.tmp.npz")
     np.savez(
-        temporario, **p, media=media, desvio=desvio, acoes=np.array(ACOES),
-        n_quadros=total, metodo="imitação + recompensa",
+        temporario, **p, media=dados.media, desvio=dados.desvio, acoes=np.array(ACOES),
+        n_quadros=total, metodo="imitação + recompensa", versao_olho=VERSAO_OLHO,
     )
     os.replace(temporario, ARQUIVO_MODELO)
     print(f"\nmodelo salvo em {ARQUIVO_MODELO.name} ({time.time() - inicio:.0f} s).")
 
-    nomes = [nome for nome, _, _, _ in sessoes]
+    nomes = nomes_sessoes
     treino = {
         "quadros": total,
         "minutos": round(total / 30 / 60, 2),
-        "quadros_validacao": len(xv),
+        "quadros_validacao": len(dados.valid),
         "perda_validacao": round(float(perda_validacao), 5),
         "epocas": EPOCAS,
         "interneuronios": INTERNEURONIOS,
@@ -274,7 +316,9 @@ def main():
         "metricas": metricas,
         "config": {
             "taxa": TAXA, "lote": LOTE, "validacao": VALIDACAO, "peso_maximo": PESO_MAXIMO,
-            "olho": list(OLHO), "grade_olho": list(GRADE_OLHO),
+            "olho": list(OLHO), "grade_olho": list(GRADE_OLHO), "versao_olho": VERSAO_OLHO,
+            "fovea": [FOVEA[0].start, FOVEA[0].stop, FOVEA[1].start, FOVEA[1].stop],
+            "grade_fovea": list(GRADE_FOVEA), "atraso_olho": ATRASO_OLHO,
             "aprendizado": "imitação ponderada pela recompensa",
             "desconto": DESCONTO, "forca_recompensa": FORCA_RECOMPENSA,
             "peso_quadro": list(PESO_QUADRO),
