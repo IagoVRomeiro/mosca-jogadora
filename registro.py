@@ -67,6 +67,17 @@ class Supabase:
             preferencia += ",resolution=merge-duplicates"
         return self._pedir("POST", f"/rest/v1/{tabela}", linhas, {"Prefer": preferencia})
 
+    def baixar(self, bucket, caminho):
+        """Bytes de um arquivo do Storage."""
+        pedido = urllib.request.Request(f"{self.url}/storage/v1/object/{bucket}/{caminho}")
+        pedido.add_header("apikey", self.chave)
+        pedido.add_header("Authorization", f"Bearer {self.chave}")
+        try:
+            with urllib.request.urlopen(pedido, timeout=60) as resposta:
+                return resposta.read()
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"{e.code} ao baixar {bucket}/{caminho}") from None
+
     def enviar_bytes(self, bucket, caminho, dados):
         return self._pedir(
             "POST", f"/storage/v1/object/{bucket}/{caminho}", dados,
@@ -133,6 +144,23 @@ def registrar_treino(sessoes, treino, arquivo_modelo, pasta_gravacoes):
         )
     except Exception as e:  # sem internet, chave errada, tabela faltando...
         return f"⚠ não consegui registrar no Supabase: {e}", None
+
+
+def baixar_treino(treino_id, pasta):
+    """Baixa o modelo do treino #`treino_id` para `pasta` (se ainda não estiver lá).
+    Devolve (arquivo, commit do git com que foi treinado ou None)."""
+    banco = Supabase.do_env()
+    if banco is None:
+        raise RuntimeError("Supabase não configurado (.env)")
+    linhas = banco._pedir("GET", f"/rest/v1/treinos?id=eq.{treino_id}&select=modelo_arquivo,config")
+    if not linhas or not linhas[0].get("modelo_arquivo"):
+        raise RuntimeError(f"treino #{treino_id} não existe no Supabase ou não tem modelo")
+    commit = (linhas[0].get("config") or {}).get("git_commit")
+    arquivo = Path(pasta) / linhas[0]["modelo_arquivo"]
+    if not arquivo.exists():
+        arquivo.parent.mkdir(parents=True, exist_ok=True)
+        arquivo.write_bytes(banco.baixar("modelos", linhas[0]["modelo_arquivo"]))
+    return arquivo, commit
 
 
 def registrar_partida(partida):

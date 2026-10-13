@@ -9,6 +9,7 @@ __pycache__/
 # Dados gerados (grandes ou refeitos pelo treino)
 gravacoes/
 modelo_mosca*.npz
+modelos_baixados/
 treino.log
 modelo_mosca.json
 
