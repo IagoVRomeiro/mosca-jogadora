@@ -1423,6 +1423,7 @@ class Orquestrador(QtCore.QObject):
         self.gravador = None
         self.hud = LeitorHUD() if hasattr(jogo, "controlando") else None
         self.parada = DetectorParada()
+        self._sorteio = np.random.default_rng()
         self._recompensas = collections.deque()  # (instante, valor) dos últimos 10 s
         self._ultimo_evento = (None, 0.0)
         self._recompensa_quadro = 0.0
@@ -1622,6 +1623,16 @@ class Orquestrador(QtCore.QObject):
         "parada": "ficou parada",
     }
 
+    # Reflexo de sair do lugar: moscas paradas demais fazem movimentos
+    # espontâneos. Tira a mosca do banco (onde ela volta toda vez que morre),
+    # de cantos e paredes. Só quando ela está no controle do jogo.
+    REFLEXOS = ["Esquerda", "Direita", "Pular"]
+
+    def _reflexo(self):
+        acao = self._sorteio.choice(self.REFLEXOS)
+        self.cerebro.pulsar_zona(acao)
+        return f"reflexo: tentou {ROTULO_TECLA[acao]}"
+
     def _ler_hud(self, imagem):
         """Eventos do jogo -> dopamina no cérebro + painel de recompensa."""
         self._recompensa_quadro = 0.0
@@ -1632,6 +1643,9 @@ class Orquestrador(QtCore.QObject):
         eventos += self.parada.passo(
             self.cerebro.movimento_medio, self.hud.visivel, self.hud.gastando_alma
         )
+        reflexo = None
+        if "parada" in eventos and self.jogo.controlando:
+            reflexo = self._reflexo()
         valor = sum(LeitorHUD.RECOMPENSA[e] for e in eventos)
         self._eventos_quadro = eventos
         agora = time.monotonic()
@@ -1639,7 +1653,8 @@ class Orquestrador(QtCore.QObject):
             self._recompensa_quadro = valor
             self.cerebro.recompensa(valor)
             self._recompensas.append((agora, valor))
-            self._ultimo_evento = (", ".join(self.NOMES_EVENTOS[e] for e in eventos), agora)
+            texto = ", ".join(self.NOMES_EVENTOS[e] for e in eventos)
+            self._ultimo_evento = (f"{texto} · {reflexo}" if reflexo else texto, agora)
         while self._recompensas and self._recompensas[0][0] < agora - 10:
             self._recompensas.popleft()
         texto, quando = self._ultimo_evento
