@@ -1927,6 +1927,8 @@ class Orquestrador(QtCore.QObject):
         if hasattr(self.jogo, "controlando"):
             self.jogo.controlando = False
         self.soltar_teclas()
+        if self.torneio is not None and self.partida is not None and self.torneio.em_disputa:
+            self.torneio.fechar_rodada(self.papel)  # salva o placar da rodada em andamento
         self._terminar_partida()
         for envio in self._envios:
             envio.join(timeout=10)  # dá tempo de a última partida chegar ao Supabase
