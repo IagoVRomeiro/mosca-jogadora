@@ -1,0 +1,105 @@
+"""Torneio campeã x desafiante: quem vence, quem perde e quando não decidir."""
+
+import tempfile
+import unittest
+from pathlib import Path
+
+import numpy as np
+
+from jogar import Torneio
+
+QUADRO_S = 1 / 30
+
+
+class TesteTorneio(unittest.TestCase):
+    def setUp(self):
+        self.pasta = Path(tempfile.mkdtemp())
+        self.campea = self.pasta / "campea.npz"
+        self.desafiante = self.pasta / "desafiante.npz"
+        self.campea.write_bytes(b"campea")
+        self.desafiante.write_bytes(b"desafiante")
+
+    def novo(self):
+        return Torneio(self.pasta / "torneio.json", self.campea, self.desafiante)
+
+    def disputar(self, t, por_minuto, limite_min=40):
+        """Joga até o veredito. `por_minuto(papel, rodada)` dá a recompensa/min."""
+        rodadas = {p: 0 for p in Torneio.PAPEIS}
+        for _ in range(int(limite_min * 60 / QUADRO_S)):
+            papel = t.quem_joga()
+            trocou = t.contar(papel, QUADRO_S, por_minuto(papel, rodadas[papel]) / 60 * QUADRO_S)
+            if trocou:
+                rodadas[papel] += 1
+            resultado = t.veredito()
+            if resultado:
+                minutos = {p: t.estado["placar"][p]["segundos"] / 60 for p in Torneio.PAPEIS}
+                t.encerrar(resultado)
+                return resultado, minutos
+        return None, None
+
+    def test_vence_quando_claramente_melhor(self):
+        t = self.novo()
+        resultado, minutos = self.disputar(t, lambda papel, _: -1.0 if papel == "desafiante" else -3.0)
+        self.assertEqual(resultado, "venceu")
+        self.assertEqual(self.campea.read_bytes(), b"desafiante")  # virou a campeã
+        self.assertFalse(self.desafiante.exists())
+        self.assertAlmostEqual(minutos["desafiante"], 4, delta=0.2)
+
+    def test_perde_quando_pior(self):
+        t = self.novo()
+        resultado, _ = self.disputar(t, lambda papel, _: -3.0 if papel == "desafiante" else -1.0)
+        self.assertEqual(resultado, "perdeu")
+        self.assertEqual(self.campea.read_bytes(), b"campea")
+        self.assertFalse(self.desafiante.exists())
+
+    def test_empate_mantem_a_campea(self):
+        t = self.novo()
+        resultado, minutos = self.disputar(t, lambda papel, _: -2.0 if papel == "desafiante" else -2.1)
+        self.assertEqual(resultado, "perdeu")  # sem diferença clara, a campeã fica
+        self.assertAlmostEqual(minutos["desafiante"], Torneio.MAXIMO_S / 60, delta=0.2)
+        self.assertEqual(self.campea.read_bytes(), b"campea")
+
+    def test_nao_vence_por_sorte(self):
+        """Rodadas muito variáveis: a vantagem média não basta para vencer no mínimo."""
+        sorte = np.random.default_rng(1).normal(0, 6, size=(2, 50))
+        t = self.novo()
+        rodadas = {p: 0 for p in Torneio.PAPEIS}
+        primeiro_veredito = "nenhum"
+        for _ in range(int(20 * 60 / QUADRO_S)):
+            papel = t.quem_joga()
+            media = -1.2 if papel == "desafiante" else -2.0  # desafiante 0,8/min melhor
+            por_min = media + sorte[Torneio.PAPEIS.index(papel), rodadas[papel]]
+            if t.contar(papel, QUADRO_S, por_min / 60 * QUADRO_S):
+                rodadas[papel] += 1
+            if min(len(t.estado["rodadas"][p]) for p in Torneio.PAPEIS) >= Torneio.MINIMO_RODADAS:
+                primeiro_veredito = t.veredito()
+                break
+        self.assertNotEqual(primeiro_veredito, "venceu")
+        self.assertGreater(2 * t.incerteza(), 0.8)
+
+    def test_sem_campea_a_primeira_desafiante_assume(self):
+        self.campea.unlink()
+        t = self.novo()
+        self.assertIsNotNone(t.nova_desafiante())
+        self.assertEqual(self.campea.read_bytes(), b"desafiante")
+        self.assertFalse(t.em_disputa)
+
+    def test_placar_sobrevive_a_reabrir(self):
+        t = self.novo()
+        for _ in range(int(90 / QUADRO_S)):  # 1,5 min
+            t.contar(t.quem_joga(), QUADRO_S, -0.01)
+        t.fechar_rodada(t.quem_joga())
+        reaberto = self.novo()
+        self.assertEqual(reaberto.estado["placar"], t.estado["placar"])
+        self.assertEqual(reaberto.estado["rodadas"], t.estado["rodadas"])
+
+    def test_rodada_interrompida_curta_nao_conta(self):
+        t = self.novo()
+        for _ in range(int(10 / QUADRO_S)):  # 10 s e desligou
+            t.contar("desafiante", QUADRO_S, 0.0)
+        t.fechar_rodada("desafiante")
+        self.assertEqual(t.estado["rodadas"]["desafiante"], [])
+
+
+if __name__ == "__main__":
+    unittest.main()

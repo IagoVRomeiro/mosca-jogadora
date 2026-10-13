@@ -404,6 +404,9 @@ class LeitorHUD:
     - máscaras de vida: cheia é branca, vazia é azul-escura -> dano/cura
     - vaso de alma: enche quando o Cavaleiro acerta um inimigo -> "acertou"
     - número de geo: mudou -> pegou geo
+    - morte: máscaras zeradas com o HUD na tela, ou o HUD some com 1 máscara e
+      volta com mais (morreu, tela preta, renasceu no banco). A vida de volta
+      ao renascer NÃO conta como cura (antes contava: morrer dava recompensa).
     Uma leitura só vale depois de repetir por alguns quadros (o HUD pisca e
     some em transições e menus).
     """
@@ -413,7 +416,10 @@ class LeitorHUD:
     ALMA = (0.187, 0.118, 0.040)  # centro x, centro y, raio
     GEO = (0.286, 0.495, 0.137, 0.181)  # x0, x1, y0, y1
     ESTAVEL = 3  # quadros iguais para aceitar uma leitura
-    RECOMPENSA = {"dano": -1.0, "cura": 0.3, "acerto": 0.3, "geo": 0.5, "parada": -0.2}
+    SUMIDO_MORTE = 30  # quadros sem HUD (~1 s) que, com 1 máscara, indicam morte
+    RECOMPENSA = {
+        "dano": -1.0, "morte": -3.0, "cura": 0.3, "acerto": 0.3, "geo": 0.5, "parada": -0.2,
+    }
 
     def __init__(self):
         self.reiniciar()
@@ -425,6 +431,7 @@ class LeitorHUD:
         self._geo = None
         self._candidato, self._repeticoes = None, 0
         self._geo_cand, self._geo_rep = None, 0
+        self._zeradas = self._sumido = 0
         self.visivel = False
 
     def _caixa(self, cinza, cx, cy, r):
@@ -433,7 +440,7 @@ class LeitorHUD:
         return cinza[max(0, y - r) : y + r + 1, max(0, x - r) : x + r + 1]
 
     def ler(self, quadro):
-        """Leitura crua de um quadro: (hud visível?, máscaras cheias, alma 0..1, assinatura do geo)."""
+        """Leitura crua de um quadro: (hud na tela?, máscaras cheias, alma 0..1, assinatura do geo)."""
         cinza = quadro.astype(np.float32).mean(axis=2)
         h = cinza.shape[0]
         cheias = 0
@@ -447,20 +454,33 @@ class LeitorHUD:
         vaso = self._caixa(cinza, cx, cy, r)
         # O contorno do vaso é sempre claro; sem ele, o HUD não está na tela
         borda = self._caixa(cinza, cx, cy - r * 0.9, 0.006)
-        visivel = bool(borda.size and borda.max() > 120 and cheias > 0)
+        presente = bool(borda.size and borda.max() > 120)
         alma = float((vaso > 150).mean()) if vaso.size else 0.0
         x0, x1, y0, y1 = self.GEO
         geo = cinza[int(y0 * h) : int(y1 * h), int(x0 * h) : int(x1 * h)] > 150
-        return visivel, cheias, alma, geo
+        return presente, cheias, alma, geo
 
     def passo(self, quadro):
         """Devolve (recompensa deste quadro, lista de eventos)."""
-        visivel, cheias, alma, geo = self.ler(quadro)
-        self.visivel = visivel
+        presente, cheias, alma, geo = self.ler(quadro)
+        self.visivel = presente and cheias > 0
         eventos = []
-        if not visivel:
+        if not self.visivel:
             self._repeticoes = self._geo_rep = 0
-            return 0.0, eventos
+            if presente:  # HUD na tela sem nenhuma máscara: morreu
+                self._zeradas += 1
+                if self._zeradas == self.ESTAVEL and self.vida is not None:
+                    eventos.append("morte")
+                    self.vida = None  # a vida de volta ao renascer não é cura
+            else:
+                self._sumido += 1
+            return sum(self.RECOMPENSA[e] for e in eventos), eventos
+
+        # O HUD sumiu com 1 máscara e voltou com mais: morreu e renasceu
+        if self._sumido >= self.SUMIDO_MORTE and self.vida is not None and self.vida <= 1 < cheias:
+            eventos.append("morte")
+            self.vida = None
+        self._zeradas = self._sumido = 0
 
         # Vida: só aceita um valor novo se ele se repetir (evita piscadas)
         if cheias == self._candidato:
@@ -468,7 +488,7 @@ class LeitorHUD:
         else:
             self._candidato, self._repeticoes = cheias, 1
         if self._repeticoes >= self.ESTAVEL and cheias != self.vida:
-            if self.vida is not None:
+            if self.vida is not None:  # None: começo ou depois de morrer, só aceita
                 if cheias < self.vida:
                     eventos += ["dano"] * (self.vida - cheias)
                 else:
@@ -696,27 +716,42 @@ class Torneio:
 
     Todo treino gera uma desafiante (modelo_desafiante.npz); a campeã
     (modelo_mosca.npz) segue sendo a versão que joga. Com o "Controlar jogo"
-    ligado, as duas se alternam em rodadas de RODADA_S. Com MINIMO_S de jogo de
-    cada uma, compara a recompensa por minuto: a desafiante vira campeã se fizer
-    MARGEM a mais; é descartada se fizer MARGEM a menos, ou se chegar a MAXIMO_S
-    sem diferença clara. Descartada, continua guardada no Supabase.
+    ligado, as duas se alternam em rodadas de RODADA_S; cada rodada é uma
+    amostra de recompensa por minuto. Com MINIMO_S e MINIMO_RODADAS de cada:
+    - a desafiante vira campeã se fizer mais de MARGEM a mais E a diferença for
+      maior que 2x a incerteza (variação entre rodadas): não ganha por sorte;
+    - é descartada se fizer MARGEM a menos, ou se chegar a MAXIMO_S sem vencer.
+    Na dúvida, a campeã fica. Descartada, continua guardada no Supabase.
     """
 
     RODADA_S = 60
+    RODADA_MINIMA_S = 20  # rodada interrompida mais curta que isto não vira amostra
     MINIMO_S = 240
-    MAXIMO_S = 600
+    MINIMO_RODADAS = 3
+    MAXIMO_S = 900
     MARGEM = 0.5  # de recompensa por minuto
     PAPEIS = ("campea", "desafiante")
 
     def __init__(self, arquivo=ARQUIVO_TORNEIO, campea=ARQUIVO_MODELO, desafiante=ARQUIVO_DESAFIANTE):
         self.arquivo, self.campea, self.desafiante = Path(arquivo), Path(campea), Path(desafiante)
-        self.estado = {"placar": self._placar_zerado(), "vez": "desafiante", "na_rodada": 0.0,
+        self.estado = {"placar": self._placar_zerado(), "vez": "desafiante",
+                       "rodada": self._rodada_zerada(), "rodadas": self._rodadas_zeradas(),
                        "mosca_desde_treino": 0.0}
         if self.arquivo.exists():
             self.estado.update(json.loads(self.arquivo.read_text()))
 
     def _placar_zerado(self):
         return {papel: {"segundos": 0.0, "recompensa": 0.0} for papel in self.PAPEIS}
+
+    def _rodada_zerada(self):
+        return {"segundos": 0.0, "recompensa": 0.0}
+
+    def _rodadas_zeradas(self):
+        return {papel: [] for papel in self.PAPEIS}  # recompensa/min de cada rodada
+
+    def _zerar_disputa(self):
+        self.estado.update(placar=self._placar_zerado(), vez="desafiante",
+                           rodada=self._rodada_zerada(), rodadas=self._rodadas_zeradas())
 
     def salvar(self):
         self.arquivo.write_text(json.dumps(self.estado))
@@ -727,7 +762,7 @@ class Torneio:
 
     def nova_desafiante(self):
         """Uma desafiante acabou de ser treinada. Sem campeã ainda, ela já assume."""
-        self.estado.update(placar=self._placar_zerado(), vez="desafiante", na_rodada=0.0)
+        self._zerar_disputa()
         self.salvar()
         if not self.campea.exists():
             self._promover()
@@ -742,16 +777,33 @@ class Torneio:
         self.estado["mosca_desde_treino"] += segundos
         if not self.em_disputa:
             return False
-        placar = self.estado["placar"][papel]
-        placar["segundos"] += segundos
-        placar["recompensa"] += recompensa
-        self.estado["na_rodada"] += segundos
-        if self.estado["na_rodada"] >= self.RODADA_S:
-            self.estado["na_rodada"] = 0.0
+        for acumulado in (self.estado["placar"][papel], self.estado["rodada"]):
+            acumulado["segundos"] += segundos
+            acumulado["recompensa"] += recompensa
+        if self.estado["rodada"]["segundos"] >= self.RODADA_S:
+            self.fechar_rodada(papel)
             self.estado["vez"] = "campea" if papel == "desafiante" else "desafiante"
             self.salvar()
             return True
         return False
+
+    def fechar_rodada(self, papel):
+        """Fim de rodada (ou o controle foi desligado no meio): vira uma amostra."""
+        r = self.estado["rodada"]
+        if r["segundos"] >= self.RODADA_MINIMA_S:
+            self.estado["rodadas"][papel].append(r["recompensa"] / r["segundos"] * 60)
+        self.estado["rodada"] = self._rodada_zerada()
+        self.salvar()
+
+    def incerteza(self):
+        """Erro padrão da diferença de recompensa/min, pela variação entre rodadas."""
+        variancia = 0.0
+        for papel in self.PAPEIS:
+            amostras = self.estado["rodadas"][papel]
+            if len(amostras) < 2:
+                return float("inf")
+            variancia += np.var(amostras, ddof=1) / len(amostras)
+        return float(np.sqrt(variancia))
 
     def por_minuto(self, papel):
         p = self.estado["placar"][papel]
@@ -762,10 +814,11 @@ class Torneio:
         if not self.em_disputa:
             return None
         tempos = [self.estado["placar"][p]["segundos"] for p in self.PAPEIS]
-        if min(tempos) < self.MINIMO_S:
+        rodadas = [len(self.estado["rodadas"][p]) for p in self.PAPEIS]
+        if min(tempos) < self.MINIMO_S or min(rodadas) < self.MINIMO_RODADAS:
             return None
         diferenca = self.por_minuto("desafiante") - self.por_minuto("campea")
-        if diferenca > self.MARGEM:
+        if diferenca > self.MARGEM and diferenca > 2 * self.incerteza():
             return "venceu"
         if diferenca < -self.MARGEM or min(tempos) >= self.MAXIMO_S:
             return "perdeu"
@@ -778,7 +831,7 @@ class Torneio:
         else:
             for arquivo in (self.desafiante, self.desafiante.with_suffix(".json")):
                 arquivo.unlink(missing_ok=True)
-        self.estado.update(placar=self._placar_zerado(), vez="desafiante", na_rodada=0.0)
+        self._zerar_disputa()
         self.salvar()
 
     def _promover(self):
@@ -1614,6 +1667,8 @@ class Orquestrador(QtCore.QObject):
             self.jogo.soltar_tudo()
             self._terminar_partida()
             self._parar_gravacao_mosca()
+            if self.torneio is not None and self.torneio.em_disputa:
+                self.torneio.fechar_rodada(self.papel)
 
     # --- torneio: campeã x desafiante, e o ciclo de aprender jogando ---
 
@@ -1666,6 +1721,8 @@ class Orquestrador(QtCore.QObject):
             "por_minuto_campea": round(t.por_minuto("campea"), 2),
             "minutos": round(t.estado["placar"]["desafiante"]["segundos"] / 60, 1),
             "minutos_campea": round(t.estado["placar"]["campea"]["segundos"] / 60, 1),
+            "incerteza": round(min(t.incerteza(), 99.0), 2),
+            "rodadas": {p: [round(r, 2) for r in t.estado["rodadas"][p]] for p in t.PAPEIS},
         }
         nome_d, nome_c = self._nome("desafiante"), self._nome("campea")
         self._terminar_partida()
@@ -1703,7 +1760,9 @@ class Orquestrador(QtCore.QObject):
         for papel in ("desafiante", "campea"):
             minutos = t.estado["placar"][papel]["segundos"] / 60
             partes.append(f"{self._nome(papel)} {t.por_minuto(papel):+.1f}/min ({minutos:.1f} min)")
-        return f"⚔ {self._nome(self.papel)} jogando · " + " × ".join(partes)
+        incerteza = t.incerteza()
+        margem = f" · incerteza ±{2 * incerteza:.1f}" if incerteza != float("inf") else ""
+        return f"⚔ {self._nome(self.papel)} jogando · " + " × ".join(partes) + margem
 
     # --- partidas: cada vez que a mosca joga sozinha vira uma linha no Supabase ---
 
@@ -1758,6 +1817,7 @@ class Orquestrador(QtCore.QObject):
             "geo": p["eventos"]["geo"],
             "curas": p["eventos"]["cura"],
             "paradas": p["eventos"]["parada"],
+            "mortes": p["eventos"]["morte"],
             "uso_teclas": {a: round(float(u), 4) for a, u in zip(ACOES, uso)},
         }))
 
@@ -1889,7 +1949,7 @@ class Orquestrador(QtCore.QObject):
 
     NOMES_EVENTOS = {
         "dano": "tomou dano", "cura": "curou", "acerto": "acertou inimigo", "geo": "pegou geo",
-        "parada": "ficou parada",
+        "parada": "ficou parada", "morte": "morreu",
     }
 
     # Reflexo de sair do lugar: moscas paradas demais fazem movimentos

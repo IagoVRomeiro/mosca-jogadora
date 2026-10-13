@@ -33,10 +33,10 @@ def main():
         s = soma[p["treino_id"]]
         s["partidas"] += 1
         s["minutos"] += p["segundos"] / 60
-        for campo in ("recompensa_total", "danos", "acertos", "geo", "paradas"):
+        for campo in ("recompensa_total", "mortes", "danos", "acertos", "geo", "paradas"):
             s[campo] += p.get(campo) or 0
 
-    print(f"{'versão':<34}{'partidas':>9}{'min':>6}{'recomp/min':>12}"
+    print(f"{'versão':<34}{'partidas':>9}{'min':>6}{'recomp/min':>12}{'mortes/min':>12}"
           f"{'danos/min':>11}{'acertos/min':>13}{'geo/min':>9}{'paradas/min':>13}")
     melhor = None
     for treino_id in sorted(soma, key=lambda t: (t is None, t)):
@@ -47,9 +47,9 @@ def main():
             metodo = (treinos.get(treino_id, {}).get("config") or {}).get("aprendizado", "imitação")
             nome = f"#{treino_id} {metodo}"[:33]
         m = s["minutos"]
-        por_min = {c: s[c] / m for c in ("recompensa_total", "danos", "acertos", "geo", "paradas")}
+        por_min = {c: s[c] / m for c in ("recompensa_total", "mortes", "danos", "acertos", "geo", "paradas")}
         aviso = " (pouco tempo)" if m < MINIMO_MINUTOS else ""
-        print(f"{nome:<34}{int(s['partidas']):>9}{m:>6.1f}{por_min['recompensa_total']:>+12.2f}"
+        print(f"{nome:<34}{int(s['partidas']):>9}{m:>6.1f}{por_min['recompensa_total']:>+12.2f}{por_min['mortes']:>12.2f}"
               f"{por_min['danos']:>11.2f}{por_min['acertos']:>13.2f}{por_min['geo']:>9.2f}"
               f"{por_min['paradas']:>13.2f}{aviso}")
         if m >= MINIMO_MINUTOS and (melhor is None or por_min["recompensa_total"] > melhor[1]):
