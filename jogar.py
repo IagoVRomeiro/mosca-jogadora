@@ -519,6 +519,7 @@ class Imitacao:
         self.media, self.desvio = pesos["media"], pesos["desvio"]
         self.acoes = [str(a) for a in pesos["acoes"]]
         self.n_quadros = int(pesos["n_quadros"])
+        self.metodo = str(pesos["metodo"]) if "metodo" in pesos else "imitação"
         self.treino_id = None  # número do treino no Supabase, se foi registrado
 
     @classmethod
@@ -693,7 +694,9 @@ class CerebroDemo:
     def origem(self):
         if self.modelo is None:
             return "regras fixas (sem treino)"
-        return f"imitação treinada com {self.modelo.n_quadros:,} quadros".replace(",", ".")
+        n = f"{self.modelo.n_quadros:,}".replace(",", ".")
+        treino = f"treino #{self.modelo.treino_id} · " if self.modelo.treino_id else ""
+        return f"{treino}{self.modelo.metodo}, {n} quadros"
 
     # --- estímulos vindos do painel ---
 
