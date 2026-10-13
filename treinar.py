@@ -26,7 +26,7 @@ from datetime import datetime
 import numpy as np
 
 from jogar import (
-    ACOES, ARQUIVO_DESAFIANTE, ATRASO_OLHO, FOVEA, GRADE_FOVEA, GRADE_OLHO, OLHO, PASTA,
+    ACOES, ARQUIVO_DESAFIANTE, QUADRO_MS, TOQUE_S, ATRASO_OLHO, FOVEA, GRADE_FOVEA, GRADE_OLHO, OLHO, PASTA,
     PASTA_GRAVACOES, PASTA_GRAVACOES_MOSCA, VERSAO_OLHO, entrada, retrato,
 )
 from registro import registrar_treino
@@ -66,6 +66,20 @@ def commit_do_codigo():
         return commit + ("+mudancas" if sujo else "")
     except (OSError, subprocess.CalledProcessError):
         return None
+
+
+def fases_de_toque(teclas):
+    """Ataque, esquiva e magia são toques de poucos quadros: marca como "fase"
+    os TOQUE_S seguintes a cada toque. A rede aprende QUANDO atacar (e o painel
+    repete os toques), em vez de tentar acertar o quadro exato do toque."""
+    teclas = teclas.copy()
+    for acao, intervalo in TOQUE_S.items():
+        j = ACOES.index(acao)
+        janela = max(1, round(intervalo * 1000 / QUADRO_MS))
+        soma = np.concatenate([[0], np.cumsum(teclas[:, j] > 0.5)])
+        inicio = np.maximum(np.arange(len(teclas)) + 1 - janela, 0)
+        teclas[:, j] = (soma[1:] - soma[inicio]) > 0
+    return teclas
 
 
 def pesos_por_recompensa(recompensas):
@@ -143,9 +157,8 @@ def carregar_sessoes(pastas):
                 pesos = np.ones(len(olhos), dtype=np.float32)
             if nome.startswith("mosca_"):
                 pesos = pesos * PESO_MOSCA
-            sessoes.append(
-                (nome, np.stack(olhos), np.array(teclas, dtype=np.float32), pesos.astype(np.float32))
-            )
+            teclas = fases_de_toque(np.array(teclas, dtype=np.float32))
+            sessoes.append((nome, np.stack(olhos), teclas, pesos.astype(np.float32)))
     return sessoes
 
 
@@ -370,6 +383,7 @@ def main():
             "peso_quadro": list(PESO_QUADRO),
             "git_commit": commit_do_codigo(),
             "papel": "desafiante", "quadros_mosca": quadros_mosca, "peso_mosca": PESO_MOSCA,
+            "toque_s": TOQUE_S,
         },
         "codigo_versao": versao_do_codigo(),
     }

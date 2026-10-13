@@ -58,6 +58,12 @@ ACOES_JOGO = {
 ACOES = list(ACOES_JOGO)
 ROTULO_TECLA = {nome: a.rotulo for nome, a in ACOES_JOGO.items()}
 OPOSTAS = [("Esquerda", "Direita"), ("Cima", "Baixo")]  # nunca apertadas juntas
+# No Hollow Knight cada golpe precisa de um novo aperto: segurar a tecla dá um
+# golpe só. Enquanto a mosca quer uma destas, a tecla é tocada a cada N segundos.
+TOQUE_S = {"Atacar": 0.3, "Esquiva": 0.6, "Magia Rápida": 0.6}
+DURACAO_TOQUE_S = 0.07
+# O Foco só cura segurado por ~1 s: uma vez apertado, fica pelo menos isto
+SEGURAR_MINIMO_S = {"Foco": 1.5}
 QUADRO_MS = 33  # ~30 quadros por segundo
 PASSOS_FISICA_POR_QUADRO = 50  # passos de física entre um quadro renderizado e outro
 DURACAO_PULSO_S = 1.0
@@ -189,7 +195,9 @@ class CapturaJanela:
         self.janela = None
         self.aviso = None
         self.controlando = False  # só manda teclas quando ligado no painel
-        self.apertadas = set()
+        self.apertadas = set()  # teclas fisicamente apertadas agora
+        self._ativas = set()  # ações que a mosca quer (podem estar entre dois toques)
+        self._desde, self._apertou_em = {}, {}
         self.janelas_proprias = set()  # o painel: pode devolver o foco ao jogo
         self.aviso_controle = None
         self._ultimo_foco = 0.0
@@ -246,6 +254,7 @@ class CapturaJanela:
         except Exception:
             pass
         self.apertadas.clear()
+        self._ativas.clear()
 
     def passo(self, acoes):
         self.aviso_controle = None
@@ -256,8 +265,8 @@ class CapturaJanela:
         # Direções opostas juntas não fazem sentido: fica só a mais forte. A que já
         # está apertada leva vantagem, senão o boneco fica trocando de lado
         for a, b in OPOSTAS:
-            forca_a = acoes[a] + (0.2 if a in self.apertadas else 0.0)
-            forca_b = acoes[b] + (0.2 if b in self.apertadas else 0.0)
+            forca_a = acoes[a] + (0.2 if a in self._ativas else 0.0)
+            forca_b = acoes[b] + (0.2 if b in self._ativas else 0.0)
             desejadas[a if forca_a < forca_b else b] = 0.0
         try:
             foco = self._foco()
@@ -269,15 +278,31 @@ class CapturaJanela:
                     else:
                         self.aviso_controle = "Clique na janela do jogo para a mosca jogar"
                 return
+            agora = time.monotonic()
             for acao in self.TECLAS:
-                limiar = self.SOLTAR if acao in self.apertadas else self.APERTAR
-                apertar = desejadas[acao] > limiar
+                apertar = self._decidir(acao, desejadas[acao], agora)
                 if apertar != (acao in self.apertadas):
                     self._tecla(acao, apertar)
+                    if apertar:
+                        self._apertou_em[acao] = agora
             self.display.flush()
         except Exception:
             self.soltar_tudo()
             self.janela = None
+
+    def _decidir(self, acao, vontade, agora):
+        """A tecla deve estar apertada agora? Histerese na vontade, toques
+        repetidos (TOQUE_S) e tempo mínimo segurada (SEGURAR_MINIMO_S)."""
+        limiar = self.SOLTAR if acao in self._ativas else self.APERTAR
+        ativa = vontade > limiar
+        if ativa and acao not in self._ativas:
+            self._desde[acao] = agora
+        (self._ativas.add if ativa else self._ativas.discard)(acao)
+        if acao in TOQUE_S:
+            return ativa and (agora - self._desde[acao]) % TOQUE_S[acao] < DURACAO_TOQUE_S
+        if acao in SEGURAR_MINIMO_S and not ativa and acao in self.apertadas:
+            return agora - self._apertou_em[acao] < SEGURAR_MINIMO_S[acao]
+        return ativa
 
     def _procurar(self, w):
         try:
