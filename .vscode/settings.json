@@ -1,0 +1,5 @@
+{
+    // O painel, o treino e o FlyGym rodam no .venv-flygym (PyQt6, pyqtgraph, MuJoCo).
+    // O .venv é só do modelo do conectoma (Brian2), no Drosophila_brain_model.
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv-flygym/bin/python"
+}

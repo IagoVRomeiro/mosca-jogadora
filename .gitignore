@@ -1,0 +1,22 @@
+# Segredos
+.env
+
+# Ambientes e caches
+.venv/
+.venv-flygym/
+__pycache__/
+
+# Dados gerados (grandes ou refeitos pelo treino)
+gravacoes/
+modelo_mosca*.npz
+treino.log
+modelo_mosca.json
+
+# Projeto clonado à parte (tem git próprio e ~370 MB de dados do conectoma)
+Drosophila_brain_model/
+
+# Arquivos temporários da CLI do Supabase
+supabase/.temp/
+
+# Vídeos gerados (mosca3d.py)
+*.mp4
