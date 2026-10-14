@@ -370,12 +370,13 @@ class CartaoMosca(QtWidgets.QFrame):
         self.bt_gravar.setObjectName("gravar")
         self.bt_gravar.setToolTip(
             "Você joga e o programa grava a tela e as suas teclas,\n"
-            "para depois treinar a mosca com o treinar.py"
+            "para depois treinar a mosca com o treinar.py\n\nAtalho: Ctrl+Alt+G (o mesmo para parar)"
         )
         self.bt_controlar = QtWidgets.QPushButton("🎮  Controlar jogo")
         self.bt_controlar.setCheckable(True)
         self.bt_controlar.setToolTip(
             "A mosca aperta as teclas no jogo (" + ", ".join(ROTULO_TECLA.values()) + ")"
+            "\n\nAtalho: Ctrl+Alt+C (o mesmo para parar)"
         )
         linha.addWidget(self.bt_evolucao)
         linha.addWidget(self.bt_gravar)
@@ -407,6 +408,11 @@ class CartaoMosca(QtWidgets.QFrame):
         rodape = QtWidgets.QHBoxLayout()
         rodape.addWidget(rotulo("NeuroMechFly · FlyGym · cada pata cuida de até 2 teclas", "fraco"))
         rodape.addStretch()
+        # Os atalhos funcionam com o jogo em foco (atalho_mosca.sh, no GNOME)
+        atalhos = rotulo("⌨  Ctrl+Alt+G gravar  ·  Ctrl+Alt+C mosca joga  ·  Ctrl+Alt+M abrir tudo")
+        atalhos.setStyleSheet(f"color: {COR_TEXTO}; font-size: 12px;")
+        atalhos.setToolTip("O mesmo atalho liga e desliga. Funcionam com o jogo em foco.")
+        rodape.addWidget(atalhos)
         layout.addLayout(rodape)
 
         metricas = QtWidgets.QHBoxLayout()
