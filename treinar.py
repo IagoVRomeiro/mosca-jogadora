@@ -1,4 +1,4 @@
-"""Treina a mosca para imitar as suas partidas gravadas, pesando pela recompensa.
+"""Treina a mosca com as partidas gravadas (suas e dela), pesando pela vantagem.
 
 Uso:
     .venv-flygym/bin/python treinar.py
@@ -8,11 +8,16 @@ rede olho -> interneurônios -> zonas de comando a prever, para cada tela, quais
 teclas você estava apertando, e salva em modelo_mosca.npz. O painel carrega o
 modelo ao abrir.
 
-Imitação ponderada pela recompensa: cada quadro pesa conforme o que aconteceu
-nos ~2 s seguintes (dano, parada, acerto, geo, lidos do HUD na gravação). O que
-levou a coisas boas é imitado com mais força; o que levou a dano ou a ficar
-parado, com menos. É o papel da dopamina: reforçar o que veio antes da
-recompensa. Sessões gravadas antes do leitor de HUD entram com peso 1.
+Imitação ponderada pela vantagem (AWR): cada quadro tem um retorno, a soma
+descontada das recompensas seguintes (dano, morte, parada, presa, acerto, geo,
+sala nova; um evento a ~3 s conta pela metade). Um estimador aprende o retorno
+esperado para cada tipo de tela; o peso do quadro é "foi melhor ou pior que o
+esperado ali". Assim, num trecho difícil a mosca ainda aprende o que fazer de
+melhor ali, em vez de só "não estar ali". É o papel da dopamina: o sinal é a
+surpresa (recompensa acima ou abaixo do esperado), não a recompensa em si.
+
+O "olho" de cada sessão fica guardado em cache_olho/: só sessões novas ou
+alteradas são recalculadas.
 """
 
 import argparse
@@ -42,9 +47,14 @@ TAXA = 1e-3
 VALIDACAO = 0.2  # o fim de cada sessão fica de fora do treino, para medir de verdade
 MINIMO_QUADROS = 300
 PESO_MAXIMO = 3  # peso máximo das teclas raras (ver treinar)
-DESCONTO = 0.98  # por quadro: um evento a ~1 s (30 quadros) conta pela metade
-FORCA_RECOMPENSA = 1.5  # peso = exp(FORCA x recompensa futura), limitado abaixo
+DESCONTO = 0.993  # por quadro: um evento a ~3 s (100 quadros) conta pela metade
+FORCA_VANTAGEM = 1.0  # peso = exp(FORCA x vantagem em desvios-padrão), limitado
 PESO_QUADRO = (0.25, 4.0)  # mínimo e máximo do peso de um quadro
+REGULARIZACAO_VALOR = 0.05  # do estimador de retorno (por quadro de treino)
+SUBAMOSTRA = 2  # usa 1 a cada 2 quadros: vizinhos são quase iguais (menos decoreba)
+RUIDO = 0.1  # ruído nas entradas (já normalizadas) durante o treino
+PASTA_CACHE = PASTA / "cache_olho"
+VERSAO_CACHE = 1  # mude se o que vai no cache mudar
 ARQUIVO_SAIDA = ARQUIVO_DESAFIANTE  # todo treino gera uma desafiante (ver jogar.Torneio)
 ARQUIVO_INFO_MODELO = ARQUIVO_SAIDA.with_suffix(".json")  # qual treino gerou o modelo
 # Partidas da própria mosca: entram com menos peso que as suas (ela erra mais) e
@@ -66,7 +76,7 @@ def commit_do_codigo():
             ["git", "rev-parse", "--short", "HEAD"], cwd=PASTA, capture_output=True, text=True, check=True
         ).stdout.strip()
         sujo = subprocess.run(
-            ["git", "status", "--porcelain", "jogar.py", "treinar.py"], cwd=PASTA,
+            ["git", "status", "--porcelain", "jogar.py", "treinar.py", "mosca"], cwd=PASTA,
             capture_output=True, text=True, check=True,
         ).stdout.strip()
         return commit + ("+mudancas" if sujo else "")
@@ -88,22 +98,21 @@ def fases_de_toque(teclas):
     return teclas
 
 
-def pesos_por_recompensa(recompensas):
-    """Peso de cada quadro pela recompensa descontada dos quadros seguintes."""
+def retornos(recompensas):
+    """Retorno de cada quadro: soma das recompensas seguintes, descontada."""
     futura = np.zeros(len(recompensas), dtype=np.float32)
     acumulada = 0.0
     for i in range(len(recompensas) - 1, -1, -1):
         acumulada = recompensas[i] + DESCONTO * acumulada
         futura[i] = acumulada
-    pesos = np.clip(np.exp(FORCA_RECOMPENSA * futura), *PESO_QUADRO)
-    return pesos / pesos.mean()  # a sessão continua pesando o mesmo no total
+    return futura
 
 
 def versao_do_codigo():
     """Impressão digital do código que treina e roda a mosca (muda a cada edição)."""
     h = hashlib.sha256()
-    for nome in ("jogar.py", "treinar.py"):
-        h.update((PASTA / nome).read_bytes())
+    for arquivo in [PASTA / "jogar.py", PASTA / "treinar.py", *sorted((PASTA / "mosca").glob("*.py"))]:
+        h.update(arquivo.read_bytes())
     return h.hexdigest()[:12]
 
 
@@ -137,50 +146,95 @@ def limpar_partidas_antigas_da_mosca():
     return apagadas
 
 
-def carregar_sessoes(pastas):
-    """Lista de (nome, retratos, teclas, pesos) por sessão, na ordem em que foram
-    gravadas. O retrato é tudo o que o olho extrai de um quadro (ver jogar.retrato)."""
-    sessoes = []
-    # Salas novas: as gravações antigas não marcam; o explorador passa por todas,
-    # em ordem, com uma memória só deste treino (não mexe na memória do painel)
-    explorador = ExploradorSalas(Path(os.devnull + ".npz"))
+def _chave_da_sessao(pasta):
+    """Muda se alguma parte da gravação, o olho ou as ações mudarem."""
+    h = hashlib.sha256(f"{VERSAO_CACHE}|{VERSAO_OLHO}|{','.join(ACOES)}".encode())
+    for arquivo in sorted(pasta.glob("parte_*.npz")):
+        info = arquivo.stat()
+        h.update(f"{arquivo.name}|{info.st_size}|{info.st_mtime_ns}".encode())
+    return h.hexdigest()
+
+
+def processar_sessao(pasta):
+    """O que o treino precisa de uma gravação, do cache se já foi calculado:
+    retratos (olho), teclas (com as fases de toque), recompensa do HUD, punição
+    por ficar presa, entradas de sala (para a memória de salas) e se as salas
+    novas já vieram marcadas na gravação."""
+    PASTA_CACHE.mkdir(exist_ok=True)
+    cache = PASTA_CACHE / f"{pasta.parent.name}_{pasta.name}.npz"
+    chave = _chave_da_sessao(pasta)
+    if cache.exists():
+        with np.load(cache) as dados:
+            if str(dados["chave"]) == chave:
+                return {k: dados[k] for k in dados.files}
+    olhos, teclas, hud, presas, marcadas = [], [], [], [], []
+    entradas_idx, entradas_sig = [], []
+    com_hud = True
+    presa = DetectorPresa()  # recalculada nas gravações antigas, que não marcam
+    salas = ExploradorSalas(Path(os.devnull + ".npz"))  # só para achar as entradas
     i_esq, i_dir = ACOES.index("Esquerda"), ACOES.index("Direita")
-    for nome, pasta in pastas.items():
-        olhos, teclas, recompensas, extra = [], [], [], []
-        com_hud = True
-        presa = DetectorPresa()  # presa também é recalculada nas gravações antigas
-        for arquivo in sorted(pasta.glob("parte_*.npz")):
-            with np.load(arquivo) as parte:
-                if "recompensas" in parte.files:
-                    recompensas.append(parte["recompensas"])
-                else:
-                    com_hud = False
-                acoes = [str(a) for a in parte["acoes"]]
-                colunas = [acoes.index(a) if a in acoes else None for a in ACOES]
-                ja_marcadas = "salas_novas" in parte.files  # gravada já com o explorador
-                presas_marcadas = "presas" in parte.files
-                anterior = None
-                for tela, apertadas in zip(parte["telas"], parte["teclas"]):
-                    olhos.append(retrato(tela, anterior))
-                    teclas.append([apertadas[c] if c is not None else False for c in colunas])
-                    nova = bool(explorador.passo(tela))
-                    t = [apertadas[c] if c is not None else False for c in colunas]
-                    ficou_presa = bool(presa.passo(tela, t[i_esq], t[i_dir], True))
-                    extra.append((RECOMPENSA_SALA if nova and not ja_marcadas else 0.0)
-                                 + (RECOMPENSA_PRESA if ficou_presa and not presas_marcadas else 0.0))
-                    anterior = tela
-        if olhos:
-            extra = np.array(extra, dtype=np.float32)
-            if com_hud and recompensas:
-                pesos = pesos_por_recompensa(np.concatenate(recompensas) + extra)
-            elif extra.any():  # sem HUD: só as salas novas
-                pesos = pesos_por_recompensa(extra)
+    for arquivo in sorted(pasta.glob("parte_*.npz")):
+        with np.load(arquivo) as parte:
+            n = len(parte["teclas"])
+            if "recompensas" in parte.files:
+                hud.append(parte["recompensas"])
             else:
-                pesos = np.ones(len(olhos), dtype=np.float32)
-            if nome.startswith("mosca_"):
-                pesos = pesos * PESO_MOSCA
-            teclas = fases_de_toque(np.array(teclas, dtype=np.float32))
-            sessoes.append((nome, np.stack(olhos), teclas, pesos.astype(np.float32)))
+                com_hud = False
+                hud.append(np.zeros(n, np.float32))
+            acoes = [str(a) for a in parte["acoes"]]
+            colunas = [acoes.index(a) if a in acoes else None for a in ACOES]
+            presas_marcadas = "presas" in parte.files
+            marcadas.append(np.full(n, "salas_novas" in parte.files))
+            anterior = None
+            for tela, apertadas in zip(parte["telas"], parte["teclas"]):
+                olhos.append(retrato(tela, anterior).astype(np.float16))
+                t = [bool(apertadas[c]) if c is not None else False for c in colunas]
+                teclas.append(t)
+                ficou_presa = bool(presa.passo(tela, t[i_esq], t[i_dir], True))
+                presas.append(RECOMPENSA_PRESA if ficou_presa and not presas_marcadas else 0.0)
+                assinatura = salas.entrada_de_sala(tela)
+                if assinatura is not None:
+                    entradas_idx.append(len(olhos) - 1)
+                    entradas_sig.append(assinatura)
+                anterior = tela
+    dados = {
+        "chave": np.array(chave),
+        "retratos": np.stack(olhos) if olhos else np.zeros((0, 2016), np.float16),
+        "teclas": fases_de_toque(np.array(teclas, dtype=np.float32).reshape(-1, len(ACOES))),
+        "hud": np.concatenate(hud).astype(np.float32) if hud else np.zeros(0, np.float32),
+        "com_hud": np.array(com_hud and bool(hud)),
+        "presa": np.array(presas, dtype=np.float32),
+        "marcadas": np.concatenate(marcadas) if marcadas else np.zeros(0, bool),
+        "entradas_idx": np.array(entradas_idx, dtype=np.int64),
+        "entradas_sig": np.array(entradas_sig, dtype=np.float32).reshape(-1, 576),
+    }
+    temporario = cache.with_name(cache.stem + ".tmp.npz")
+    np.savez(temporario, **dados)
+    os.replace(temporario, cache)
+    return dados
+
+
+def carregar_sessoes(pastas):
+    """Sessões em ordem cronológica, cada uma um dict com retratos, teclas e a
+    recompensa por quadro (HUD + presa + salas novas pela memória de salas, que
+    depende da ordem em que as salas foram vistas)."""
+    memoria = ExploradorSalas(Path(os.devnull + ".npz"))  # só deste treino
+    sessoes = []
+    for nome, pasta in pastas.items():
+        d = processar_sessao(pasta)
+        if not len(d["retratos"]):
+            continue
+        sala = np.zeros(len(d["retratos"]), np.float32)
+        for idx, assinatura in zip(d["entradas_idx"], d["entradas_sig"]):
+            if memoria.lembrar(assinatura) and not d["marcadas"][idx]:
+                sala[idx] = RECOMPENSA_SALA  # gravações novas já trazem na recompensa
+        sessoes.append({
+            "nome": nome,
+            "retratos": d["retratos"],
+            "teclas": d["teclas"],
+            "recompensa": d["hud"] + d["presa"] + sala,
+            "da_mosca": nome.startswith("mosca_"),
+        })
     return sessoes
 
 
@@ -225,26 +279,32 @@ class Dados:
     ocuparia alguns GB de memória."""
 
     def __init__(self, sessoes):
-        self.retratos = np.concatenate([r for _, r, _, _ in sessoes])
-        self.teclas = np.concatenate([y for _, _, y, _ in sessoes])
-        self.pesos = np.concatenate([w for _, _, _, w in sessoes])
+        self.retratos = np.concatenate([s["retratos"] for s in sessoes])
+        self.teclas = np.concatenate([s["teclas"] for s in sessoes])
+        self.retorno = np.concatenate([retornos(s["recompensa"]) for s in sessoes])
+        self.fator = np.concatenate(
+            [np.full(len(s["retratos"]), PESO_MOSCA if s["da_mosca"] else 1.0, np.float32) for s in sessoes]
+        )
+        self.sessao = np.concatenate([np.full(len(s["retratos"]), i) for i, s in enumerate(sessoes)])
         passado, treino, valid, inicio = [], [], [], 0
-        for _, r, _, _ in sessoes:
-            n = len(r)
+        for s in sessoes:
+            n = len(s["retratos"])
             idx = np.arange(inicio, inicio + n)
             # No começo da sessão não há passado ainda: usa o quadro mais antigo,
             # como o painel faz com a memória curta ainda enchendo
             passado.append(np.maximum(idx - ATRASO_OLHO, inicio))
             corte = int(n * (1 - VALIDACAO))  # o fim de cada sessão fica para validar
-            treino.append(idx[:corte])
-            valid.append(idx[corte:])
+            treino.append(idx[:corte:SUBAMOSTRA])
+            valid.append(idx[corte::SUBAMOSTRA])
             inicio += n
         self.passado = np.concatenate(passado)
         self.treino, self.valid = np.concatenate(treino), np.concatenate(valid)
+        self.pesos = np.ones(len(self.retratos), np.float32)
         self.media = self.desvio = None
 
     def entrada(self, idx):
-        x = entrada(VERSAO_OLHO, self.retratos[idx], self.retratos[self.passado[idx]])
+        x = entrada(VERSAO_OLHO, self.retratos[idx].astype(np.float32),
+                    self.retratos[self.passado[idx]].astype(np.float32))
         return x if self.media is None else (x - self.media) / self.desvio
 
     def normalizar(self, lote=4096):
@@ -257,6 +317,45 @@ class Dados:
         media = soma / n
         self.desvio = (np.sqrt(np.maximum(soma2 / n - media**2, 0)) + 0.05).astype(np.float32)
         self.media = media.astype(np.float32)
+
+
+def valor_esperado(dados, idx, lote=4096):
+    """Retorno esperado de cada quadro de `idx`, por um estimador linear (ridge)
+    sobre a periferia do olho, em duas metades: cada metade é estimada pelo
+    estimador treinado na outra, para ele não decorar a resposta."""
+    n_x = 2 * GRADE_OLHO[0] * GRADE_OLHO[1]  # periferia: brilho + movimento
+    bloco = (idx // 900) % 2  # blocos de ~30 s alternados entre as duas metades
+    valor = np.zeros(len(idx), np.float32)
+    for metade in (0, 1):
+        ajuste, aplica = idx[bloco == metade], idx[bloco != metade]
+        if not len(ajuste) or not len(aplica):
+            continue
+        xtx = np.zeros((n_x + 1, n_x + 1))
+        xty = np.zeros(n_x + 1)
+        for i in range(0, len(ajuste), lote):
+            parte = ajuste[i : i + lote]
+            x = np.hstack([dados.entrada(parte)[:, :n_x], np.ones((len(parte), 1), np.float32)]).astype(np.float64)
+            xtx += x.T @ x
+            xty += x.T @ dados.retorno[parte]
+        xtx[np.arange(n_x), np.arange(n_x)] += REGULARIZACAO_VALOR * len(ajuste)
+        beta = np.linalg.solve(xtx, xty)
+        for i in range(0, len(aplica), lote):
+            parte = aplica[i : i + lote]
+            x = np.hstack([dados.entrada(parte)[:, :n_x], np.ones((len(parte), 1), np.float32)])
+            valor[np.searchsorted(idx, parte)] = x @ beta
+    return valor
+
+
+def pesar_pela_vantagem(dados):
+    """Peso de cada quadro de treino: exp(FORCA x vantagem), com a vantagem =
+    retorno - esperado, em desvios-padrão; as partidas da mosca valem PESO_MOSCA."""
+    idx = np.sort(dados.treino)
+    vantagem = dados.retorno[idx] - valor_esperado(dados, idx)
+    vantagem /= vantagem.std() + 1e-6
+    pesos = np.clip(np.exp(FORCA_VANTAGEM * vantagem), *PESO_QUADRO)
+    pesos /= pesos.mean()
+    dados.pesos[idx] = pesos * dados.fator[idx]
+    return vantagem
 
 
 class RedeMLP:
@@ -342,6 +441,7 @@ def treinar(dados, arquitetura="mlp"):
         for i in range(0, len(ordem), LOTE):
             idx = ordem[i : i + LOTE]
             x, y, w = dados.entrada(idx), dados.teclas[idx], dados.pesos[idx, None]
+            x = x + rng.normal(0, RUIDO, x.shape).astype(np.float32)  # menos decoreba
             f = rede.frente(x)
             # gradiente da entropia cruzada com peso nos positivos e no quadro
             dz = w * (f["prob"] * (peso_pos * y + 1 - y) - peso_pos * y) / (len(x) * n_sai)
@@ -398,33 +498,28 @@ def main():
     inicio = time.time()
     pastas = pastas_de_sessoes()
     sessoes = carregar_sessoes(pastas)
-    total = sum(len(x) for _, x, _, _ in sessoes)
-    quadros_mosca = sum(len(x) for n, x, _, _ in sessoes if n.startswith("mosca_"))
+    print(f"olho de {len(sessoes)} sessões pronto em {time.time() - inicio:.0f} s (cache em {PASTA_CACHE.name}/)")
+    total = sum(len(s["retratos"]) for s in sessoes)
+    quadros_mosca = sum(len(s["retratos"]) for s in sessoes if s["da_mosca"])
     if total < MINIMO_QUADROS:
         print(
             f"Só {total} quadros gravados (mínimo {MINIMO_QUADROS}). Grave mais partidas com "
             "o botão '⏺ Gravar' do painel."
         )
         return
-    nomes_sessoes = [nome for nome, _, _, _ in sessoes]
-    for nome, x, _, w in sessoes:
-        da_mosca = nome.startswith("mosca_")
-        if da_mosca:
-            w = w / PESO_MOSCA  # o peso fixo da mosca não é sobre recompensa
-        if np.allclose(w, 1):
-            efeito = "sem dados de recompensa (peso 1)"
-        else:
-            efeito = (
-                f"pesos de {w.min():.2f} a {w.max():.2f}; "
-                f"{(w < 0.7).mean():.0%} dos quadros imitados com menos força (vieram antes de dano/parada), "
-                f"{(w > 1.3).mean():.0%} com mais (antes de acerto/geo)"
-            )
-        origem = f" · partida da mosca (peso {PESO_MOSCA})" if da_mosca else ""
-        print(f"sessão {nome}: {len(x):,} quadros ({len(x) / 30 / 60:.1f} min){origem} · {efeito}".replace(",", "."))
-
+    nomes_sessoes = [s["nome"] for s in sessoes]
     dados = Dados(sessoes)
     del sessoes  # os retratos já estão em `dados`; libera a memória
     dados.normalizar()
+    pesar_pela_vantagem(dados)
+    for i, nome in enumerate(nomes_sessoes):
+        idx = np.sort(dados.treino)
+        dentro = dados.sessao[idx] == i
+        w = dados.pesos[idx][dentro] / dados.fator[idx][dentro]
+        origem = f" · partida da mosca (peso {PESO_MOSCA})" if nome.startswith("mosca_") else ""
+        n = int((dados.sessao == i).sum())
+        print(f"sessão {nome}: {n:,} quadros ({n / 30 / 60:.1f} min){origem} · ".replace(",", ".")
+              + f"{(w > 1.3).mean():.0%} melhores que o esperado, {(w < 0.7).mean():.0%} piores")
     print(
         f"\ntreinando com {len(dados.treino):,} quadros, validando com {len(dados.valid):,} "
         f"(olho versão {VERSAO_OLHO}: {dados.entrada(dados.treino[:1]).shape[1]:,} entradas)".replace(",", ".")
@@ -441,7 +536,7 @@ def main():
     np.savez_compressed(
         temporario, **rede.para_salvar(), **extras, media=dados.media, desvio=dados.desvio,
         acoes=np.array(ACOES), n_quadros=total, versao_olho=VERSAO_OLHO, arquitetura=arquitetura,
-        metodo=("conectoma · " if arquitetura == "conectoma" else "") + "imitação + recompensa",
+        metodo=("conectoma · " if arquitetura == "conectoma" else "") + "imitação + vantagem",
     )
     os.replace(temporario, ARQUIVO_SAIDA)
     print(f"\nmodelo salvo em {ARQUIVO_SAIDA.name} ({time.time() - inicio:.0f} s).")
@@ -462,9 +557,9 @@ def main():
             "olho": list(OLHO), "grade_olho": list(GRADE_OLHO), "versao_olho": VERSAO_OLHO,
             "fovea": [FOVEA[0].start, FOVEA[0].stop, FOVEA[1].start, FOVEA[1].stop],
             "grade_fovea": list(GRADE_FOVEA), "atraso_olho": ATRASO_OLHO,
-            "aprendizado": "imitação ponderada pela recompensa",
-            "desconto": DESCONTO, "forca_recompensa": FORCA_RECOMPENSA,
-            "peso_quadro": list(PESO_QUADRO),
+            "aprendizado": "imitação ponderada pela vantagem (AWR)",
+            "desconto": DESCONTO, "forca_vantagem": FORCA_VANTAGEM,
+            "peso_quadro": list(PESO_QUADRO), "subamostra": SUBAMOSTRA, "ruido": RUIDO,
             "git_commit": commit_do_codigo(),
             "papel": "desafiante", "quadros_mosca": quadros_mosca, "peso_mosca": PESO_MOSCA,
             "toque_s": TOQUE_S, "arquitetura": arquitetura,

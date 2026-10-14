@@ -102,7 +102,9 @@ def carregar():
             else:
                 config = treinos.get(tid, {}).get("config") or {}
                 cerebro = "conectoma" if config.get("arquitetura") == "conectoma" else "rede inventada"
-                metodo = "imitação + recompensa" if "recompensa" in config.get("aprendizado", "") else "imitação"
+                aprendizado = config.get("aprendizado", "")
+                metodo = ("vantagem (AWR)" if "vantagem" in aprendizado
+                          else "imitação + recompensa" if "recompensa" in aprendizado else "imitação")
                 nome = f"#{tid} {cerebro}, {metodo}"[:33]
             versoes[tid] = Versao(tid, nome)
         versoes[tid].partidas.append(p)

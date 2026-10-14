@@ -207,28 +207,37 @@ class ExploradorSalas:
         b = b - b.mean()
         return (b / (np.linalg.norm(b) + 1e-6)).astype(np.float32)
 
-    def passo(self, reduzida):
-        """Uma tela (em OLHO). Devolve ["sala_nova"] na entrada de uma sala nova."""
+    def entrada_de_sala(self, reduzida):
+        """A foto de entrada (assinatura) quando a mosca acabou de entrar numa
+        sala; None nos outros quadros. Não consulta a memória."""
         corpo = cinza(reduzida)[20:].mean()  # sem o HUD, no alto da tela
         if corpo < self.ESCURO:
             self._escuro += 1
             self._foto_em = None
-            return []
+            return None
         if self.TRANSICAO[0] <= self._escuro <= self.TRANSICAO[1]:
             self._foto_em = self.ESPERA  # passou de sala: foto daqui a pouco
         self._escuro = 0
         if self._foto_em is None:
-            return []
+            return None
         self._foto_em -= 1
         if self._foto_em > 0:
-            return []
+            return None
         self._foto_em = None
-        assinatura = self.foto(reduzida)
+        return self.foto(reduzida)
+
+    def lembrar(self, assinatura):
+        """True se a sala é nova (e passa a ser lembrada); False se já conhecida."""
         if len(self.memoria) and float((self.memoria @ assinatura).max()) >= self.LIMITE:
-            return []  # sala conhecida
+            return False
         self.memoria = np.vstack([self.memoria, assinatura])[-self.MAXIMO_SALAS :]
         self.alterada = True
-        return ["sala_nova"]
+        return True
+
+    def passo(self, reduzida):
+        """Uma tela (em OLHO). Devolve ["sala_nova"] na entrada de uma sala nova."""
+        assinatura = self.entrada_de_sala(reduzida)
+        return ["sala_nova"] if assinatura is not None and self.lembrar(assinatura) else []
 
     def salvar(self):
         if self.alterada:

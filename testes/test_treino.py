@@ -12,14 +12,54 @@ from mosca.jogo import JogoDemo
 from mosca.olho import ATRASO_OLHO, entrada, reduzir, retrato, tamanho_entrada
 
 
+def sessao(retratos, teclas, recompensa, nome="s", da_mosca=False):
+    return {"nome": nome, "retratos": retratos.astype(np.float16), "teclas": teclas,
+            "recompensa": recompensa.astype(np.float32), "da_mosca": da_mosca}
+
+
 class TestePesos(unittest.TestCase):
-    def test_dano_enfraquece_o_que_veio_antes_e_geo_reforca(self):
-        r = np.zeros(300, np.float32)
-        r[100], r[200] = -1.0, 0.5
-        w = treinar.pesos_por_recompensa(r)
-        self.assertLess(w[95], 0.5)  # logo antes do dano: "não copie"
-        self.assertGreater(w[195], 1.5)  # logo antes do geo: "copie"
-        self.assertAlmostEqual(float(w.mean()), 1.0, places=5)
+    def test_retorno_desconta_o_futuro(self):
+        r = np.zeros(400, np.float32)
+        r[300] = -1.0
+        g = treinar.retornos(r)
+        self.assertAlmostEqual(float(g[300]), -1.0)
+        self.assertAlmostEqual(float(g[200]), -(treinar.DESCONTO ** 100), places=5)  # ~3 s antes: metade
+        self.assertAlmostEqual(float(g[301]), 0.0)
+
+    def test_vantagem_num_trecho_dificil(self):
+        """Num trecho difícil tudo leva a dano, mas a melhor ação ali ainda ganha
+        mais peso que a pior; num trecho fácil, idem."""
+        rng = np.random.default_rng(0)
+        n = 3600
+        dificil = (np.arange(n) // 600) % 2 == 1  # alterna trechos de 20 s
+        boa = rng.random(n) < 0.5
+        retratos = rng.normal(0, 0.05, (n, 2016)).astype(np.float32)
+        retratos[:, :100] += dificil[:, None] * 1.0  # o trecho difícil "parece" diferente
+        recompensa = np.zeros(n, np.float32)
+        recompensa[dificil] -= 0.05  # apanha o tempo todo
+        recompensa[boa] += 0.3  # a ação boa ajuda (como um acerto), em qualquer trecho
+        teclas = np.zeros((n, len(ACOES)), np.float32)
+        dados = treinar.Dados([sessao(retratos, teclas, recompensa)])
+        dados.normalizar()
+        treinar.pesar_pela_vantagem(dados)
+        idx = np.sort(dados.treino)
+        w, d, b = dados.pesos[idx], dificil[idx], boa[idx]
+        self.assertGreater(w[d & b].mean(), w[d & ~b].mean())  # difícil: boa > ruim
+        self.assertGreater(w[d & b].mean(), 0.8)  # e não é jogada fora só por ser difícil
+        self.assertGreater(w[~d & b].mean(), w[~d & ~b].mean())
+        self.assertAlmostEqual(float(w.mean()), 1.0, places=4)
+
+    def test_partidas_da_mosca_pesam_menos(self):
+        n = 600
+        zeros = np.zeros((n, 2016), np.float32)
+        dados = treinar.Dados([
+            sessao(zeros, np.zeros((n, len(ACOES)), np.float32), np.zeros(n)),
+            sessao(zeros, np.zeros((n, len(ACOES)), np.float32), np.zeros(n), "mosca_x", True),
+        ])
+        dados.normalizar()
+        treinar.pesar_pela_vantagem(dados)
+        idx = np.sort(dados.treino)
+        self.assertAlmostEqual(float(dados.pesos[idx][dados.sessao[idx] == 1].mean()), treinar.PESO_MOSCA, places=4)
 
     def test_fases_de_ataque(self):
         y = np.zeros((40, len(ACOES)), np.float32)
@@ -42,11 +82,9 @@ class TesteOlho(unittest.TestCase):
         self.assertEqual(entrada(2, np.stack([r, r]), np.stack([r, r])).shape, (2, tamanho_entrada(2)))
 
     def test_passado_nao_atravessa_sessoes(self):
-        sessoes = [
-            ("a", np.zeros((10, 2016), np.float32), np.zeros((10, len(ACOES)), np.float32), np.ones(10)),
-            ("b", np.ones((10, 2016), np.float32), np.zeros((10, len(ACOES)), np.float32), np.ones(10)),
-        ]
-        dados = treinar.Dados(sessoes)
+        y = np.zeros((10, len(ACOES)), np.float32)
+        dados = treinar.Dados([sessao(np.zeros((10, 2016)), y, np.zeros(10), "a"),
+                               sessao(np.ones((10, 2016)), y, np.zeros(10), "b")])
         self.assertEqual(dados.passado[10], 10)  # 1º quadro da sessão b olha para ele mesmo
         self.assertEqual(dados.passado[19], 19 - ATRASO_OLHO)
 
@@ -66,7 +104,7 @@ def dados_do_jogo_demo():
         acoes = {a: 0.0 for a in ACOES}
         acoes["Direita" if (i // 70) % 2 == 0 else "Esquerda"] = 1.0
         jogo.passo(acoes)
-    dados = treinar.Dados([("demo", np.stack(retratos), np.stack(teclas), np.ones(900, np.float32))])
+    dados = treinar.Dados([sessao(np.stack(retratos), np.stack(teclas), np.zeros(900), "demo")])
     dados.normalizar()
     return dados
 
@@ -86,6 +124,7 @@ class TesteAprende(unittest.TestCase):
         self.assertGreater(acerto, 0.9)
 
         # e o modelo salvo é lido pelo painel do mesmo jeito
+        idx_valid = dados.valid
         modelo = Imitacao({
             **rede.para_salvar(), **(extras or {}), "media": dados.media, "desvio": dados.desvio,
             "acoes": np.array(ACOES), "n_quadros": 900, "versao_olho": 2, "arquitetura": arquitetura,
