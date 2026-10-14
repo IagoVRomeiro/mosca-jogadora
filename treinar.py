@@ -15,6 +15,7 @@ parado, com menos. É o papel da dopamina: reforçar o que veio antes da
 recompensa. Sessões gravadas antes do leitor de HUD entram com peso 1.
 """
 
+import argparse
 import hashlib
 import json
 import os
@@ -25,12 +26,15 @@ from datetime import datetime
 
 import numpy as np
 
-from mosca.config import ACOES, ARQUIVO_DESAFIANTE, PASTA, PASTA_GRAVACOES, PASTA_GRAVACOES_MOSCA, QUADRO_MS, TOQUE_S
+from mosca.config import ACOES, ARQUIVO_DESAFIANTE, ARQUIVO_MODELO, PASTA, PASTA_GRAVACOES, PASTA_GRAVACOES_MOSCA, QUADRO_MS, TOQUE_S
+from mosca.conectoma import RedeConectoma, carregar_conectoma
 from mosca.olho import ATRASO_OLHO, FOVEA, GRADE_FOVEA, GRADE_OLHO, OLHO, VERSAO_OLHO, entrada, retrato
 from registro import registrar_treino
 
 INTERNEURONIOS = 64
 EPOCAS = 40
+EPOCAS_CONECTOMA = 20  # a rede do conectoma é maior: ~20 s por época
+PACIENCIA = 3  # para depois de tantas épocas sem melhorar na validação
 LOTE = 256
 TAXA = 1e-3
 VALIDACAO = 0.2  # o fim de cada sessão fica de fora do treino, para medir de verdade
@@ -235,68 +239,117 @@ class Dados:
         self.media = media.astype(np.float32)
 
 
-def frente(p, x):
-    h = np.maximum(0, x @ p["w1"] + p["b1"])
-    return h, 1 / (1 + np.exp(-np.clip(h @ p["w2"] + p["b2"], -30, 30)))
+class RedeMLP:
+    """A rede inventada: olho -> INTERNEURONIOS interneurônios -> teclas.
+    Mesma interface da RedeConectoma (frente, gradientes, limitar, para_salvar)."""
+
+    def __init__(self, p):
+        self.p = p
+
+    @classmethod
+    def iniciar(cls, n_ent, n_sai, rng):
+        return cls({
+            "w1": rng.normal(0, np.sqrt(2 / n_ent), (n_ent, INTERNEURONIOS)).astype(np.float32),
+            "b1": np.zeros(INTERNEURONIOS, np.float32),
+            "w2": rng.normal(0, np.sqrt(1 / INTERNEURONIOS), (INTERNEURONIOS, n_sai)).astype(np.float32),
+            "b2": np.zeros(n_sai, np.float32),
+        })
+
+    def frente(self, x):
+        h = np.maximum(0, x @ self.p["w1"] + self.p["b1"])
+        prob = 1 / (1 + np.exp(-np.clip(h @ self.p["w2"] + self.p["b2"], -30, 30)))
+        return {"x": x, "h": h, "prob": prob}
+
+    def prever(self, x):
+        return self.frente(x)["prob"]
+
+    def gradientes(self, f, dz):
+        dh = (dz @ self.p["w2"].T) * (f["h"] > 0)
+        return {"w2": f["h"].T @ dz, "b2": dz.sum(0), "w1": f["x"].T @ dh, "b1": dh.sum(0)}
+
+    regularizar = {}
+
+    def limitar(self):
+        pass
+
+    def para_salvar(self):
+        return dict(self.p)
 
 
-def prever(p, dados, idx, lote=4096):
-    return np.concatenate([frente(p, dados.entrada(idx[i : i + lote]))[1] for i in range(0, len(idx), lote)])
+def arquitetura_da_campea():
+    """O treino automático segue a arquitetura da campeã (muda se outra vencer)."""
+    if not ARQUIVO_MODELO.exists():
+        return "mlp"
+    with np.load(ARQUIVO_MODELO) as modelo:
+        return str(modelo["arquitetura"]) if "arquitetura" in modelo.files else "mlp"
 
 
-def perda(p, dados, idx, peso_pos, ponderar=False):
-    prob = np.clip(prever(p, dados, idx), 1e-6, 1 - 1e-6)
+def criar_rede(arquitetura, n_ent, n_sai, rng):
+    if arquitetura == "conectoma":
+        return RedeConectoma.iniciar(n_ent, n_sai, carregar_conectoma(), rng)
+    return RedeMLP.iniciar(n_ent, n_sai, rng)
+
+
+def prever(rede, dados, idx, lote=4096):
+    return np.concatenate([rede.prever(dados.entrada(idx[i : i + lote])) for i in range(0, len(idx), lote)])
+
+
+def perda(rede, dados, idx, peso_pos, ponderar=False):
+    prob = np.clip(prever(rede, dados, idx), 1e-6, 1 - 1e-6)
     y = dados.teclas[idx]
     por_quadro = -(peso_pos * y * np.log(prob) + (1 - y) * np.log(1 - prob)).mean(axis=1)
     return float(np.average(por_quadro, weights=dados.pesos[idx] if ponderar else None))
 
 
-def treinar(dados):
+def treinar(dados, arquitetura="mlp"):
     """Cada quadro de treino pesa pela recompensa futura (dados.pesos). A
-    validação não usa peso: mede o quanto ela imita você, para comparar treinos."""
+    validação não usa peso: mede o quanto ela imita você, para comparar treinos.
+    Devolve a rede da melhor época (pela validação) e a perda dela."""
     rng = np.random.default_rng(0)
     n_ent, n_sai = dados.entrada(dados.treino[:1]).shape[1], dados.teclas.shape[1]
-    p = {
-        "w1": rng.normal(0, np.sqrt(2 / n_ent), (n_ent, INTERNEURONIOS)).astype(np.float32),
-        "b1": np.zeros(INTERNEURONIOS, np.float32),
-        "w2": rng.normal(0, np.sqrt(1 / INTERNEURONIOS), (INTERNEURONIOS, n_sai)).astype(np.float32),
-        "b2": np.zeros(n_sai, np.float32),
-    }
+    rede = criar_rede(arquitetura, n_ent, n_sai, rng)
+    epocas = EPOCAS_CONECTOMA if arquitetura == "conectoma" else EPOCAS
     # Teclas raras pesam mais, senão a rede só aprende "nunca aperta"; mas pouco
     # mais (até 3x), senão ela aperta à toa teclas que não dá para prever
     frac = dados.teclas[dados.treino].mean(axis=0)
     peso_pos = np.clip((1 - frac) / np.maximum(frac, 1e-3), 1, PESO_MAXIMO).astype(np.float32)
+    p = rede.p
     m = {k: np.zeros_like(v) for k, v in p.items()}
     v = {k: np.zeros_like(v) for k, v in p.items()}
-    melhor, melhor_p, passo = np.inf, None, 0
-    for epoca in range(EPOCAS):
+    melhor, melhor_p, melhor_epoca, passo = np.inf, None, 0, 0
+    for epoca in range(epocas):
         ordem = rng.permutation(dados.treino)
         for i in range(0, len(ordem), LOTE):
             idx = ordem[i : i + LOTE]
             x, y, w = dados.entrada(idx), dados.teclas[idx], dados.pesos[idx, None]
-            h, prob = frente(p, x)
+            f = rede.frente(x)
             # gradiente da entropia cruzada com peso nos positivos e no quadro
-            dz2 = w * (prob * (peso_pos * y + 1 - y) - peso_pos * y) / (len(x) * n_sai)
-            dh = (dz2 @ p["w2"].T) * (h > 0)
-            grad = {"w2": h.T @ dz2, "b2": dz2.sum(0), "w1": x.T @ dh, "b1": dh.sum(0)}
+            dz = w * (f["prob"] * (peso_pos * y + 1 - y) - peso_pos * y) / (len(x) * n_sai)
+            grad = rede.gradientes(f, dz)
             passo += 1
             for k in p:  # Adam
                 m[k] = 0.9 * m[k] + 0.1 * grad[k]
                 v[k] = 0.999 * v[k] + 0.001 * grad[k] ** 2
                 mh, vh = m[k] / (1 - 0.9**passo), v[k] / (1 - 0.999**passo)
-                p[k] -= (TAXA * mh / (np.sqrt(vh) + 1e-8)).astype(np.float32)
-        pv = perda(p, dados, dados.valid, peso_pos)
+                passo_k = mh / (np.sqrt(vh) + 1e-8) + rede.regularizar.get(k, 0) * p[k]  # L2 (AdamW)
+                p[k] -= (TAXA * passo_k).astype(np.float32)
+            rede.limitar()
+        pv = perda(rede, dados, dados.valid, peso_pos)
         amostra = rng.choice(dados.treino, min(5000, len(dados.treino)), replace=False)
-        pt = perda(p, dados, amostra, peso_pos, ponderar=True)
-        print(f"  época {epoca + 1:2d}/{EPOCAS}: perda treino {pt:.4f} · validação {pv:.4f}")
+        pt = perda(rede, dados, amostra, peso_pos, ponderar=True)
+        print(f"  época {epoca + 1:2d}/{epocas}: perda treino {pt:.4f} · validação {pv:.4f}")
         if pv < melhor:
-            melhor, melhor_p = pv, {k: a.copy() for k, a in p.items()}
-    return melhor_p, melhor
+            melhor, melhor_p, melhor_epoca = pv, {k: a.copy() for k, a in p.items()}, epoca
+        elif epoca - melhor_epoca >= PACIENCIA:
+            print(f"  parando: {PACIENCIA} épocas sem melhorar (fica a época {melhor_epoca + 1})")
+            break
+    rede.p.update(melhor_p)
+    return rede, melhor
 
 
-def relatorio(p, dados):
+def relatorio(rede, dados):
     """Compara a mosca com um "chute" que sempre faz a coisa mais comum."""
-    prev = prever(p, dados, dados.valid) > 0.5
+    prev = prever(rede, dados, dados.valid) > 0.5
     real = dados.teclas[dados.valid] > 0.5
     metricas = {}
     print(f"\n  {'tecla':<20}{'uso':>7}{'acerto mosca':>14}{'acerto chute':>14}{'pega quando você aperta':>26}")
@@ -315,6 +368,13 @@ def relatorio(p, dados):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--arquitetura", choices=["mlp", "conectoma"], default=None,
+        help="cérebro a treinar (padrão: o mesmo da campeã atual)",
+    )
+    arquitetura = parser.parse_args().arquitetura or arquitetura_da_campea()
+    print(f"cérebro: {arquitetura}")
     inicio = time.time()
     pastas = pastas_de_sessoes()
     sessoes = carregar_sessoes(pastas)
@@ -349,14 +409,19 @@ def main():
         f"\ntreinando com {len(dados.treino):,} quadros, validando com {len(dados.valid):,} "
         f"(olho versão {VERSAO_OLHO}: {dados.entrada(dados.treino[:1]).shape[1]:,} entradas)".replace(",", ".")
     )
-    p, perda_validacao = treinar(dados)
-    metricas = relatorio(p, dados)
+    rede, perda_validacao = treinar(dados, arquitetura)
+    metricas = relatorio(rede, dados)
 
     # Salva num temporário e troca de uma vez: o painel nunca lê um modelo pela metade
     temporario = ARQUIVO_SAIDA.with_name(ARQUIVO_SAIDA.stem + ".tmp.npz")
-    np.savez(
-        temporario, **p, media=dados.media, desvio=dados.desvio, acoes=np.array(ACOES),
-        n_quadros=total, metodo="imitação + recompensa", versao_olho=VERSAO_OLHO,
+    extras = {}
+    if arquitetura == "conectoma":  # nomes dos grupos: o painel acende os neurônios reais
+        conectoma = carregar_conectoma()
+        extras = {f"grupos_{k}": conectoma[f"grupos_{k}"] for k in ("visual", "central", "descendente")}
+    np.savez_compressed(
+        temporario, **rede.para_salvar(), **extras, media=dados.media, desvio=dados.desvio,
+        acoes=np.array(ACOES), n_quadros=total, versao_olho=VERSAO_OLHO, arquitetura=arquitetura,
+        metodo=("conectoma · " if arquitetura == "conectoma" else "") + "imitação + recompensa",
     )
     os.replace(temporario, ARQUIVO_SAIDA)
     print(f"\nmodelo salvo em {ARQUIVO_SAIDA.name} ({time.time() - inicio:.0f} s).")
@@ -367,8 +432,9 @@ def main():
         "minutos": round(total / 30 / 60, 2),
         "quadros_validacao": len(dados.valid),
         "perda_validacao": round(float(perda_validacao), 5),
-        "epocas": EPOCAS,
-        "interneuronios": INTERNEURONIOS,
+        "epocas": EPOCAS_CONECTOMA if arquitetura == "conectoma" else EPOCAS,
+        # no conectoma, os "interneurônios" são os grupos centrais
+        "interneuronios": INTERNEURONIOS if arquitetura == "mlp" else int(rede.p["bc"].shape[0]),
         "sessoes": nomes,
         "metricas": metricas,
         "config": {
@@ -381,7 +447,7 @@ def main():
             "peso_quadro": list(PESO_QUADRO),
             "git_commit": commit_do_codigo(),
             "papel": "desafiante", "quadros_mosca": quadros_mosca, "peso_mosca": PESO_MOSCA,
-            "toque_s": TOQUE_S,
+            "toque_s": TOQUE_S, "arquitetura": arquitetura,
         },
         "codigo_versao": versao_do_codigo(),
     }

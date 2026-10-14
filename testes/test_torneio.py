@@ -93,6 +93,19 @@ class TesteTorneio(unittest.TestCase):
         self.assertEqual(reaberto.estado["placar"], t.estado["placar"])
         self.assertEqual(reaberto.estado["rodadas"], t.estado["rodadas"])
 
+    def test_desafiante_nova_feita_fora_do_painel_zera_o_placar(self):
+        import json
+        (self.pasta / "desafiante.json").write_text(json.dumps({"treino_id": 8}))
+        t = self.novo()
+        for _ in range(int(90 / QUADRO_S)):
+            t.contar(t.quem_joga(), QUADRO_S, -0.01)
+        t.salvar()
+        self.assertGreater(self.novo().estado["placar"]["campea"]["segundos"], 0)  # mesma: mantém
+        (self.pasta / "desafiante.json").write_text(json.dumps({"treino_id": 9}))
+        reaberto = self.novo()
+        self.assertEqual(reaberto.estado["placar"]["campea"]["segundos"], 0)
+        self.assertEqual(reaberto.estado["desafiante_id"], 9)
+
     def test_rodada_interrompida_curta_nao_conta(self):
         t = self.novo()
         for _ in range(int(10 / QUADRO_S)):  # 10 s e desligou

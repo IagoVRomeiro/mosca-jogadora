@@ -1,12 +1,18 @@
-"""O cérebro da mosca. Hoje: regiões inventadas + a rede de imitação aprendida.
-É aqui que o conectoma de verdade (Drosophila_brain_model) vai entrar, mantendo
-o mesmo método `passo(imagem) -> (disparos, ações)`."""
+"""O cérebro da mosca no painel: os neurônios desenhados, o que eles disparam e as
+ações que saem dele (`passo(imagem) -> (disparos, ações)`).
+
+Com os dados do conectoma (preparar_conectoma.py), é o cérebro real: neurônios do
+FlyWire nas posições de verdade, lobos ópticos vendo o jogo, os grupos da rede do
+conectoma acendendo, zonas de comando nos neurônios descendentes e a dopamina nos
+PAM/PPL1 reais. Sem eles, um cérebro desenhado (formas inventadas).
+"""
 
 import collections
 
 import numpy as np
 
-from .config import ACOES_JOGO, DURACAO_PULSO_S, QUADRO_MS
+from .conectoma import ARQUIVO_CONECTOMA, carregar_conectoma
+from .config import ACOES, ACOES_JOGO, DURACAO_PULSO_S, QUADRO_MS
 from .olho import ATRASO_OLHO, GRADE_OLHO, _N_PERIFERIA, entrada, reduzir, retrato
 
 
@@ -36,58 +42,157 @@ def forma_cerebro(n, rng):
     return pos + rng.normal(0, 0.008, pos.shape)
 
 
+class FormaReal:
+    """Neurônios reais do desenho, em coordenadas do painel (x de -1,45 a 1,45)."""
+
+    CAMADAS = ("visual", "central", "descendente")
+
+    def __init__(self, conectoma):
+        pos = conectoma["desenho_posicao"]
+        x0, x1 = np.percentile(pos[:, 0], [0.5, 99.5])
+        y0, y1 = np.percentile(pos[:, 1], [0.5, 99.5])
+        escala = 2.9 / (x1 - x0)
+        # FlyWire: y cresce para baixo (ventral); no painel, y cresce para cima
+        self.posicoes = np.column_stack(
+            [(pos[:, 0] - (x0 + x1) / 2) * escala, -(pos[:, 1] - (y0 + y1) / 2) * escala]
+        ).astype(np.float32)
+        self.classe = conectoma["desenho_classe"]
+        self.tipo = conectoma["desenho_tipo"]
+        self.grupo = {k: conectoma[f"desenho_grupo_{k}"] for k in self.CAMADAS}
+        self.nomes_grupos = {k: conectoma[f"grupos_{k}"] for k in self.CAMADAS}
+
+
 class CerebroDemo:
-    """Rede de taxa de disparo com regiões inventadas.
+    """Rede de taxa de disparo sobre os neurônios desenhados.
 
     - Lobos ópticos: cada neurônio "olha" para um pedaço da imagem do jogo
       (retinotopia) e dispara com o movimento ali.
     - Zonas de comando (uma por ação): recebem o que você pintar/pulsar no
-      painel e, de olho no jogo, ou regras fixas (sem treino) ou a rede de
-      imitação treinada com as suas partidas (`modelo`). A taxa média de cada
-      zona vira a ação.
+      painel e, de olho no jogo, regras fixas (sem treino) ou o modelo treinado.
+      A taxa média de cada zona vira a ação.
+    - Com o modelo do conectoma, cada neurônio real acende com a atividade do
+      seu grupo na rede.
     """
 
-    ZONAS = {nome: a.zona for nome, a in ACOES_JOGO.items()}
+    ZONAS = {nome: a.zona for nome, a in ACOES_JOGO.items()}  # cérebro desenhado
     # Neurônios de dopamina do corpo de cogumelo: na mosca real, os PAM sinalizam
-    # recompensa e os PPL1, punição. Aqui piscam com os eventos do jogo (HUD).
-    DOPAMINA = {"PAM": (-0.13, 0.43, 0.07), "PPL1": (0.13, 0.43, 0.07)}
+    # recompensa e os PPL1, punição. Piscam com os eventos do jogo (HUD).
+    DOPAMINA = {"PAM": (-0.13, 0.43, 0.07), "PPL1": (0.13, 0.43, 0.07)}  # desenhado
     DURACAO_DOPAMINA_S = 0.6
     GRADE = (GRADE_OLHO[0], GRADE_OLHO[1] // 2)  # resolução do olho em cada metade
     ESPONTANEA = 0.3  # Hz
+    GRUPOS_POR_ACAO = 3  # neurônios descendentes reais de cada zona de comando
+    ATIVIDADE_HZ = 60  # taxa de um grupo no máximo de atividade
 
-    def __init__(self, n=14000, dt=QUADRO_MS / 1000, modelo=None):
-        self.n, self.dt = n, dt
-        self.modelo = modelo
+    def __init__(self, n=14000, dt=QUADRO_MS / 1000, modelo=None, real=None):
+        """`real`: usar o cérebro real (padrão: se os dados do conectoma existirem)."""
+        self.dt = dt
         self.rng = np.random.default_rng(0)
-        self.posicoes = forma_cerebro(n, self.rng)
+        if real is None:
+            real = ARQUIVO_CONECTOMA.exists()
+        self.real = FormaReal(carregar_conectoma()) if real else None
+        if self.real is not None:
+            self.posicoes = self.real.posicoes
+            classe = self.real.classe
+            optico = (classe == "optic") | (classe == "visual_projection")
+            tipo = self.real.tipo
+            self.dopamina = {
+                "PAM": np.flatnonzero(np.char.startswith(tipo, "PAM")),
+                "PPL1": np.flatnonzero(np.char.startswith(tipo, "PPL1")),
+            }
+        else:
+            self.posicoes = forma_cerebro(n, self.rng)
+            x, y = self.posicoes.T
+            optico = np.abs(x) > 0.55
+            self.dopamina = {
+                nome: np.flatnonzero((x - cx) ** 2 + (y - cy) ** 2 < r**2)
+                for nome, (cx, cy, r) in self.DOPAMINA.items()
+            }
+        self.n = len(self.posicoes)
         x, y = self.posicoes.T
-
-        self.zona = {
-            nome: np.flatnonzero((x - cx) ** 2 + (y - cy) ** 2 < r**2)
-            for nome, (cx, cy, r) in self.ZONAS.items()
-        }
-        self.dopamina = {
-            nome: np.flatnonzero((x - cx) ** 2 + (y - cy) ** 2 < r**2)
-            for nome, (cx, cy, r) in self.DOPAMINA.items()
-        }
-        self.optico_esq = np.flatnonzero(x < -0.55)
-        self.optico_dir = np.flatnonzero(x > 0.55)
+        self.optico_esq = np.flatnonzero(optico & (x < 0))
+        self.optico_dir = np.flatnonzero(optico & (x >= 0))
 
         # Retinotopia: posição no lobo -> célula da grade na metade da imagem
         linhas, colunas = self.GRADE
-        lin = np.clip(((0.6 - y) / 1.2 * linhas).astype(int), 0, linhas - 1)
-        col_ext = np.clip(((np.abs(x) - 0.5) / 0.95 * colunas).astype(int), 0, colunas - 1)
+        lobo = np.concatenate([self.optico_esq, self.optico_dir])
+        y0, y1 = np.percentile(y[lobo], [2, 98]) if len(lobo) else (-0.6, 0.6)
+        ax0, ax1 = np.percentile(np.abs(x[lobo]), [2, 98]) if len(lobo) else (0.5, 1.45)
+        lin = np.clip(((y1 - y) / (y1 - y0) * linhas).astype(int), 0, linhas - 1)
+        col_ext = np.clip(((np.abs(x) - ax0) / (ax1 - ax0) * colunas).astype(int), 0, colunas - 1)
         col = np.where(x < 0, colunas - 1 - col_ext, colunas + col_ext)  # borda = periferia
         self.celula = lin * (2 * colunas) + col
 
+        self._escala = {k: 1e-3 for k in FormaReal.CAMADAS}
+        self.versao_zonas = 0
+        self._modelo = None
+        self.modelo = modelo  # monta as zonas de comando
         self.reiniciar()
+
+    # --- zonas de comando ---
+
+    @property
+    def modelo(self):
+        return self._modelo
+
+    @modelo.setter
+    def modelo(self, modelo):
+        """Trocar o cérebro treinado muda quem são os neurônios de cada zona."""
+        self._modelo = modelo
+        self._ligado_ao_conectoma = (
+            self.real is not None and modelo is not None
+            and getattr(modelo, "arquitetura", "mlp") == "conectoma"
+            and all(np.array_equal(modelo.grupos[k], self.real.nomes_grupos[k]) for k in FormaReal.CAMADAS)
+        )
+        self.zona = self._zonas_de_comando()
+        self._em_zona = np.zeros(self.n, bool)
+        for idx in self.zona.values():
+            self._em_zona[idx] = True
+        self.versao_zonas += 1
+
+    def _zonas_de_comando(self):
+        if self.real is None:  # cérebro desenhado: zonas em lugares fixos
+            x, y = self.posicoes.T
+            return {
+                nome: np.flatnonzero((x - cx) ** 2 + (y - cy) ** 2 < r**2)
+                for nome, (cx, cy, r) in self.ZONAS.items()
+            }
+        grupo_d = self.real.grupo["descendente"]
+        if self._ligado_ao_conectoma:
+            # Os descendentes reais que mais empurram cada tecla na rede treinada;
+            # cada grupo vai para uma tecla só (rodadas: cada tecla pega o seu melhor)
+            leitura = self._modelo.rede.p["R"]  # descendentes x teclas
+            no_desenho = np.isin(np.arange(leitura.shape[0]), grupo_d)
+            livres, zonas = no_desenho.copy(), {a: [] for a in ACOES}
+            for _ in range(self.GRUPOS_POR_ACAO):
+                for acao in ACOES:
+                    j = self._modelo.acoes.index(acao)
+                    candidatos = np.where(livres, leitura[:, j], -np.inf)
+                    g = int(np.argmax(candidatos))
+                    zonas[acao].append(g)
+                    livres[g] = False
+            return {a: np.flatnonzero(np.isin(grupo_d, gs)) for a, gs in zonas.items()}
+        # Sem o modelo do conectoma: os descendentes divididos em regiões (ilustrativo)
+        dn = np.flatnonzero(grupo_d >= 0)
+        pos = self.posicoes[dn]
+        centros = pos[np.linspace(0, len(dn) - 1, len(ACOES)).astype(int)]
+        for _ in range(20):  # k-médias
+            perto = np.argmin(((pos[:, None] - centros[None]) ** 2).sum(-1), axis=1)
+            centros = np.array([pos[perto == k].mean(0) if (perto == k).any() else centros[k]
+                                for k in range(len(ACOES))])
+        ordem = np.argsort(centros[:, 0])  # da esquerda para a direita
+        return {acao: dn[perto == ordem[i]] for i, acao in enumerate(ACOES)}
+
+    def centro(self, indices):
+        """Onde escrever o rótulo de uma zona (centro dos seus neurônios)."""
+        return self.posicoes[indices].mean(axis=0) if len(indices) else np.zeros(2)
 
     def reiniciar(self):
         self.taxas = np.full(self.n, self.ESPONTANEA)  # Hz
         self.selecao = np.zeros(self.n, dtype=bool)
         self.pulso_selecao_ate = 0.0
-        self.pulso_zona_ate = {nome: 0.0 for nome in self.ZONAS}
-        self.dopamina_ate = {nome: 0.0 for nome in self.DOPAMINA}
+        self.pulso_zona_ate = {nome: 0.0 for nome in self.zona}
+        self.dopamina_ate = {nome: 0.0 for nome in self.dopamina}
         self.disparos = np.array([], dtype=int)
         self.reduzida = None  # última tela vista, em OLHO (o gravador reaproveita)
         self.retratos = collections.deque(maxlen=ATRASO_OLHO + 1)  # memória curta do olho
@@ -116,9 +221,7 @@ class CerebroDemo:
         self.pulso_zona_ate[nome] = self.t + DURACAO_PULSO_S
 
     def recompensa(self, valor):
-        """Evento do jogo: positivo acende os PAM, negativo os PPL1.
-
-        Por enquanto é só o sinal: nada aprende com ele ainda."""
+        """Evento do jogo: positivo acende os PAM, negativo os PPL1."""
         if valor:
             self.dopamina_ate["PAM" if valor > 0 else "PPL1"] = self.t + self.DURACAO_DOPAMINA_S
 
@@ -130,6 +233,16 @@ class CerebroDemo:
         return mask
 
     # --- simulação ---
+
+    def _acender_grupos(self, alvo, atividades):
+        """Cada neurônio real acende com a atividade do seu grupo na rede (fora
+        das zonas de comando, que seguem as teclas)."""
+        for camada in FormaReal.CAMADAS:
+            a = atividades[camada]
+            self._escala[camada] = max(0.98 * self._escala[camada], float(a.max()), 1e-3)
+            g = self.real.grupo[camada]
+            sel = (g >= 0) & ~self._em_zona
+            alvo[sel] += self.ATIVIDADE_HZ * a[g[sel]] / self._escala[camada]
 
     def passo(self, imagem):
         """Recebe a imagem do jogo; devolve (índices que dispararam, ações 0..1)."""
@@ -147,11 +260,14 @@ class CerebroDemo:
         optico = np.concatenate([self.optico_esq, self.optico_dir])
         alvo[optico] += 150 * movimento[self.celula[optico]]
         if self.modelo is not None:
-            # A rede treinada decide quanto cada zona de comando recebe
+            # O modelo treinado decide quanto cada zona de comando recebe
             x = entrada(self.modelo.versao_olho, atual, self.retratos[0])
-            for nome, p in zip(self.modelo.acoes, self.modelo.prever(x)):
+            atividades = self.modelo.atividades(x)
+            for nome, p in zip(self.modelo.acoes, atividades["prob"]):
                 if nome in self.zona:
                     alvo[self.zona[nome]] += 40 * p
+            if self._ligado_ao_conectoma:
+                self._acender_grupos(alvo, atividades)
         else:
             esq = self.taxas[self.optico_esq].mean()
             dir_ = self.taxas[self.optico_dir].mean()
@@ -166,7 +282,7 @@ class CerebroDemo:
 
         self.disparos = np.flatnonzero(self.rng.random(self.n) < self.taxas * self.dt)
         acoes = {
-            nome: float(np.clip((self.taxas[idx].mean() - self.ESPONTANEA) / 40, 0, 1))
+            nome: float(np.clip((self.taxas[idx].mean() - self.ESPONTANEA) / 40, 0, 1)) if len(idx) else 0.0
             for nome, idx in self.zona.items()
         }
         return self.disparos, acoes

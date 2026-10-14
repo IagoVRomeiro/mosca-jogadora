@@ -1,4 +1,4 @@
-"""Treino: pesos pela recompensa, fases de ataque, olho e uma rede que aprende."""
+"""Treino: pesos pela recompensa, fases de ataque, olho e as redes que aprendem."""
 
 import unittest
 
@@ -6,6 +6,7 @@ import numpy as np
 
 import treinar
 from mosca.aprendizado import Imitacao
+from mosca.conectoma import ARQUIVO_CONECTOMA
 from mosca.config import ACOES
 from mosca.jogo import JogoDemo
 from mosca.olho import ATRASO_OLHO, entrada, reduzir, retrato, tamanho_entrada
@@ -50,44 +51,62 @@ class TesteOlho(unittest.TestCase):
         self.assertEqual(dados.passado[19], 19 - ATRASO_OLHO)
 
 
+def dados_do_jogo_demo():
+    """No jogo demo, o "jogador" anda para a direita quando o boneco está à esquerda."""
+    jogo = JogoDemo()
+    retratos, teclas, anterior = [], [], None
+    for i in range(900):
+        tela = reduzir(jogo.quadro())
+        retratos.append(retrato(tela, anterior))
+        anterior = tela
+        y = np.zeros(len(ACOES), np.float32)
+        y[ACOES.index("Direita")] = jogo.x < 240
+        y[ACOES.index("Esquerda")] = jogo.x >= 240
+        teclas.append(y)
+        acoes = {a: 0.0 for a in ACOES}
+        acoes["Direita" if (i // 70) % 2 == 0 else "Esquerda"] = 1.0
+        jogo.passo(acoes)
+    dados = treinar.Dados([("demo", np.stack(retratos), np.stack(teclas), np.ones(900, np.float32))])
+    dados.normalizar()
+    return dados
+
+
 class TesteAprende(unittest.TestCase):
-    def test_rede_aprende_uma_regra_simples(self):
-        """No jogo demo, "jogador" anda para a direita quando o boneco está à esquerda."""
-        jogo, rng = JogoDemo(), np.random.default_rng(0)
-        retratos, teclas, anterior = [], [], None
-        for i in range(900):
-            tela = reduzir(jogo.quadro())
-            retratos.append(retrato(tela, anterior))
-            anterior = tela
-            y = np.zeros(len(ACOES), np.float32)
-            y[ACOES.index("Direita")] = jogo.x < 240
-            y[ACOES.index("Esquerda")] = jogo.x >= 240
-            teclas.append(y)
-            acoes = {a: 0.0 for a in ACOES}
-            acoes["Direita" if (i // 70) % 2 == 0 else "Esquerda"] = 1.0
-            jogo.passo(acoes)
-        dados = treinar.Dados([("demo", np.stack(retratos), np.stack(teclas), np.ones(900, np.float32))])
-        dados.normalizar()
-        epocas, treinar.EPOCAS = treinar.EPOCAS, 10
+    def aprende(self, arquitetura, epocas, extras=None):
+        dados = dados_do_jogo_demo()
+        antes = treinar.EPOCAS, treinar.EPOCAS_CONECTOMA
+        treinar.EPOCAS = treinar.EPOCAS_CONECTOMA = epocas
         try:
-            p, _ = treinar.treinar(dados)
+            rede, _ = treinar.treinar(dados, arquitetura)
         finally:
-            treinar.EPOCAS = epocas
-        prev = treinar.prever(p, dados, dados.valid) > 0.5
+            treinar.EPOCAS, treinar.EPOCAS_CONECTOMA = antes
+        prev = treinar.prever(rede, dados, dados.valid) > 0.5
         real = dados.teclas[dados.valid] > 0.5
         acerto = (prev[:, ACOES.index("Direita")] == real[:, ACOES.index("Direita")]).mean()
         self.assertGreater(acerto, 0.9)
 
         # e o modelo salvo é lido pelo painel do mesmo jeito
         modelo = Imitacao({
-            **p, "media": dados.media, "desvio": dados.desvio, "acoes": np.array(ACOES),
-            "n_quadros": 900, "versao_olho": 2,
+            **rede.para_salvar(), **(extras or {}), "media": dados.media, "desvio": dados.desvio,
+            "acoes": np.array(ACOES), "n_quadros": 900, "versao_olho": 2, "arquitetura": arquitetura,
         })
-        x = dados.entrada(dados.valid[:5])
+        idx = dados.valid[:5]
         np.testing.assert_allclose(
-            modelo.prever(entrada(2, dados.retratos[dados.valid[:5]], dados.retratos[dados.passado[dados.valid[:5]]])),
-            treinar.frente(p, x)[1], rtol=1e-4, atol=1e-5,
+            modelo.prever(entrada(2, dados.retratos[idx], dados.retratos[dados.passado[idx]])),
+            rede.prever(dados.entrada(idx)), rtol=1e-4, atol=1e-5,
         )
+        return modelo
+
+    def test_rede_inventada_aprende_uma_regra_simples(self):
+        self.aprende("mlp", 10)
+
+    @unittest.skipUnless(ARQUIVO_CONECTOMA.exists(), "rode preparar_conectoma.py antes")
+    def test_cerebro_do_conectoma_aprende_uma_regra_simples(self):
+        conectoma = np.load(ARQUIVO_CONECTOMA)
+        grupos = {f"grupos_{k}": conectoma[f"grupos_{k}"] for k in ("visual", "central", "descendente")}
+        modelo = self.aprende("conectoma", 10, grupos)
+        ativ = modelo.atividades(np.zeros(modelo.w1.shape[0], np.float32))
+        self.assertEqual(len(ativ["descendente"]), len(grupos["grupos_descendente"]))
 
 
 if __name__ == "__main__":

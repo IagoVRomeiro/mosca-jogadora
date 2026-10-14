@@ -168,15 +168,14 @@ class CartaoCerebro(QtWidgets.QFrame):
             self.camada_pam, self.camada_ppl1,
         ):
             self.vista.addItem(item)
-        for nome, texto in (("PAM", "+"), ("PPL1", "−")):
-            cx, cy, _ = cerebro.DOPAMINA[nome]
+        # Rótulos no centro dos neurônios de cada zona (mudam se o cérebro trocar)
+        self.rotulos = {}
+        for nome, texto in [("PAM", "+"), ("PPL1", "−"), *ROTULO_TECLA.items()]:
             txt = pg.TextItem(texto, color=(200, 205, 225, 170), anchor=(0.5, 0.5))
-            txt.setPos(cx, cy)
             self.vista.addItem(txt)
-        for nome, (cx, cy, _) in cerebro.ZONAS.items():
-            txt = pg.TextItem(ROTULO_TECLA[nome], color=(200, 205, 225, 170), anchor=(0.5, 0.5))
-            txt.setPos(cx, cy)
-            self.vista.addItem(txt)
+            self.rotulos[nome] = txt
+        self._versao_zonas = None
+        self.posicionar_rotulos()
         for texto, x in (("E", -1.42), ("D", 1.42)):
             txt = pg.TextItem(texto, color=COR_TEXTO_FRACO, anchor=(0.5, 0.5))
             txt.setPos(x, -0.72)
@@ -278,7 +277,17 @@ class CartaoCerebro(QtWidgets.QFrame):
         texto = f"{n:,} neurônios selecionados".replace(",", ".")
         self.subtitulo.setText(f"{texto} · cérebro: {self.cerebro.origem}")
 
+    def posicionar_rotulos(self):
+        c = self.cerebro
+        for nome, txt in self.rotulos.items():
+            indices = c.dopamina[nome] if nome in c.dopamina else c.zona.get(nome, [])
+            txt.setPos(*c.centro(indices))
+            txt.setVisible(len(indices) > 0)
+        self._versao_zonas = c.versao_zonas
+
     def atualizar(self):
+        if self.cerebro.versao_zonas != self._versao_zonas:
+            self.posicionar_rotulos()
         pos = self.cerebro.posicoes
         # Selecionados aparecem roxos; durante o pulso, tudo que está sendo estimulado
         self.camada_estimulo.setData(pos=pos[self.cerebro.selecao | self.cerebro.estimulados()])

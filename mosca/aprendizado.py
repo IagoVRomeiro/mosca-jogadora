@@ -10,19 +10,29 @@ from pathlib import Path
 import numpy as np
 
 from .config import ACOES, ARQUIVO_DESAFIANTE, ARQUIVO_MODELO, ARQUIVO_TORNEIO, PASTA_GRAVACOES
+from .conectoma import CAMADAS_CONECTOMA, RedeConectoma
 from .olho import cinza, tamanho_entrada
 
 
 class Imitacao:
-    """Rede pequena olho -> interneurônios -> zonas de comando.
+    """O cérebro treinado: olho -> ... -> zonas de comando. Duas arquiteturas:
 
-    Treinada pelo `treinar.py` com as suas partidas gravadas: aprende, para cada
-    tela, qual tecla você estaria apertando.
+    - "mlp": rede pequena olho -> 64 interneurônios inventados -> teclas;
+    - "conectoma": a fiação real da mosca (ver mosca/conectoma.py).
+
+    Treinado pelo `treinar.py` com as partidas gravadas (suas e da mosca).
     """
 
     def __init__(self, pesos):
-        self.w1, self.b1 = pesos["w1"], pesos["b1"]
-        self.w2, self.b2 = pesos["w2"], pesos["b2"]
+        self.arquitetura = str(pesos["arquitetura"]) if "arquitetura" in pesos else "mlp"
+        if self.arquitetura == "conectoma":
+            nomes = ["A", "a", "bc", "bd", "R", "r", *CAMADAS_CONECTOMA]
+            self.rede = RedeConectoma({k: pesos[k] for k in nomes})
+            self.w1 = pesos["A"]  # entrada: confere o olho abaixo
+            self.grupos = {k: pesos[f"grupos_{k}"] for k in ("visual", "central", "descendente")}
+        else:
+            self.w1, self.b1 = pesos["w1"], pesos["b1"]
+            self.w2, self.b2 = pesos["w2"], pesos["b2"]
         self.media, self.desvio = pesos["media"], pesos["desvio"]
         self.acoes = [str(a) for a in pesos["acoes"]]
         self.n_quadros = int(pesos["n_quadros"])
@@ -48,10 +58,18 @@ class Imitacao:
     def interneuronios(self, x):
         return np.maximum(0, ((x - self.media) / self.desvio) @ self.w1 + self.b1)
 
+    def atividades(self, x):
+        """Atividade de cada camada (conectoma: visual, central, descendente) e as
+        probabilidades das teclas. O painel acende os neurônios reais com isto."""
+        if self.arquitetura == "conectoma":
+            f = self.rede.frente((x - self.media) / self.desvio)
+            return {"visual": f["v"], "central": f["c2"], "descendente": f["d"], "prob": f["prob"]}
+        z = self.interneuronios(x) @ self.w2 + self.b2
+        return {"prob": 1 / (1 + np.exp(-np.clip(z, -30, 30)))}
+
     def prever(self, x):
         """Probabilidade de cada tecla estar apertada, na ordem de self.acoes."""
-        z = self.interneuronios(x) @ self.w2 + self.b2
-        return 1 / (1 + np.exp(-np.clip(z, -30, 30)))
+        return self.atividades(x)["prob"]
 
 
 class Gravador:
@@ -148,6 +166,10 @@ class Torneio:
                        "mosca_desde_treino": 0.0}
         if self.arquivo.exists():
             self.estado.update(json.loads(self.arquivo.read_text()))
+        # Desafiante treinada fora do painel (treinar.py à mão): o placar era de outra
+        if self.em_disputa and self.estado.get("desafiante_id") != self._id_desafiante():
+            self._zerar_disputa()
+            self.salvar()
 
     def _placar_zerado(self):
         return {papel: {"segundos": 0.0, "recompensa": 0.0} for papel in self.PAPEIS}
@@ -158,9 +180,18 @@ class Torneio:
     def _rodadas_zeradas(self):
         return {papel: [] for papel in self.PAPEIS}  # recompensa/min de cada rodada
 
+    def _id_desafiante(self):
+        """Número (ou data) da desafiante, pelo arquivo de informação do treino."""
+        info = self.desafiante.with_suffix(".json")
+        if not info.exists():
+            return None
+        dados = json.loads(info.read_text())
+        return dados.get("treino_id") or info.stat().st_mtime
+
     def _zerar_disputa(self):
         self.estado.update(placar=self._placar_zerado(), vez="desafiante",
-                           rodada=self._rodada_zerada(), rodadas=self._rodadas_zeradas())
+                           rodada=self._rodada_zerada(), rodadas=self._rodadas_zeradas(),
+                           desafiante_id=self._id_desafiante())
 
     def salvar(self):
         self.arquivo.write_text(json.dumps(self.estado))

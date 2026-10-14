@@ -133,8 +133,11 @@ def main():
     rng = np.random.default_rng(0)
     com_posicao = np.flatnonzero(anotacoes.pos_x.notna().to_numpy())
     amostra = np.sort(rng.choice(com_posicao, min(AMOSTRA_DESENHO, len(com_posicao)), replace=False))
-    # garante todos os descendentes e boa parte dos visuais no desenho
-    amostra = np.union1d(amostra, camadas["descendente"][0])
+    # garante no desenho todos os descendentes (saída) e os neurônios de dopamina
+    # do corpo de cogumelo (PAM: recompensa, PPL1: punição)
+    tipos = anotacoes.cell_type.fillna("").to_numpy().astype(str)
+    dopamina = np.flatnonzero(np.char.startswith(tipos, "PAM") | np.char.startswith(tipos, "PPL1"))
+    amostra = np.union1d(np.union1d(amostra, camadas["descendente"][0]), dopamina)
     posicao = anotacoes[["pos_x", "pos_y"]].to_numpy(np.float32)[amostra]
     classe = anotacoes.super_class.fillna("na").to_numpy()[amostra].astype(str)
     grupo_no_desenho = {}
@@ -151,6 +154,7 @@ def main():
         **{f"tamanho_{k}": np.bincount(g, minlength=len(nomes)) for k, (_, nomes, g) in camadas.items()},
         **{f"desenho_grupo_{k}": v for k, v in grupo_no_desenho.items()},
         desenho_posicao=posicao, desenho_classe=classe, desenho_flywire_id=ids[amostra],
+        desenho_tipo=tipos[amostra],
         versao_flywire=783,
     )
     tamanho = ARQUIVO_SAIDA.stat().st_size / 1e6
