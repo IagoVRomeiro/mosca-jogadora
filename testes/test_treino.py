@@ -10,7 +10,8 @@ from mosca.conectoma import ARQUIVO_CONECTOMA
 from mosca.config import ACOES
 from mosca.jogo import JogoDemo
 from mosca.olho import (
-    ATRASO_OLHO, VERSAO_OLHO, entrada, lembrar, memorias_da_sessao, reduzir, retrato, tamanho_entrada,
+    ATRASO_OLHO, VERSAO_OLHO, entrada, espelhar, espelhar_memoria, lembrar, memorias_da_sessao, reduzir,
+    retrato, tamanho_entrada,
 )
 
 
@@ -50,6 +51,15 @@ class TestePesos(unittest.TestCase):
         self.assertGreater(w[d & b].mean(), 0.8)  # e não é jogada fora só por ser difícil
         self.assertGreater(w[~d & b].mean(), w[~d & ~b].mean())
         self.assertAlmostEqual(float(w.mean()), 1.0, places=4)
+
+    def test_julgados_pela_tela_pesam_menos(self):
+        n = 600
+        zeros = np.zeros((n, 2016), np.float32)
+        s = sessao(zeros, np.zeros((n, len(ACOES)), np.float32), np.zeros(n))
+        s["peso"] = np.where(np.arange(n) < n // 2, 1.0, treinar.PESO_TELA).astype(np.float32)
+        dados = treinar.Dados([s])
+        self.assertAlmostEqual(float(dados.fator[0]), 1.0)
+        self.assertAlmostEqual(float(dados.fator[-1]), treinar.PESO_TELA)
 
     def test_partidas_da_mosca_pesam_menos(self):
         n = 600
@@ -209,6 +219,17 @@ class TesteOlho(unittest.TestCase):
         self.assertGreater(lenta, rapida)  # tau 4 s: lembra mais
         x = entrada(VERSAO_OLHO, escuro, escuro, lote[-1])
         self.assertGreater(x[-1], 0.5)  # "a cena mudou" em relação ao que lembra
+
+    def test_espelho_e_a_tela_espelhada(self):
+        """Espelhar o que o olho extraiu dá o mesmo que extrair da tela espelhada."""
+        rng = np.random.default_rng(0)
+        telas = rng.integers(0, 255, (4, 90, 160), dtype=np.uint8)
+        retratos = np.stack([retrato(t, a) for t, a in zip(telas[1:], telas[:-1])])
+        de_espelho = np.stack([retrato(t[:, ::-1], a[:, ::-1]) for t, a in zip(telas[1:], telas[:-1])])
+        np.testing.assert_allclose(espelhar(retratos), de_espelho, atol=1e-6)
+        np.testing.assert_allclose(espelhar_memoria(memorias_da_sessao(retratos)),
+                                   memorias_da_sessao(de_espelho), atol=1e-5)
+        np.testing.assert_array_equal(espelhar(espelhar(retratos)), retratos)  # duas vezes: volta
 
     def test_passado_nao_atravessa_sessoes(self):
         y = np.zeros((10, len(ACOES)), np.float32)

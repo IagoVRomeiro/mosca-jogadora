@@ -46,7 +46,7 @@ from mosca.conectoma import CAMADAS_CONECTOMA, RedeConectoma, carregar_conectoma
 from mosca.estimulos import DetectorLoop, DetectorPresa, ExploradorSalas, LeitorHUD
 from mosca.olho import (
     ATRASO_OLHO, FOVEA, GRADE_FOVEA, GRADE_OLHO, MEMORIA_S, OLHO, VERSAO_OLHO, VERSAO_RETRATO, entrada,
-    memorias_da_sessao, retrato,
+    espelhar, espelhar_memoria, memorias_da_sessao, retrato,
 )
 from registro import registrar_treino
 
@@ -61,6 +61,7 @@ PACIENCIA = 3  # para depois de tantas épocas sem melhorar na validação
 MELHORA_MINIMA = 0.002
 TAXA_AJUSTE = 3e-4
 PRIMEIRA_CAMADA = {"mlp": ("w1", "b1"), "conectoma": ("A", "a")}
+I_ESQ, I_DIR = ACOES.index("Esquerda"), ACOES.index("Direita")
 ULTIMA_CAMADA = {"mlp": ("w2", "b2"), "conectoma": ("R", "r")}  # uma coluna por ação
 NADA_NOVO = 3  # código de saída: treinou e não aprendeu nada mensurável
 LOTE = 256
@@ -75,7 +76,7 @@ REGULARIZACAO_VALOR = 0.05  # do estimador de retorno (por quadro de treino)
 SUBAMOSTRA = 2  # usa 1 a cada 2 quadros: vizinhos são quase iguais (menos decoreba)
 RUIDO = 0.1  # ruído nas entradas (já normalizadas) durante o treino
 PASTA_CACHE = PASTA / "cache_olho"
-VERSAO_CACHE = 8  # mude se o que vai no cache mudar
+VERSAO_CACHE = 9  # mude se o que vai no cache mudar
 ARQUIVO_SAIDA = ARQUIVO_DESAFIANTE  # todo treino gera uma desafiante (ver jogar.Torneio)
 ARQUIVO_INFO_MODELO = ARQUIVO_SAIDA.with_suffix(".json")  # qual treino gerou o modelo
 # Partidas da própria mosca: entram com menos peso que as suas (ela erra mais) e
@@ -84,6 +85,13 @@ PESO_MOSCA = 0.5
 # Correção ao vivo (você assumiu quando a mosca errou): mostra o certo
 # justamente onde ela erra, mas não tanto que uma correção ruim domine
 PESO_CORRECAO = 1.5
+# Quadros julgados pela tela (sem o plugin do jogo): a leitura perdia a maioria
+# dos golpes e não via inimigo morto, então ensinam o contrário das novas. Ainda
+# ensinam a se mover; nas recompensas, pesam menos
+PESO_TELA = 0.5
+# Metade de cada lote do treino vai espelhada (Esquerda <-> Direita): o jogo é de
+# rolagem lateral, e assim cada minuto gravado vale quase por dois
+ESPELHAR = 0.5
 RECOMPENSA_SALA = LeitorHUD.RECOMPENSA["sala_nova"]
 RECOMPENSA_PRESA = LeitorHUD.RECOMPENSA["presa"]
 RECOMPENSA_MORTE = LeitorHUD.RECOMPENSA["morte"]
@@ -199,7 +207,7 @@ def processar_sessao(pasta):
         with np.load(cache) as dados:
             if str(dados["chave"]) == chave:
                 return {k: dados[k] for k in dados.files}
-    olhos, teclas, hud, presas, marcadas = [], [], [], [], []
+    olhos, teclas, hud, presas, marcadas, pelo_jogo = [], [], [], [], [], []
     entradas_idx, entradas_sig = [], []
     com_hud = True
     presa = DetectorPresa()  # recalculada nas gravações antigas, que não marcam
@@ -240,6 +248,7 @@ def processar_sessao(pasta):
                     gravado = float(parte["valor_loop"]) if "valor_loop" in parte.files else -0.3
                     hud[-1] += (RECOMPENSA_LOOP - gravado) * parte["loops"]
             marcadas.append(np.full(n, "salas_novas" in parte.files))
+            pelo_jogo.append(quadros_com_plugin(parte) if "eventos" in parte.files else np.zeros(n, bool))
             anterior = None
             # presa pela posição real (plugin) já está na recompensa; só sem ele pela tela
             presa_pela_tela = ~quadros_com_plugin(parte) if "eventos" in parte.files else np.ones(n, bool)
@@ -263,6 +272,7 @@ def processar_sessao(pasta):
         "hud": np.concatenate(hud).astype(np.float32) if hud else np.zeros(0, np.float32),
         "com_hud": np.array(com_hud and bool(hud)),
         "presa": np.array(presas, dtype=np.float32),
+        "pelo_jogo": np.concatenate(pelo_jogo) if pelo_jogo else np.zeros(0, bool),
         "marcadas": np.concatenate(marcadas) if marcadas else np.zeros(0, bool),
         "entradas_idx": np.array(entradas_idx, dtype=np.int64),
         "entradas_sig": np.array(entradas_sig, dtype=np.float32).reshape(-1, 576),
@@ -371,7 +381,7 @@ def carregar_sessoes(pastas):
             "teclas": d["teclas"],
             "recompensa": d["hud"] + d["presa"] + sala,
             "da_mosca": nome.startswith("mosca_"),
-            "peso": peso_da_sessao(nome),
+            "peso": peso_da_sessao(nome) * np.where(d["pelo_jogo"], 1.0, PESO_TELA).astype(np.float32),
         })
     return sessoes
 
@@ -429,7 +439,8 @@ class Dados:
         self.teclas = np.concatenate([s["teclas"] for s in sessoes])
         self.retorno = np.concatenate([retornos(s["recompensa"]) for s in sessoes])
         self.fator = np.concatenate(
-            [np.full(len(s["retratos"]), s.get("peso", PESO_MOSCA if s["da_mosca"] else 1.0), np.float32)
+            [np.broadcast_to(np.asarray(s.get("peso", PESO_MOSCA if s["da_mosca"] else 1.0), np.float32),
+                             (len(s["retratos"]),))
              for s in sessoes]
         )
         self.sessao = np.concatenate([np.full(len(s["retratos"]), i) for i, s in enumerate(sessoes)])
@@ -449,9 +460,15 @@ class Dados:
         self.pesos = np.ones(len(self.retratos), np.float32)
         self.media = self.desvio = None
 
-    def entrada(self, idx):
-        x = entrada(VERSAO_OLHO, self.retratos[idx].astype(np.float32),
-                    self.retratos[self.passado[idx]].astype(np.float32), self.memoria[idx].astype(np.float32))
+    def entrada(self, idx, espelho=None):
+        """`espelho`: quais quadros do lote vão espelhados (no treino)."""
+        atual = self.retratos[idx].astype(np.float32)
+        passado = self.retratos[self.passado[idx]].astype(np.float32)
+        memoria = self.memoria[idx].astype(np.float32)
+        if espelho is not None and espelho.any():
+            atual[espelho], passado[espelho] = espelhar(atual[espelho]), espelhar(passado[espelho])
+            memoria[espelho] = espelhar_memoria(memoria[espelho])
+        x = entrada(VERSAO_OLHO, atual, passado, memoria)
         return x if self.media is None else (x - self.media) / self.desvio
 
     def normalizar(self, lote=4096):
@@ -673,7 +690,9 @@ def treinar(dados, arquitetura="mlp", base=None):
         ordem = rng.permutation(dados.treino)
         for i in range(0, len(ordem), LOTE):
             idx = ordem[i : i + LOTE]
-            x, y, w = dados.entrada(idx), dados.teclas[idx], dados.pesos[idx, None]
+            espelho = rng.random(len(idx)) < ESPELHAR
+            x, y, w = dados.entrada(idx, espelho), dados.teclas[idx].copy(), dados.pesos[idx, None]
+            y[np.ix_(espelho, [I_ESQ, I_DIR])] = y[np.ix_(espelho, [I_DIR, I_ESQ])]
             x = x + rng.normal(0, RUIDO, x.shape).astype(np.float32)  # menos decoreba
             f = rede.frente(x)
             # gradiente da entropia cruzada com peso nos positivos e no quadro
@@ -817,7 +836,7 @@ def main():
             "git_commit": commit_do_codigo(),
             "papel": "desafiante", "quadros_mosca": quadros_mosca, "peso_mosca": PESO_MOSCA,
             "quadros_correcao": quadros_correcao,
-            "peso_correcao": PESO_CORRECAO,
+            "peso_correcao": PESO_CORRECAO, "peso_tela": PESO_TELA, "espelhar": ESPELHAR,
             "toque_s": TOQUE_S, "arquitetura": arquitetura,
             "partiu_de": base_id,
         },

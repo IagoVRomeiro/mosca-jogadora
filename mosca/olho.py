@@ -144,6 +144,35 @@ def memorias_da_sessao(retratos):
     return np.concatenate(partes, axis=-1).astype(np.float32)
 
 
+# --- espelho (treino): o jogo é de rolagem lateral, o que vale indo para a
+# direita vale, espelhado, indo para a esquerda ---
+
+def _colunas_invertidas(inicio, linhas, colunas):
+    return (np.arange(linhas * colunas).reshape(linhas, colunas)[:, ::-1].ravel() + inicio)
+
+
+_P = GRADE_OLHO[0] * GRADE_OLHO[1]
+_F = GRADE_FOVEA[0] * GRADE_FOVEA[1]
+# a fóvea (colunas 32-128 de 160) é centrada: espelha nela mesma
+ESPELHO_RETRATO = np.concatenate([
+    _colunas_invertidas(0, *GRADE_OLHO), _colunas_invertidas(_P, *GRADE_OLHO),
+    _colunas_invertidas(2 * _P, *GRADE_FOVEA), _colunas_invertidas(2 * _P + _F, *GRADE_FOVEA),
+])
+ESPELHO_MEMORIA = np.concatenate([
+    np.append(_colunas_invertidas(k * (_N_MEM_BRILHO + 1), *GRADE_MEMORIA), (k + 1) * (_N_MEM_BRILHO + 1) - 1)
+    for k in range(len(MEMORIA_S))
+])
+
+
+def espelhar(retratos):
+    """Retratos (um ou um lote) como se a tela estivesse espelhada."""
+    return retratos[..., ESPELHO_RETRATO]
+
+
+def espelhar_memoria(memorias):
+    return memorias[..., ESPELHO_MEMORIA]
+
+
 def entrada(versao, atual, passado, memoria=None):
     """Entrada da rede a partir de retratos (aceita um quadro ou um lote).
 
