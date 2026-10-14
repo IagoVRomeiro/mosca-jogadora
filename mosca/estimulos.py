@@ -43,7 +43,7 @@ class LeitorHUD:
     RECOMPENSA = {
         "dano": -1.0, "morte": -3.0, "cura": 0.3, "acerto": 0.3, "geo": 0.5, "parada": -0.2,
         # sala nova vale pouco (dá para burlar entrando e saindo); o mapa, mais
-        "sala_nova": 0.3, "presa": -0.3, "mapa_novo": 1.0, "loop": -0.3,
+        "sala_nova": 0.3, "presa": -0.6, "mapa_novo": 1.0, "loop": -0.6,
     }
 
     def __init__(self):
@@ -326,22 +326,34 @@ class DetectorPresa:
     (o pulo mexe a câmera na vertical, por isso só a horizontal conta). Repete a
     cada REPETE_S enquanto continuar. Medido nas suas gravações: com 6 s, só ~4%
     dos trechos em que você andava contariam (câmera travada, luta na parede).
+
+    Antes disso, com AVISO_S segundos encostada, liga `encostada` (sem punir):
+    é a deixa para o reflexo de meia-volta agir cedo.
     """
 
     PASSO = 10  # quadros entre duas medidas (~0,33 s): quadro a quadro é < 1 pixel
-    JANELA_S, REPETE_S = 6.0, 3.0
+    JANELA_S, REPETE_S, AVISO_S = 6.0, 3.0, 4.0
     LIMITE_PX = 6  # deslizamento horizontal total na janela
 
     def __init__(self, dt=QUADRO_MS / 1000):
         self.medidas = int(self.JANELA_S / dt) // self.PASSO
+        self.medidas_aviso = int(self.AVISO_S / dt) // self.PASSO
         self.repete = int(self.REPETE_S / dt)
         self.reiniciar()
 
     def reiniciar(self):
         self._quadro, self._anterior = 0, None
         self._dx, self._lados = [], []
-        self._espera = 0
+        self._espera = self._espera_aviso = 0
         self.lado = None  # "Esquerda" ou "Direita": para onde ela estava forçando
+        self.encostada = False  # aviso de 4 s; quem usar desliga
+
+    @staticmethod
+    def _forcando(lados):
+        if not len(lados):
+            return 0.0, None
+        dir_, esq = (lados == 1).mean(), (lados == -1).mean()
+        return max(dir_, esq), "Direita" if dir_ >= esq else "Esquerda"
 
     def passo(self, reduzida, esquerda, direita, hud_visivel):
         """`esquerda`/`direita`: se a tecla está apertada neste quadro."""
@@ -351,6 +363,7 @@ class DetectorPresa:
         self._lados.append(1 if direita else -1 if esquerda else 0)
         self._lados = self._lados[-self.medidas * self.PASSO :]
         self._espera = max(0, self._espera - 1)
+        self._espera_aviso = max(0, self._espera_aviso - 1)
         self._quadro += 1
         if self._quadro % self.PASSO:
             return []
@@ -359,12 +372,18 @@ class DetectorPresa:
             self._dx = self._dx[-self.medidas :]
         self._anterior = reduzida
         lados = np.array(self._lados)
-        forcando = max((lados == 1).mean(), (lados == -1).mean()) if len(lados) else 0
+        recentes = lados[-self.medidas_aviso * self.PASSO :]
+        forcando, lado = self._forcando(recentes)
+        if (len(self._dx) >= self.medidas_aviso and forcando >= 0.7 and not self._espera_aviso
+                and sum(self._dx[-self.medidas_aviso :]) <= self.LIMITE_PX):
+            self.lado, self.encostada = lado, True
+            self._espera_aviso = self.repete
+        forcando, lado = self._forcando(lados)
         if len(self._dx) < self.medidas or forcando < 0.7 or self._espera:
             return []
         if sum(self._dx) > self.LIMITE_PX:
             return []
-        self.lado = "Direita" if (lados == 1).mean() >= (lados == -1).mean() else "Esquerda"
+        self.lado = lado
         self._espera = self.repete
         return ["presa"]
 

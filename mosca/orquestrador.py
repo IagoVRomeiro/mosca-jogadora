@@ -544,10 +544,11 @@ class Orquestrador(QtCore.QObject):
             bom = any(LeitorHUD.RECOMPENSA[e] > 0 for e in eventos)
             eventos += self.loop.passo(self.cerebro.reduzida, bom, self.hud.visivel)
         reflexo = None
+        encostada, self.presa.encostada = self.presa.encostada, False
         if "loop" in eventos and self.jogo.controlando:
             reflexo = self._mudar_de_ideia()
-        elif "presa" in eventos and self.jogo.controlando:
-            reflexo = self._escapar()
+        elif ("presa" in eventos or encostada) and self.jogo.controlando:
+            reflexo = self._escapar()  # já com 4 s encostada; a punição só vem com 6 s
         elif "parada" in eventos and self.jogo.controlando:
             reflexo = self._reflexo()
         if self._foto_mapa_em is not None and time.monotonic() >= self._foto_mapa_em:

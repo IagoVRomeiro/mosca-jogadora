@@ -54,7 +54,7 @@ REGULARIZACAO_VALOR = 0.05  # do estimador de retorno (por quadro de treino)
 SUBAMOSTRA = 2  # usa 1 a cada 2 quadros: vizinhos são quase iguais (menos decoreba)
 RUIDO = 0.1  # ruído nas entradas (já normalizadas) durante o treino
 PASTA_CACHE = PASTA / "cache_olho"
-VERSAO_CACHE = 3  # mude se o que vai no cache mudar
+VERSAO_CACHE = 4  # mude se o que vai no cache mudar
 ARQUIVO_SAIDA = ARQUIVO_DESAFIANTE  # todo treino gera uma desafiante (ver jogar.Torneio)
 ARQUIVO_INFO_MODELO = ARQUIVO_SAIDA.with_suffix(".json")  # qual treino gerou o modelo
 # Partidas da própria mosca: entram com menos peso que as suas (ela erra mais) e
@@ -193,6 +193,14 @@ def processar_sessao(pasta):
             colunas = [acoes.index(a) if a in acoes else None for a in ACOES]
             presas_marcadas = "presas" in parte.files
             loops_marcados = "loops" in parte.files
+            # gravações marcadas já trazem a punição na recompensa, com o valor da
+            # época (-0,3 antes de valor_presa/valor_loop existirem): acerta para o atual
+            if presas_marcadas:
+                gravado = float(parte["valor_presa"]) if "valor_presa" in parte.files else -0.3
+                hud[-1] += (RECOMPENSA_PRESA - gravado) * parte["presas"]
+            if loops_marcados:
+                gravado = float(parte["valor_loop"]) if "valor_loop" in parte.files else -0.3
+                hud[-1] += (RECOMPENSA_LOOP - gravado) * parte["loops"]
             marcadas.append(np.full(n, "salas_novas" in parte.files))
             anterior = None
             for tela, apertadas, r_hud in zip(parte["telas"], parte["teclas"], hud[-1]):

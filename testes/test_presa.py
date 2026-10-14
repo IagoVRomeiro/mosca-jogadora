@@ -56,6 +56,24 @@ class TestePresa(unittest.TestCase):
         self.assertGreaterEqual(eventos.count("presa"), 3)  # 6 s para notar, depois a cada 3 s
         self.assertEqual(d.lado, "Esquerda")
 
+    def test_avisa_encostada_antes_de_punir(self):
+        d = DetectorPresa()  # com 4 s liga o aviso (reflexo), a punição só vem com 6 s
+        aviso = presa = None
+        for i in range(300):
+            if d.passo(vista(100), False, True, True) and presa is None:
+                presa = i
+            if d.encostada and aviso is None:
+                aviso = i
+        self.assertIsNotNone(aviso)
+        self.assertLess(aviso, presa)
+        self.assertAlmostEqual(aviso / 30, DetectorPresa.AVISO_S, delta=0.7)
+
+    def test_andando_nao_avisa(self):
+        d = DetectorPresa()
+        for i in range(300):
+            d.passo(vista(i // 2), False, True, True)
+        self.assertFalse(d.encostada)
+
 
 class TesteLoop(unittest.TestCase):
     def indo_e_voltando(self, i):
