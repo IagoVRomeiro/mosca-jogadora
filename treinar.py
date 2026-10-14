@@ -245,8 +245,11 @@ def carregar_sessoes(pastas):
         if not len(d["retratos"]):
             continue
         sala = np.zeros(len(d["retratos"]), np.float32)
+        anterior = None
         for idx, assinatura in zip(d["entradas_idx"], d["entradas_sig"]):
-            if memoria.lembrar(assinatura) and not d["marcadas"][idx]:
+            intervalo = None if anterior is None else idx - anterior
+            anterior = idx
+            if memoria.lembrar(assinatura, intervalo) and not d["marcadas"][idx]:
                 sala[idx] = RECOMPENSA_SALA  # gravações novas já trazem na recompensa
         sessoes.append({
             "nome": nome,

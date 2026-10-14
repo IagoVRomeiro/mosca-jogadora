@@ -42,7 +42,8 @@ class LeitorHUD:
     PRETO = 40  # contorno abaixo disto: tela preta (morte, passagem de sala), não só escurecida
     RECOMPENSA = {
         "dano": -1.0, "morte": -3.0, "cura": 0.3, "acerto": 0.3, "geo": 0.5, "parada": -0.2,
-        "sala_nova": 1.0, "presa": -0.3, "mapa_novo": 0.5, "loop": -0.3,
+        # sala nova vale pouco (dá para burlar entrando e saindo); o mapa, mais
+        "sala_nova": 0.3, "presa": -0.3, "mapa_novo": 1.0, "loop": -0.3,
     }
 
     def __init__(self):
@@ -193,15 +194,21 @@ class ExploradorSalas:
     (que fica salva e vale entre sessões): parecida com alguma (semelhança >=
     LIMITE) é sala conhecida; senão, é sala nova e entra na memória.
 
-    Medido nas suas gravações: entradas repetidas dão semelhança >= 0,95 e salas
-    diferentes ficam entre 0,6 e 0,85. Olhar a tela o tempo todo, em vez da
-    entrada, não funciona: inimigos e a câmera mudam tudo dentro da mesma sala.
+    Medido nas gravações, salas diferentes ficam entre 0,6 e 0,8; a mesma sala
+    vista de novo deu de 0,83 a 0,98 (a mosca entrando e saindo da mesma sala
+    ganhava "sala nova" a cada vez com o limite antigo de 0,92). Olhar a tela o
+    tempo todo, em vez da entrada, não funciona: tudo muda dentro da mesma sala.
+
+    Entrar e sair não é explorar: uma sala só dá recompensa se a passagem
+    anterior foi há pelo menos INTERVALO_MINIMO quadros (ela entra na memória
+    mesmo assim).
     """
 
     ESCURO = 4  # brilho médio (0-255) abaixo disto: tela escura
     TRANSICAO = (3, 60)  # quadros escuros de uma passagem de sala (mais: morte, banco)
     ESPERA = 20  # quadros depois de clarear para tirar a foto (~0,7 s)
-    LIMITE = 0.92
+    LIMITE = 0.82
+    INTERVALO_MINIMO = 8 * 30  # quadros (~8 s) entre duas passagens de sala
     MAXIMO_SALAS = 5000
 
     def __init__(self, arquivo=PASTA / "memoria_salas.npz"):
@@ -211,6 +218,7 @@ class ExploradorSalas:
             with np.load(self.arquivo) as dados:
                 self.memoria = dados["salas"]
         self._escuro, self._foto_em = 0, None
+        self._quadro, self._ultima_entrada = 0, None
         self.alterada = False
 
     @property
@@ -243,18 +251,36 @@ class ExploradorSalas:
         self._foto_em = None
         return self.foto(reduzida)
 
-    def lembrar(self, assinatura):
-        """True se a sala é nova (e passa a ser lembrada); False se já conhecida."""
+    def lembrar(self, assinatura, intervalo=None):
+        """True se a sala é nova e vale recompensa. `intervalo`: quadros desde a
+        passagem de sala anterior (None = não se sabe). Sala nova logo depois de
+        outra passagem entra na memória, mas não dá recompensa."""
         if len(self.memoria) and float((self.memoria @ assinatura).max()) >= self.LIMITE:
             return False
         self.memoria = np.vstack([self.memoria, assinatura])[-self.MAXIMO_SALAS :]
         self.alterada = True
-        return True
+        return intervalo is None or intervalo >= self.INTERVALO_MINIMO
 
     def passo(self, reduzida):
         """Uma tela (em OLHO). Devolve ["sala_nova"] na entrada de uma sala nova."""
+        self._quadro += 1
         assinatura = self.entrada_de_sala(reduzida)
-        return ["sala_nova"] if assinatura is not None and self.lembrar(assinatura) else []
+        if assinatura is None:
+            return []
+        intervalo = None if self._ultima_entrada is None else self._quadro - self._ultima_entrada
+        self._ultima_entrada = self._quadro
+        return ["sala_nova"] if self.lembrar(assinatura, intervalo) else []
+
+    def juntar_repetidas(self):
+        """Junta na memória as salas parecidas (>= LIMITE) com uma anterior."""
+        ficam = []
+        for i, assinatura in enumerate(self.memoria):
+            if not ficam or float((self.memoria[ficam] @ assinatura).max()) < self.LIMITE:
+                ficam.append(i)
+        antes = len(self.memoria)
+        self.memoria = self.memoria[ficam]
+        self.alterada = len(ficam) != antes
+        return antes - len(ficam)
 
     def salvar(self):
         if self.alterada:

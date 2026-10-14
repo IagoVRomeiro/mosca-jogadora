@@ -38,9 +38,18 @@ class TesteExploracao(unittest.TestCase):
 
     def test_voltar_para_sala_conhecida_nao_conta(self):
         e = ExploradorSalas(self.arquivo)
-        passar(e, [(sala(1), 30), (ESCURA, 24), (sala(2), 40)])
-        self.assertEqual(passar(e, [(ESCURA, 24), (sala(3), 40), (ESCURA, 24), (sala(2), 40)]), ["sala_nova"])
+        passar(e, [(sala(1), 30), (ESCURA, 24), (sala(2), 260)])
+        self.assertEqual(passar(e, [(ESCURA, 24), (sala(3), 260), (ESCURA, 24), (sala(2), 260)]), ["sala_nova"])
         self.assertEqual(e.salas, 2)
+
+    def test_entrar_e_sair_rapido_nao_da_recompensa(self):
+        """Porta giratória: salas trocando a cada ~2 s não valem recompensa."""
+        e = ExploradorSalas(self.arquivo)
+        passar(e, [(sala(1), 30), (ESCURA, 24), (sala(2), 260)])  # chegou devagar
+        eventos = passar(e, [(ESCURA, 24), (sala(3), 40), (ESCURA, 24), (sala(4), 40),
+                             (ESCURA, 24), (sala(5), 40)])
+        self.assertEqual(eventos, ["sala_nova"])  # só a 3, que veio 8 s depois da 2
+        self.assertEqual(e.salas, 4)  # mas ela lembra das salas 4 e 5
 
     def test_escuro_longo_nao_e_passagem_de_sala(self):
         e = ExploradorSalas(self.arquivo)  # morte ou banco: escuro bem mais longo
