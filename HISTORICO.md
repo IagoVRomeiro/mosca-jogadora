@@ -4,24 +4,26 @@ Uma mosca-das-frutas (*Drosophila*) aprendendo a jogar Hollow Knight. O corpo é
 o NeuroMechFly (FlyGym), o cérebro pode ser a fiação real do conectoma FlyWire,
 e ela joga só vendo a tela e apertando teclas.
 
-Tudo aconteceu em dois dias, 13 e 14/10/2026: 61 commits, 26 versões
-treinadas, 164 partidas da mosca (~3 h de jogo) registradas no Supabase.
+Tudo aconteceu em dois dias, 13 e 14/10/2026: 73 commits, 43 versões
+treinadas, 488 partidas da mosca (~8,8 h de jogo) registradas no Supabase.
 
 Os horários vêm dos commits do git (a partir de 13/10 18:27) e dos treinos
 registrados no Supabase. O que veio antes do primeiro commit está marcado como
 **"antes das 18:27"**.
 
-## Onde estamos (14/10, 12:40)
+## Onde estamos (14/10, 20:30)
 
-- **Campeã:** #21 (conectoma, o cérebro com a fiação real), desde 14/10 01:52.
-- **Em disputa:** #26, conectoma **com memória** (olho versão 3), a primeira
-  treinada **partindo da campeã** em vez de do zero.
+- **Campeã:** #40 (conectoma, o cérebro com a fiação real, **com memória**),
+  desde 14/10 ~19:50: venceu a #35 por −7,1 × −18,7 por minuto (+62%).
+- **Em disputa:** #43 (rede inventada, com memória).
+- **Onde ela treina:** além do save sem progressão, o **Salão dos Deuses** (save
+  completo), lutando contra chefes; chefe vencido vale +5.
 - **Juiz:** desde 14/10 03:16, um plugin dentro do jogo conta exatamente o que
   aconteceu (dano, cura, morte, geo, golpes, inimigos mortos, sala, posição).
   A leitura pela tela fica de reserva.
 - **Ajuda pelo controle:** desde 14/10 12:34 você pode gravar e corrigir pelo
   controle; a mosca aprende as ações e continua jogando pelo teclado.
-- **Dados:** 26 gravações suas (7 delas correções ao vivo), 1,4 GB.
+- **Dados:** 115 gravações suas (89 delas correções ao vivo).
 
 ---
 
@@ -53,6 +55,17 @@ Cada solução que foi trocada por outra melhor, com o período em que esteve em
 | Treinar depois de gravar | Esperava a disputa acabar | 13/10 22:50 → 14/10 00:52 | Treina na hora, interrompendo a disputa |
 | Ligar e desligar | Botões do painel | antes das 18:27 → 14/10 01:00 | Atalhos Ctrl+Alt+G / Ctrl+Alt+C (os botões continuam) |
 | Saber o que você aperta | Teclado do sistema (só teclado) | antes das 18:27 → 14/10 12:34 | Ações lidas do jogo pelo plugin (teclado ou controle); sem plugin, teclado |
+| Ação "Mapa" (Tab) | A mosca podia abrir o mapa | 13/10 21:30 → 14/10 13:08 | Removida (ela não usava o que via; a exploração vem do plugin) |
+| Dados por treino | Cada quadro uma vez | 13/10 17:59 → 14/10 13:26 | Metade espelhada (Esquerda ↔ Direita): quase o dobro de dados |
+| Quadros julgados pela tela | Mesmo peso que os do plugin | antes das 18:27 → 14/10 13:26 | Metade do peso |
+| Tecla K | Só "Foco" (sempre segurada 1,5 s) | antes das 18:27 → 14/10 13:54 | "Foco" (segurado) e "Magia" (toque) |
+| Reflexo de presa | Meia-volta | 13/10 21:38 → 14/10 13:57 | Primeiro tenta escalar; se continuar presa, meia-volta |
+| Correções durante uma disputa | Sempre interrompiam a disputa | 14/10 00:52 → 13:57 | Não interrompem se a desafiante estiver na frente |
+| Segurar o pulo | Sem limite | antes das 18:27 → 14/10 14:08 | No máximo 0,6 s; querendo mais, solta e aperta de novo |
+| Escolher o ponto de partida | A campeã, se do mesmo cérebro | 14/10 04:08 → 18:22 | A melhor na validação entre campeã, desafiante e as 3 mais recentes |
+| Fim da disputa | Aos 15 min sem vencer, perde | 13/10 19:39 → 14/10 18:22 | Na frente sem certeza: até 30 min; rodadas vazias não contam |
+| Chefe vencido | Igual a um inimigo comum (+1) | 14/10 03:16 → 18:30 | +5 (Salão dos Deuses ou 200+ de vida) |
+| Peso das teclas raras no treino | Até 3× para todas | 13/10 19:57 → 14/10 20:13 | Até 15× para habilidades (magia, super investida, ferrão) |
 | Gravações | Recompensa já somada por quadro | antes das 18:27 → 14/10 02:21 | Marcas de evento (02:21) → contagem de cada evento + pesos + estado do jogo (03:31) |
 
 ---
@@ -125,7 +138,7 @@ sozinha sem nunca piorar quem está jogando.
 que neurônios e ligações são os da mosca real e só a força de cada grupo é
 aprendida. O primeiro conectoma foi o treino #12, às 21:15.
 
-## 3. As disputas (13/10 22:32 → 14/10 04:17)
+## 3. As disputas (13/10 22:32 → 14/10 20:25)
 
 | Versão | Treinada em | Cérebro | Resultado | Recompensa/min (desafiante × campeã) |
 |---|---|---|---|---|
@@ -141,10 +154,29 @@ aprendida. O primeiro conectoma foi o treino #12, às 21:15.
 | #23 | 14/10 02:53 | conectoma | perdeu para a #21 | −13,2 × −5,4 |
 | #24 | 14/10 03:42 | mlp | perdeu para a #21 | −15,1 × −4,9 |
 | #25 | 14/10 04:02 | conectoma, **com memória**, do zero | interrompida (correção ao vivo; o painel caiu antes de registrar o placar) | — |
-| #26 | 14/10 04:17 | conectoma, **com memória**, **partindo da #21** | em disputa | — |
+| #26 | 14/10 04:17 | conectoma, **com memória**, **partindo da #21** | interrompida, ganhando (correção ao vivo) | −5,3 × −7,9 |
+| #27 | 14/10 13:06 | mlp, com memória | interrompida, ganhando | −5,7 × −7,2 |
+| #28 | 14/10 13:17 | conectoma, com memória | interrompida | −4,4 × −3,6 |
+| **#29** | 14/10 13:20 | **mlp, com memória**, partindo da #27 | **🏆 venceu a #21** (a primeira campeã com memória) | −4,6 × −13,3 (**+65%**) |
+| #30 | 14/10 13:36 | conectoma | empate até 15 min → perdeu | −8,1 × −6,8 |
+| #31 | 14/10 14:19 | mlp | na frente, sem certeza, aos 15 min → perdeu | −5,8 × −7,6 |
+| #32 | 14/10 15:08 | conectoma | empate → perdeu | −7,5 × −7,0 |
+| #33 | 14/10 15:42 | mlp | empate → perdeu (7 rodadas vazias) | −4,3 × −3,9 |
+| #34 | 14/10 16:16 | conectoma | na frente, sem certeza → perdeu | −6,6 × −8,3 |
+| **#35** | 14/10 16:52 | **mlp**, partindo da #29 | **🏆 venceu a #29** | −3,0 × −5,0 (**+39%**) |
+| #36 | 14/10 17:09 | conectoma | perdeu | −9,2 × −5,6 |
+| #37 | 14/10 17:19 | mlp | empate → perdeu | −7,4 × −7,2 |
+| #38 | 14/10 17:54 | conectoma | empate → perdeu | −4,4 × −4,2 |
+| #39 | 14/10 18:38 | mlp | empate → perdeu | −7,2 × −7,3 |
+| **#40** | 14/10 19:47 | **conectoma**, partindo da #38 | **🏆 venceu a #35** (no Salão dos Deuses) | −7,1 × −18,7 (**+62%**) |
+| #41 | 14/10 20:12 | mlp | substituída por um treino seguinte antes de disputar | — |
+| #42 | 14/10 20:21 | conectoma | interrompida no começo | — |
+| #43 | 14/10 20:25 | mlp | em disputa | — |
 
-A #15 foi a **primeira vitória do cérebro real**, e a #21 o venceu de novo: as
-duas campeãs desde então são da fiação da mosca de verdade.
+A #15 foi a **primeira vitória do cérebro real**, e a #21 o venceu de novo. Depois
+vieram duas campeãs mlp com memória (#29 e #35) e de novo o cérebro real (#40).
+Entre as vitórias, muitos **empates**: por isso, às 18:22, o torneio passou a dar
+mais tempo a quem está na frente e o treino passou a aproveitar quem empatou.
 
 ## 4. Ajustes de comportamento (13/10 23:28 → 14/10 01:12)
 
@@ -236,6 +268,36 @@ jogo as vê, nunca contam como suas.
 o painel junto, no meio da interrupção da disputa da #25: o placar dela não foi
 registrado. O treino que estava rodando terminou sozinho e virou a #26.
 
+## 8. Melhor aproveitamento, combate e o Salão dos Deuses (14/10, 13:08 → 20:13)
+
+| Data e hora | O que entrou | Por quê |
+|---|---|---|
+| 14/10 13:08 | **Sai o mapa** (ação Tab, hábito, leitor da Bússola) | a mosca não usava o que via e parava de jogar para abri-lo |
+| 14/10 13:26 | **Espelho no treino** e **metade do peso** para o que foi julgado pela tela | cada minuto vale quase por dois; a tela perdia golpes e contradizia o plugin |
+| 14/10 13:54 | **K dividido em Foco e Magia** | todo K da mosca era segurado: as suas 242 magias por toque viravam cura |
+| 14/10 13:57 | **Presa: primeiro tenta escalar**; disputa com desafiante na frente não é interrompida | a meia-volta a afastava de paredes escaláveis; a #26 e a #27 foram interrompidas ganhando |
+| 14/10 14:08 | **Pulo segurado no máximo 0,6 s** | para pular de novo agarrada na parede é preciso soltar e apertar |
+| 14/10 14:15 | **Banco novo (+1), cura com pouca vida (+0,3 a mais), cair em espinhos/ácido (−1 a mais)** | progresso real, curar quando importa, erro evitável |
+| 14/10 14:29 | Primeira gravação pelo **controle** (10 min): as ações chegaram certas | a mosca aprende "Pular", não "botão A" |
+| 14/10 18:18 | **Vai e volta pela mesma passagem** (−1) e reflexo de seguir em frente | um vício antigo dela, agora medido pelo nome das salas |
+| 14/10 18:22 | **Ponto de partida pela qualidade**, disputa até 30 min para quem está na frente, rodadas vazias não contam | os empates escondiam melhoras pequenas e reais |
+| 14/10 18:30 | **Chefe derrotado (+5)** | uma luta longa ganha valia o mesmo que um inimigo comum |
+| 14/10 19:35 | Primeiras gravações no **Salão dos Deuses** (Panteão do Mestre, 11 arenas) | combate concentrado |
+| 14/10 19:48 | O treino **recupera chefes vencidos** em gravações sem a contagem | a primeira gravação no Salão foi com o plugin antigo: 8 chefes recuperados |
+| 14/10 20:13 | **Habilidades raras pesam até 15×** no treino | a magia reproduzida subiu de 20% para 47% das suas |
+
+**O que os dados de combate mostraram (14/10, ~19h).** Comparando as versões com
+as suas gravações: ela acertava 2–4 golpes por minuto contra os seus 7, curava
+0,2–0,4 vez por minuto contra 1,3, esquivava 3 vezes menos e morria de 6 a 15
+vezes mais. A magia praticamente não existia. Daí o foco da tarde: separar a
+magia do foco, dar peso às habilidades raras, premiar curar na hora certa e
+treinar luta no Salão dos Deuses, onde cada minuto é combate.
+
+**Salão dos Deuses.** Lá a mosca luta contra um chefe de cada vez; você começa a
+luta pelo controle, solta, e ela assume. Em cada arena, a última morte é a do
+chefe (os ajudantes que ele invoca morrem antes), e o plugin reconhece os chefes
+pela lista da própria luta. A #40 venceu a disputa jogando lá.
+
 ---
 
 ## O que se aprendeu no caminho
@@ -245,18 +307,25 @@ registrado. O treino que estava rodando terminou sozinho e virou a #26.
   imagens de `diagnostico/` (desde 13/10 22:37) foram o que revelou cada um.
 - **O torneio protegeu a mosca dos próprios erros do projeto.** Versões
   treinadas com dados ruins perderam a disputa e nunca jogaram como campeãs.
-- **O cérebro real compete bem.** As duas trocas de campeã pelo torneio (#15 e
-  #21) foram do conectoma.
+- **O cérebro real compete bem.** Das cinco trocas de campeã pelo torneio, três
+  foram do conectoma (#15, #21, #40) e duas da rede inventada com memória (#29,
+  #35).
+- **Medir certo vale tanto quanto aprender.** Muitas desafiantes empataram: o
+  placar oscila muito (uma morte vale −8), e melhoras pequenas não apareciam.
+  Dar mais tempo a quem está na frente e partir da melhor candidata, mesmo sem
+  vitória, fez o progresso pequeno se acumular.
 - **Dados limpos antes de cérebro maior.** A memória só entrou depois que o
   juiz ficou exato: com recompensas erradas, um cérebro melhor só aprenderia o
   erro mais rápido.
 
 ## Próximos passos
 
-1. **Mais dados bons:** deixar a mosca jogar e corrigir ao vivo, agora também
-   pelo controle; gravar lutas e exploração (premiadas com exatidão).
-2. **Ver a memória em ação:** as disputas das versões com memória dizem se ela
-   ajuda a sair de paredes e círculos.
-3. **Menos peso às gravações antigas,** julgadas pela tela.
-4. **Conferir o equilíbrio das recompensas** e ajustar os detectores pela
-   posição com algumas horas de jogo com o plugin.
+1. **Combate no Salão dos Deuses:** um chefe de cada vez, das mais fáceis às
+   mais difíceis; gravar lutas com magia (bola de fogo, mergulho e,
+   principalmente, o grito, que tem só 17 exemplos), esquiva e cura em segurança.
+2. **Correção ao vivo pelo controle** sempre que qualquer versão errar.
+3. **Conferir** se o Falso Cavaleiro e os Mestres do Ferrão contam como chefe, o
+   equilíbrio das recompensas e o detector de parada.
+4. **Se a esquiva continuar fraca:** um prêmio por desviar de golpes com um
+   inimigo perto. **Se a magia continuar rara:** um reflexo de magia com a alma
+   cheia em combate.
