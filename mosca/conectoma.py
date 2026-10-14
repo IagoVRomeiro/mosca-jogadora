@@ -72,9 +72,6 @@ class RedeConectoma:
             return self.p[k]
         return self.m[k] * np.exp(self.p[f"s_{k}"])[None, :]
 
-    def treinaveis(self):
-        return [k for k in self.p if not k.startswith(CAMADAS_CONECTOMA)]
-
     # --- passo para frente ---
 
     def frente(self, x):
