@@ -333,6 +333,8 @@ class CartaoMosca(QtWidgets.QFrame):
         layout.setContentsMargins(18, 16, 18, 16)
 
         caixa, linha, _ = cabecalho("02", "Veja a resposta")
+        self.bt_evolucao = QtWidgets.QPushButton("📈  Evolução")
+        self.bt_evolucao.setToolTip("Abre o painel com a melhora da mosca versão a versão")
         self.bt_gravar = QtWidgets.QPushButton("⏺  Gravar")
         self.bt_gravar.setCheckable(True)
         self.bt_gravar.setObjectName("gravar")
@@ -347,6 +349,7 @@ class CartaoMosca(QtWidgets.QFrame):
         )
         self.bt_pausar = QtWidgets.QPushButton("❚❚  Pausar")
         self.bt_reiniciar = QtWidgets.QPushButton("↺  Reiniciar")
+        linha.addWidget(self.bt_evolucao)
         linha.addWidget(self.bt_gravar)
         linha.addWidget(self.bt_controlar)
         linha.addWidget(self.bt_pausar)
