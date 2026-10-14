@@ -97,6 +97,21 @@ class TesteDanoEMorte(unittest.TestCase):
         np.testing.assert_allclose(r, [treinar.RECOMPENSA_DANO, -0.2], atol=1e-5)
 
 
+class TesteMain(unittest.TestCase):
+    def test_nada_usado_depois_de_apagado(self):
+        """O main apaga as sessões para liberar memória; usar depois quebrava o
+        fim do treino (e deixava a desafiante sem número)."""
+        import ast
+        import inspect
+
+        main = ast.parse(inspect.getsource(treinar.main))
+        apagadas = {alvo.id: n.lineno for n in ast.walk(main) if isinstance(n, ast.Delete)
+                    for alvo in n.targets}
+        usos = [n.id for n in ast.walk(main)
+                if isinstance(n, ast.Name) and n.lineno > apagadas.get(n.id, 10**9)]
+        self.assertEqual(usos, [])
+
+
 class TesteOlho(unittest.TestCase):
     def test_tamanhos(self):
         jogo = JogoDemo()

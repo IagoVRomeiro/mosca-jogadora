@@ -577,6 +577,7 @@ def main():
     print(f"olho de {len(sessoes)} sessões pronto em {time.time() - inicio:.0f} s (cache em {PASTA_CACHE.name}/)")
     total = sum(len(s["retratos"]) for s in sessoes)
     quadros_mosca = sum(len(s["retratos"]) for s in sessoes if s["da_mosca"])
+    quadros_correcao = sum(len(s["retratos"]) for s in sessoes if s["nome"].endswith("_correcao"))
     if total < MINIMO_QUADROS:
         print(
             f"Só {total} quadros gravados (mínimo {MINIMO_QUADROS}). Grave mais partidas com "
@@ -637,7 +638,7 @@ def main():
             "peso_quadro": list(PESO_QUADRO), "subamostra": SUBAMOSTRA, "ruido": RUIDO,
             "git_commit": commit_do_codigo(),
             "papel": "desafiante", "quadros_mosca": quadros_mosca, "peso_mosca": PESO_MOSCA,
-            "quadros_correcao": sum(len(s["retratos"]) for s in sessoes if s["nome"].endswith("_correcao")),
+            "quadros_correcao": quadros_correcao,
             "peso_correcao": PESO_CORRECAO,
             "toque_s": TOQUE_S, "arquitetura": arquitetura,
         },
