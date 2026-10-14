@@ -98,20 +98,32 @@ class Gravador:
         self._telas, self._teclas = [], []
         self._recompensas, self._vidas = [], []
         self._marcas = {chave: [] for chave in self.MARCAS.values()}
+        self._contagens, self._jogo = [], []
         self._salvando = []
 
     # evento -> marca por quadro no arquivo. A recompensa já inclui todos; as
     # marcas deixam o treino reajustar se o peso de um evento mudar depois
     MARCAS = {"sala_nova": "salas_novas", "presa": "presas", "loop": "loops", "dano": "danos", "morte": "mortes"}
+    # Quantas vezes cada evento aconteceu em cada quadro, com os pesos da época
+    # ("valores"): o treino tira o valor antigo e põe o atual, exato, para
+    # qualquer mudança de peso
+    EVENTOS = tuple(LeitorHUD.RECOMPENSA)
+    # Estado do jogo pelo plugin (mod/MoscaEventos), quadro a quadro: com ele dá
+    # para recalcular recompensas novas depois (NaN = sem plugin naquele quadro)
+    CAMPOS_JOGO = ("vida", "vida_azul", "geo", "alma", "golpes", "inimigos_mortos", "x", "y", "vx", "vy",
+                   "morta", "curando", "no_chao", "na_parede")
 
-    def adicionar(self, reduzida, teclas, recompensa=0.0, vida=None, eventos=()):
-        """`recompensa`, `vida` e `eventos` vêm do HUD e dos detectores."""
+    def adicionar(self, reduzida, teclas, recompensa=0.0, vida=None, eventos=(), jogo=None):
+        """`recompensa`, `vida` e `eventos` vêm do HUD (ou do plugin) e dos
+        detectores; `jogo`: o último estado do plugin, se ele estiver ativo."""
         self._telas.append(cinza(reduzida))
         self._teclas.append(teclas)
         self._recompensas.append(recompensa)
         self._vidas.append(-1 if vida is None else vida)
         for evento, chave in self.MARCAS.items():
             self._marcas[chave].append(evento in eventos)
+        self._contagens.append([list(eventos).count(e) for e in self.EVENTOS])
+        self._jogo.append(jogo)
         self.total += 1
         if len(self._telas) >= self.QUADROS_POR_PARTE:
             self._salvar()
@@ -124,9 +136,12 @@ class Gravador:
         recompensas = np.array(self._recompensas, dtype=np.float32)
         vidas = np.array(self._vidas, dtype=np.int8)
         marcas = {chave: np.array(v, dtype=bool) for chave, v in self._marcas.items()}
+        contagens = np.array(self._contagens, dtype=np.int8)
+        jogo = self._estado_do_jogo(self._jogo)
         self._telas, self._teclas = [], []
         self._recompensas, self._vidas = [], []
         self._marcas = {chave: [] for chave in self.MARCAS.values()}
+        self._contagens, self._jogo = [], []
         self._parte += 1
         t = threading.Thread(
             target=np.savez_compressed,
@@ -135,11 +150,33 @@ class Gravador:
                 telas=telas, teclas=teclas, recompensas=recompensas, vidas=vidas, **marcas,
                 versao_hud=VERSAO_HUD,
                 **{f"valor_{e}": LeitorHUD.RECOMPENSA[e] for e in ("presa", "loop", "dano", "morte")},
+                eventos=contagens, eventos_nomes=np.array(self.EVENTOS),
+                valores=np.array([LeitorHUD.RECOMPENSA[e] for e in self.EVENTOS], dtype=np.float32),
+                **jogo,
                 acoes=np.array(ACOES),
             ),
         )
         t.start()
         self._salvando.append(t)
+
+    @classmethod
+    def _estado_do_jogo(cls, estados):
+        """jogo_<campo> (float32, NaN sem plugin) e a sala: jogo_cena (índice em
+        jogo_cenas, -1 sem plugin)."""
+        valores = np.full((len(estados), len(cls.CAMPOS_JOGO)), np.nan, np.float32)
+        cenas, indice = [], []
+        for i, e in enumerate(estados):
+            if e is None:
+                indice.append(-1)
+                continue
+            valores[i] = [float(e[c]) for c in cls.CAMPOS_JOGO]
+            if e["cena"] not in cenas:
+                cenas.append(e["cena"])
+            indice.append(cenas.index(e["cena"]))
+        saida = {f"jogo_{c}": valores[:, k] for k, c in enumerate(cls.CAMPOS_JOGO)}
+        saida["jogo_cena"] = np.array(indice, np.int16)
+        saida["jogo_cenas"] = np.array(cenas, dtype=str)
+        return saida
 
     def parar(self):
         self._salvar()

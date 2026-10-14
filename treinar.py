@@ -61,7 +61,7 @@ REGULARIZACAO_VALOR = 0.05  # do estimador de retorno (por quadro de treino)
 SUBAMOSTRA = 2  # usa 1 a cada 2 quadros: vizinhos são quase iguais (menos decoreba)
 RUIDO = 0.1  # ruído nas entradas (já normalizadas) durante o treino
 PASTA_CACHE = PASTA / "cache_olho"
-VERSAO_CACHE = 7  # mude se o que vai no cache mudar
+VERSAO_CACHE = 8  # mude se o que vai no cache mudar
 ARQUIVO_SAIDA = ARQUIVO_DESAFIANTE  # todo treino gera uma desafiante (ver jogar.Torneio)
 ARQUIVO_INFO_MODELO = ARQUIVO_SAIDA.with_suffix(".json")  # qual treino gerou o modelo
 # Partidas da própria mosca: entram com menos peso que as suas (ela erra mais) e
@@ -206,19 +206,22 @@ def processar_sessao(pasta):
             colunas = [acoes.index(a) if a in acoes else None for a in ACOES]
             presas_marcadas = "presas" in parte.files
             loops_marcados = "loops" in parte.files
-            if "recompensas" in parte.files:
-                piscadas = tirar_piscadas_da_vida(hud[-1], parte)
-                ajustar_dano_e_morte(hud[-1], parte, piscadas)
-            # gravações marcadas já trazem a punição na recompensa, com o valor da
-            # época (-0,3 antes de valor_presa/valor_loop existirem): acerta para o atual.
-            # A presa sai toda e é recalculada abaixo com o detector atual (que não
-            # pune mais a escalada de parede)
-            if presas_marcadas:
-                gravado = float(parte["valor_presa"]) if "valor_presa" in parte.files else -0.3
-                hud[-1] -= gravado * parte["presas"]
-            if loops_marcados:
-                gravado = float(parte["valor_loop"]) if "valor_loop" in parte.files else -0.3
-                hud[-1] += (RECOMPENSA_LOOP - gravado) * parte["loops"]
+            if "eventos" in parte.files:
+                reponderar(hud[-1], parte)  # gravação nova: exato, evento a evento
+            else:
+                if "recompensas" in parte.files:
+                    piscadas = tirar_piscadas_da_vida(hud[-1], parte)
+                    ajustar_dano_e_morte(hud[-1], parte, piscadas)
+                # gravações marcadas já trazem a punição na recompensa, com o valor da
+                # época (-0,3 antes de valor_presa/valor_loop existirem): acerta para o atual.
+                # A presa sai toda e é recalculada abaixo com o detector atual (que não
+                # pune mais a escalada de parede)
+                if presas_marcadas:
+                    gravado = float(parte["valor_presa"]) if "valor_presa" in parte.files else -0.3
+                    hud[-1] -= gravado * parte["presas"]
+                if loops_marcados:
+                    gravado = float(parte["valor_loop"]) if "valor_loop" in parte.files else -0.3
+                    hud[-1] += (RECOMPENSA_LOOP - gravado) * parte["loops"]
             marcadas.append(np.full(n, "salas_novas" in parte.files))
             anterior = None
             for tela, apertadas, r_hud in zip(parte["telas"], parte["teclas"], hud[-1]):
@@ -249,6 +252,16 @@ def processar_sessao(pasta):
     np.savez(temporario, **dados)
     os.replace(temporario, cache)
     return dados
+
+
+def reponderar(r, parte):
+    """Gravação com a contagem de eventos por quadro e os pesos da época: tira
+    de `r` o valor antigo de cada evento e põe o atual. A presa sai e não volta
+    aqui: é recalculada com o detector atual, como nas gravações antigas."""
+    nomes = [str(n) for n in parte["eventos_nomes"]]
+    gravados = parte["valores"].astype(np.float32)
+    atuais = np.array([0.0 if n == "presa" else LeitorHUD.RECOMPENSA.get(n, 0.0) for n in nomes], np.float32)
+    r += parte["eventos"].astype(np.float32) @ (atuais - gravados)
 
 
 PISCADA_QUADROS = 30  # vida que muda e volta em menos de 1 s não foi dano nem cura

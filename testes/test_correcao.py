@@ -96,7 +96,7 @@ class TesteNoPainel(unittest.TestCase):
 
         jogo.soltar_tudo = soltar_tudo
         o = types.SimpleNamespace(
-            hud=types.SimpleNamespace(vida=5), _vida=5, jogo=jogo, correcao=Correcao(), gravador_correcao=None,
+            hud=types.SimpleNamespace(vida=5), _vida=5, _estado_jogo=None, jogo=jogo, correcao=Correcao(), gravador_correcao=None,
             _correcao_s=0.0, _eventos_quadro=[], _recompensa_quadro=0.0, gravador_mosca=GravadorFalso(),
             partida={"eventos": __import__("collections").Counter(), "recompensa": 0.0},
             torneio=None, cerebro=types.SimpleNamespace(reduzida=None, recompensa=lambda v: None),

@@ -261,7 +261,7 @@ class Orquestrador(QtCore.QObject):
         if self.gravador_mosca is not None:
             self.gravador_mosca.adicionar(
                 self.cerebro.reduzida, teclas, self._recompensa_quadro, self._vida,
-                self._eventos_quadro,
+                self._eventos_quadro, self._estado_jogo,
             )
         self._habito_do_mapa()
         if self.torneio is not None:
@@ -465,7 +465,7 @@ class Orquestrador(QtCore.QObject):
         if no_jogo:
             self.gravador_correcao.adicionar(
                 self.cerebro.reduzida, teclas, self._recompensa_quadro, self._vida,
-                self._eventos_quadro,
+                self._eventos_quadro, self._estado_jogo,
             )
         return {a: float(t) for a, t in zip(ACOES, teclas)}
 
@@ -505,7 +505,7 @@ class Orquestrador(QtCore.QObject):
         teclas = self.jogo.teclas_do_usuario()
         g.adicionar(
             self.cerebro.reduzida, teclas, self._recompensa_quadro, self._vida,
-            self._eventos_quadro,
+            self._eventos_quadro, self._estado_jogo,
         )
         return texto, {a: float(t) for a, t in zip(ACOES, teclas)}
 
@@ -609,6 +609,10 @@ class Orquestrador(QtCore.QObject):
     @property
     def _juiz_ativo(self):
         return self.juiz is not None and self.juiz.ativo
+
+    @property
+    def _estado_jogo(self):
+        return self.juiz.estado if self._juiz_ativo else None
 
     @property
     def _vida(self):
