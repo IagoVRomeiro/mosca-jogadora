@@ -38,8 +38,6 @@ class Orquestrador(QtCore.QObject):
         self.gravador_mosca = None  # as partidas da mosca, para ela aprender com elas
 
         cartao_mosca = self.painel.cartao_mosca
-        cartao_mosca.bt_pausar.clicked.connect(lambda: self.alternar_pausa())
-        cartao_mosca.bt_reiniciar.clicked.connect(lambda: self.reiniciar())
         cartao_mosca.bt_evolucao.clicked.connect(lambda: QtCore.QProcess.startDetached(
             sys.executable, [str(PASTA / "evolucao.py")], str(PASTA)))
         self.gravador = None
@@ -425,29 +423,6 @@ class Orquestrador(QtCore.QObject):
         self._terminar_partida()
         for envio in self._envios:
             envio.join(timeout=10)  # dá tempo de a última partida chegar ao Supabase
-
-    def alternar_pausa(self):
-        self.mosca.pausado = not self.mosca.pausado
-        bt = self.painel.cartao_mosca.bt_pausar
-        if self.mosca.pausado:
-            self.soltar_teclas()
-            self.timer.stop()
-            bt.setText("▶  Continuar")
-        else:
-            self.timer.start(QUADRO_MS)
-            bt.setText("❚❚  Pausar")
-        self.painel.cartao_mosca.atualizar_metricas(0, {})
-
-    def reiniciar(self):
-        if self.hud is not None:
-            self.hud.reiniciar()
-        self.parada.reiniciar()
-        self.presa.reiniciar()
-        self.loop.reiniciar()
-        self.cerebro.reiniciar()
-        self.jogo.reiniciar()
-        self.mosca.pedido_reinicio = True
-        self.painel.cartao_cerebro.atualizar_selecao()
 
     NOMES_EVENTOS = {
         "dano": "tomou dano", "cura": "curou", "acerto": "acertou inimigo", "geo": "pegou geo",

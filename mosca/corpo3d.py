@@ -28,8 +28,6 @@ class MoscaNoPC:
         self.ultimo = np.zeros((*resolucao, 3), dtype=np.uint8)
         self.camera = "Mesa"
         self.batidas_por_s = 0.0
-        self.pausado = False
-        self.pedido_reinicio = False
         self.erro = None  # mensagem para o painel se a simulação 3D quebrar
         self.rodando = True
         self._ultimo_render = 0.0
@@ -40,11 +38,6 @@ class MoscaNoPC:
         try:
             self._montar(resolucao)
             while self.rodando:
-                if self.pedido_reinicio:
-                    self._reiniciar()
-                if self.pausado:
-                    time.sleep(0.05)
-                    continue
                 inicio = time.monotonic()
                 self._avancar()
                 # No máximo tempo real: mais rápido só gasta CPU e acelera as patas
@@ -153,7 +146,6 @@ class MoscaNoPC:
         return dict(pos=pos, xyaxes=np.concatenate([x, np.cross(z, x)]))
 
     def _reiniciar(self):
-        self.pedido_reinicio = False
         self.sim.reset()
         self.sim.warmup()
         self.fases = np.full(len(self._pernas), np.pi)

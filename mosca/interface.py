@@ -347,13 +347,9 @@ class CartaoMosca(QtWidgets.QFrame):
         self.bt_controlar.setToolTip(
             "A mosca aperta as teclas no jogo (" + ", ".join(ROTULO_TECLA.values()) + ")"
         )
-        self.bt_pausar = QtWidgets.QPushButton("❚❚  Pausar")
-        self.bt_reiniciar = QtWidgets.QPushButton("↺  Reiniciar")
         linha.addWidget(self.bt_evolucao)
         linha.addWidget(self.bt_gravar)
         linha.addWidget(self.bt_controlar)
-        linha.addWidget(self.bt_pausar)
-        linha.addWidget(self.bt_reiniciar)
         layout.addLayout(caixa)
 
         linha2 = QtWidgets.QHBoxLayout()
@@ -431,8 +427,6 @@ class CartaoMosca(QtWidgets.QFrame):
             texto = gravacao
         elif info:  # treino automático
             texto = info
-        elif self.mosca.pausado:
-            texto = "❚❚ Pausada"
         elif teclas:
             texto = "● Apertando " + " ".join(teclas)
         else:
