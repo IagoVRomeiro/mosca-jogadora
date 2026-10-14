@@ -34,3 +34,4 @@ cache_olho/
 
 # Diagnóstico: prints de cada evento do jogo (para conferir a leitura)
 diagnostico/
+iniciar_mosca.log
