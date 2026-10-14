@@ -4,21 +4,24 @@ Uma mosca-das-frutas (*Drosophila*) aprendendo a jogar Hollow Knight. O corpo é
 o NeuroMechFly (FlyGym), o cérebro pode ser a fiação real do conectoma FlyWire,
 e ela joga só vendo a tela e apertando teclas.
 
-Tudo aconteceu em dois dias, 13 e 14/10/2026: 54 commits, 24 versões
-treinadas, 141 partidas da mosca (~2,5 h de jogo) registradas no Supabase.
+Tudo aconteceu em dois dias, 13 e 14/10/2026: 61 commits, 26 versões
+treinadas, 164 partidas da mosca (~3 h de jogo) registradas no Supabase.
 
 Os horários vêm dos commits do git (a partir de 13/10 18:27) e dos treinos
 registrados no Supabase. O que veio antes do primeiro commit está marcado como
 **"antes das 18:27"**.
 
-## Onde estamos (14/10, 03:45)
+## Onde estamos (14/10, 12:40)
 
 - **Campeã:** #21 (conectoma, o cérebro com a fiação real), desde 14/10 01:52.
-- **Em disputa:** #24 (rede inventada, "mlp"), treinada sozinha às 03:42.
+- **Em disputa:** #26, conectoma **com memória** (olho versão 3), a primeira
+  treinada **partindo da campeã** em vez de do zero.
 - **Juiz:** desde 14/10 03:16, um plugin dentro do jogo conta exatamente o que
   aconteceu (dano, cura, morte, geo, golpes, inimigos mortos, sala, posição).
   A leitura pela tela fica de reserva.
-- **Dados:** 24 gravações suas (5 delas correções ao vivo), 1,4 GB.
+- **Ajuda pelo controle:** desde 14/10 12:34 você pode gravar e corrigir pelo
+  controle; a mosca aprende as ações e continua jogando pelo teclado.
+- **Dados:** 26 gravações suas (7 delas correções ao vivo), 1,4 GB.
 
 ---
 
@@ -30,9 +33,13 @@ Cada solução que foi trocada por outra melhor, com o período em que esteve em
 |---|---|---|---|
 | Ler o que aconteceu no jogo | Leitura do HUD pela tela (máscaras, alma, geo) | antes das 18:27 → 14/10 03:16 | Plugin de dentro do jogo (fica como reserva) |
 | Olho da mosca | Versão 1: periferia 18×32 (brilho + movimento) | antes das 18:27 → 13/10 18:56 | Versão 2: periferia + fóvea + memória de ~0,15 s |
+| Olho da mosca | Versão 2: memória de ~0,15 s | 13/10 18:56 → 14/10 03:59 | Versão 3: + memória dos últimos segundos (~1 s e ~4 s) |
 | Aprender com as gravações | Imitação pura | 13/10 17:59 (treino #1) → 18:37 | Imitação pesada pela recompensa |
 | Pesar o que deu certo | Peso pela recompensa | 13/10 18:37 → 21:45 | Peso pela vantagem (AWR, ~3 s de horizonte) |
 | Cérebro | Só a rede inventada (mlp) | 13/10 17:59 → 21:16 | mlp e conectoma revezando no torneio |
+| Ponto de partida do treino | Cada versão treinada do zero | 13/10 17:59 → 14/10 04:08 | Parte da melhor versão do mesmo cérebro |
+| Criar desafiante | Todo treino criava uma | 13/10 19:39 → 14/10 04:08 | Só se aprendeu algo (validação melhor que o ponto de partida) |
+| Experiência própria no treino | ~33 min das partidas recentes da mosca | 13/10 19:39 → 14/10 03:53 | ~1,5 h |
 | Trocar a versão que joga | Treinou, já joga | 13/10 17:59 → 19:39 | Torneio campeã × desafiante |
 | Veredito do torneio | Margem fixa | 13/10 19:39 → 20:04 | Margem + 2× incerteza para vencer |
 | Regra para perder | Atrás 0,5/min já perde | 13/10 20:04 → 14/10 02:02 | Só perde cedo se atrás com segurança (simétrica) |
@@ -45,6 +52,7 @@ Cada solução que foi trocada por outra melhor, com o período em que esteve em
 | Golpe acertado | Alma subindo de repente | antes das 18:27 → 14/10 03:16 | Cada golpe, pelo plugin (de ~1,5 para ~13 por minuto) |
 | Treinar depois de gravar | Esperava a disputa acabar | 13/10 22:50 → 14/10 00:52 | Treina na hora, interrompendo a disputa |
 | Ligar e desligar | Botões do painel | antes das 18:27 → 14/10 01:00 | Atalhos Ctrl+Alt+G / Ctrl+Alt+C (os botões continuam) |
+| Saber o que você aperta | Teclado do sistema (só teclado) | antes das 18:27 → 14/10 12:34 | Ações lidas do jogo pelo plugin (teclado ou controle); sem plugin, teclado |
 | Gravações | Recompensa já somada por quadro | antes das 18:27 → 14/10 02:21 | Marcas de evento (02:21) → contagem de cada evento + pesos + estado do jogo (03:31) |
 
 ---
@@ -117,7 +125,7 @@ sozinha sem nunca piorar quem está jogando.
 que neurônios e ligações são os da mosca real e só a força de cada grupo é
 aprendida. O primeiro conectoma foi o treino #12, às 21:15.
 
-## 3. As disputas (13/10 22:32 → 14/10 03:42)
+## 3. As disputas (13/10 22:32 → 14/10 04:17)
 
 | Versão | Treinada em | Cérebro | Resultado | Recompensa/min (desafiante × campeã) |
 |---|---|---|---|---|
@@ -131,7 +139,9 @@ aprendida. O primeiro conectoma foi o treino #12, às 21:15.
 | **#21** | 14/10 01:52 | **conectoma** | **🏆 venceu a #15** | −2,6 × −4,0 (**+34%**) |
 | #22 | 14/10 02:48 | conectoma | não disputou (vida lida errada) | — |
 | #23 | 14/10 02:53 | conectoma | perdeu para a #21 | −13,2 × −5,4 |
-| #24 | 14/10 03:42 | mlp | em disputa | — |
+| #24 | 14/10 03:42 | mlp | perdeu para a #21 | −15,1 × −4,9 |
+| #25 | 14/10 04:02 | conectoma, **com memória**, do zero | interrompida (correção ao vivo; o painel caiu antes de registrar o placar) | — |
+| #26 | 14/10 04:17 | conectoma, **com memória**, **partindo da #21** | em disputa | — |
 
 A #15 foi a **primeira vitória do cérebro real**, e a #21 o venceu de novo: as
 duas campeãs desde então são da fiação da mosca de verdade.
@@ -188,6 +198,44 @@ morto bateram com o que aconteceu.
 nova pelo nome real (+1, impossível de burlar), lugar novo dentro da sala
 (+0,2), geo só quando sobe, cura só com o Foco.
 
+## 7. Memória, aprender sempre algo e o controle (14/10, 03:53 → 12:37)
+
+| Data e hora | O que entrou | Ferramenta ou lógica |
+|---|---|---|
+| 14/10 03:53 | Treino usa ~1,5 h das partidas recentes da mosca (era ~33 min) | com o juiz exato, a experiência dela vale mais |
+| 14/10 03:59 | **Olho versão 3: memória dos últimos segundos** | integradores lentos (τ 1 s e 4 s) do brilho da periferia + "quanto a cena mudou" |
+| 14/10 04:02 | Primeira mosca com memória (#25, conectoma, do zero) | a memória entra pelas vias de entrada; a fiação real fica igual |
+| 14/10 04:08 | **Cada treino parte da melhor versão** do mesmo cérebro e **só disputa quem aprendeu** | pesos copiados ajustando a normalização; ganhos do conectoma recuperados; "nada novo aprendido" sem disputa |
+| 14/10 04:17 | #26: a primeira partindo da campeã (#21) | ensaio: validação 0,3607 → 0,3048 na 1ª passada |
+| 14/10 12:34 | **Ajudar pelo controle** | o plugin manda as ações acionadas no jogo; teclado ou controle dão no mesmo |
+| 14/10 12:37 | `instalar.sh` só lembra da opção da Steam se ela faltar | |
+
+**A memória (03:59).** Até aqui a mosca decidia cada momento lembrando só
+~0,15 s, e por isso andava em círculos e insistia em paredes. O olho versão 3
+passa a lembrar, de forma resumida, a cena dos últimos segundos, e mede o quanto
+a cena de agora difere da lembrada: parada, presa ou em círculos, a cena quase
+não muda, e a rede pode aprender a mudar de ideia. De propósito ela **não
+lembra das próprias teclas**: na imitação, isso costuma ensinar só a repetir a
+última ação.
+
+**Aprender sempre algo (04:08).** Antes, cada desafiante nascia do zero, e o
+que a anterior sabia só chegava pelos dados. Agora cada versão começa com os
+pesos da melhor do mesmo cérebro (no começo, responde exatamente como ela) e só
+vira desafiante se melhorar em dados que o treino não viu. Nenhuma experiência
+é jogada fora: partidas, correções e gravações, inclusive de quem perdeu,
+entram nos próximos treinos.
+
+**O controle (12:34).** O painel só enxergava o teclado: gravar pelo controle
+ensinaria "não fazer nada", e a correção ao vivo não perceberia que você
+assumiu. O plugin passou a perguntar ao jogo quais ações estão acionadas
+(Pular, Atacar, Esquerda...), venham de onde vierem. A mosca aprende a ação e
+continua jogando pelo teclado; as teclas dela, mesmo com o atraso com que o
+jogo as vê, nunca contam como suas.
+
+**Uma queda (≈04:07).** A sessão gráfica caiu ("X11 connection broke") e levou
+o painel junto, no meio da interrupção da disputa da #25: o placar dela não foi
+registrado. O treino que estava rodando terminou sozinho e virou a #26.
+
 ---
 
 ## O que se aprendeu no caminho
@@ -199,12 +247,16 @@ nova pelo nome real (+1, impossível de burlar), lugar novo dentro da sala
   treinadas com dados ruins perderam a disputa e nunca jogaram como campeãs.
 - **O cérebro real compete bem.** As duas trocas de campeã pelo torneio (#15 e
   #21) foram do conectoma.
+- **Dados limpos antes de cérebro maior.** A memória só entrou depois que o
+  juiz ficou exato: com recompensas erradas, um cérebro melhor só aprenderia o
+  erro mais rápido.
 
 ## Próximos passos
 
-1. **Mais dados bons:** deixar a mosca jogar e corrigir ao vivo; gravar lutas e
-   exploração, agora premiadas com exatidão.
-2. **Memória de alguns segundos:** hoje ela lembra ~0,15 s, e por isso anda em
-   círculos e insiste em paredes.
+1. **Mais dados bons:** deixar a mosca jogar e corrigir ao vivo, agora também
+   pelo controle; gravar lutas e exploração (premiadas com exatidão).
+2. **Ver a memória em ação:** as disputas das versões com memória dizem se ela
+   ajuda a sair de paredes e círculos.
 3. **Menos peso às gravações antigas,** julgadas pela tela.
-4. **Ajuste fino dos detectores pela posição** com o jogo de verdade.
+4. **Conferir o equilíbrio das recompensas** e ajustar os detectores pela
+   posição com algumas horas de jogo com o plugin.
