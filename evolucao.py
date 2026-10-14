@@ -318,7 +318,8 @@ class PainelEvolucao(QtWidgets.QWidget):
             pct = t.get("melhoria_pct")
             celulas = [
                 f"#{tid}", f"#{t.get('contra_treino')}",
-                {"venceu": "🏆 venceu", "interrompida": "interrompida"}.get(t.get("resultado"), "perdeu"),
+                {"venceu": "🏆 venceu", "interrompida": "interrompida", "substituida": "substituída"}.get(
+                    t.get("resultado"), "perdeu"),
                 f"{t.get('por_minuto', 0):+.2f}", f"{t.get('por_minuto_campea', 0):+.2f}",
                 "—" if pct is None else f"{pct:+.0f}%",
             ]

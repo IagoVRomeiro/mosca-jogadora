@@ -60,6 +60,23 @@ class TesteTorneioETreino(unittest.TestCase):
         self.assertFalse(placar(30, -1, 120, -8))  # pouco tempo para saber
 
 
+class TesteSubstituida(unittest.TestCase):
+    def test_desafiante_sem_resultado_fica_como_substituida(self):
+        marcados = []
+        placar = {p: {"segundos": 30.0, "recompensa": -1.0} for p in ("campea", "desafiante")}
+        torneio = types.SimpleNamespace(estado={"placar": placar}, por_minuto=lambda papel: -2.0)
+        o = types.SimpleNamespace(
+            modelos={"desafiante": types.SimpleNamespace(treino_id=41), "campea": types.SimpleNamespace(treino_id=40)},
+            torneio=torneio, _envios=[],
+        )
+        with mock.patch.object(orquestrador, "marcar_torneio", lambda tid, r: marcados.append((tid, r["resultado"]))):
+            Orquestrador._registrar_substituida(o)
+            self.assertEqual(marcados, [(41, "substituida")])
+            self.assertIsNone(o.modelos["desafiante"])
+            Orquestrador._registrar_substituida(o)  # sem desafiante: nada
+        self.assertEqual(len(marcados), 1)
+
+
 class TesteEscapar(unittest.TestCase):
     """Presa na parede: primeiro tenta escalar; se continuar presa, meia-volta."""
 

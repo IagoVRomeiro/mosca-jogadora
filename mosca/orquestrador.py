@@ -399,6 +399,27 @@ class Orquestrador(QtCore.QObject):
             self._treinar_de_novo = False
             self.treinar()
 
+    def _registrar_substituida(self):
+        """Uma desafiante nova chegou com a anterior ainda sem resultado (dois
+        treinos seguidos): a anterior fica no Supabase como "substituída", com o
+        placar que tiver."""
+        anterior = self.modelos.get("desafiante")
+        if anterior is None or not anterior.treino_id:
+            return
+        t = self.torneio
+        campea = self.modelos.get("campea")
+        self._envios.append(marcar_torneio(anterior.treino_id, {
+            "resultado": "substituida",
+            "motivo": "um treino seguinte terminou antes do veredito (já inclui os dados dela)",
+            "contra_treino": campea.treino_id if campea else None,
+            "por_minuto": round(t.por_minuto("desafiante"), 2),
+            "por_minuto_campea": round(t.por_minuto("campea"), 2),
+            "minutos": round(t.estado["placar"]["desafiante"]["segundos"] / 60, 1),
+            "minutos_campea": round(t.estado["placar"]["campea"]["segundos"] / 60, 1),
+            "melhoria_pct": None,
+        }))
+        self.modelos["desafiante"] = None
+
     def _nova_desafiante(self):
         if self.torneio is None:  # versão escolhida à mão: não mexe em quem joga
             self._info_treino = "🧠 Nova desafiante treinada; abra o painel sem --treino para ela disputar"
@@ -406,6 +427,7 @@ class Orquestrador(QtCore.QObject):
         jogando = self.partida is not None
         if jogando:
             self._terminar_partida()
+        self._registrar_substituida()
         promovida = self.torneio.nova_desafiante()
         if promovida:
             nova = self.modelos["campea"] = Imitacao.carregar()
