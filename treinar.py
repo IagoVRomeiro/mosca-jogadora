@@ -69,6 +69,10 @@ TAXA = 1e-3
 VALIDACAO = 0.2  # o fim de cada sessão fica de fora do treino, para medir de verdade
 MINIMO_QUADROS = 300
 PESO_MAXIMO = 3  # peso máximo das teclas raras (ver treinar)
+# Habilidades usadas em toques raros (~1% dos quadros): com o teto de 3x a rede
+# aprende "na dúvida, não solta" e a magia quase nunca sai. Podem pesar mais
+HABILIDADES_RARAS = {"Magia", "Magia Rápida", "Super Investida", "Ferrão dos Sonhos"}
+PESO_MAXIMO_HABILIDADE = 15.0
 DESCONTO = 0.993  # por quadro: um evento a ~3 s (100 quadros) conta pela metade
 FORCA_VANTAGEM = 1.0  # peso = exp(FORCA x vantagem em desvios-padrão), limitado
 PESO_QUADRO = (0.25, 4.0)  # mínimo e máximo do peso de um quadro
@@ -750,7 +754,8 @@ def pesos_positivos(dados):
     """Teclas raras pesam mais, senão a rede só aprende "nunca aperta"; mas pouco
     mais (até PESO_MAXIMO), senão ela aperta à toa teclas que não dá para prever."""
     frac = dados.teclas[dados.treino].mean(axis=0)
-    return np.clip((1 - frac) / np.maximum(frac, 1e-3), 1, PESO_MAXIMO).astype(np.float32)
+    teto = np.array([PESO_MAXIMO_HABILIDADE if a in HABILIDADES_RARAS else PESO_MAXIMO for a in ACOES], np.float32)
+    return np.clip((1 - frac) / np.maximum(frac, 1e-3), 1, teto).astype(np.float32)
 
 
 def treinar(dados, arquitetura="mlp", base=None):
