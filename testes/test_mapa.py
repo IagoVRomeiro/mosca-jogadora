@@ -62,9 +62,10 @@ class TesteTorneioETreino(unittest.TestCase):
         o = types.SimpleNamespace(
             modelos={"campea": types.SimpleNamespace(arquitetura=campea)},
             torneio=types.SimpleNamespace(estado={"ultima_arquitetura": ultima}, em_disputa=em_disputa),
-            _treino_pendente=False, treinos=[], avisos=[],
+            treinos=[], avisos=[], encerradas=[],
         )
         o.treinar = lambda: o.treinos.append(1)
+        o._encerrar_torneio = lambda resultado: o.encerradas.append(resultado)
         o._avisar = lambda texto, s: o.avisos.append(texto)
         return o
 
@@ -75,15 +76,14 @@ class TesteTorneioETreino(unittest.TestCase):
         self.assertEqual(f(self.orq("mlp", "conectoma")), "mlp")
         self.assertEqual(f(self.orq("conectoma", "conectoma")), "mlp")
 
-    def test_treino_espera_a_disputa_terminar(self):
+    def test_gravacao_treina_na_hora_mesmo_com_disputa(self):
         o = self.orq(em_disputa=True)
         Orquestrador._pedir_treino(o)
-        self.assertEqual(o.treinos, [])
-        self.assertTrue(o._treino_pendente)
+        self.assertEqual(o.encerradas, ["interrompida"])  # a campeã não muda
+        self.assertEqual(o.treinos, [1])
         o = self.orq(em_disputa=False)
         Orquestrador._pedir_treino(o)
-        self.assertEqual(o.treinos, [1])
-
+        self.assertEqual((o.encerradas, o.treinos), ([], [1]))
 
 if __name__ == "__main__":
     unittest.main()

@@ -47,7 +47,6 @@ class Orquestrador(QtCore.QObject):
         self.loop = DetectorLoop()
         self.explorador = ExploradorSalas() if self.hud is not None else None
         self.leitor_mapa = LeitorMapa() if self.hud is not None else None
-        self._treino_pendente = False  # parou uma gravação no meio de uma disputa
         self._desde_mapa = 0.0  # segundos de jogo da mosca desde a última olhada no mapa
         self._foto_mapa_em = None
         self._ultimo_dano = 0.0
@@ -161,6 +160,8 @@ class Orquestrador(QtCore.QObject):
             self.modelos["campea"] = desafiante
             texto = (f"🏆 A {nome_d} venceu ({placar['por_minuto']:+.1f}/min contra "
                      f"{placar['por_minuto_campea']:+.1f}/min{melhoria}) e virou a campeã")
+        elif resultado == "interrompida":
+            texto = f"Disputa da {nome_d} interrompida: uma desafiante nova, com a sua gravação, vai treinar"
         else:
             texto = (f"A {nome_d} perdeu ({placar['por_minuto']:+.1f}/min contra "
                      f"{placar['por_minuto_campea']:+.1f}/min{melhoria}): a {nome_c} continua")
@@ -168,9 +169,6 @@ class Orquestrador(QtCore.QObject):
         self._usar("campea")
         self._comecar_partida()
         self._avisar(texto, 30)
-        if self._treino_pendente:  # uma gravação parada durante a disputa
-            self._treino_pendente = False
-            self.treinar()
 
     def _ciclo(self):
         """A mosca jogou o bastante desde o último treino: treina uma desafiante
@@ -303,13 +301,12 @@ class Orquestrador(QtCore.QObject):
             self._pedir_treino()  # aprende com tudo o que já foi gravado
 
     def _pedir_treino(self):
-        """Treinar agora, ou depois do veredito se há uma disputa em andamento
-        (uma desafiante nova descartaria a atual sem resultado)."""
+        """Fim de uma gravação sua: treina já. Uma disputa em andamento é
+        interrompida (fica registrada assim no Supabase): a desafiante nova aprende
+        com tudo o que a atual aprendeu e mais a gravação, e a campeã não muda."""
         if self.torneio is not None and self.torneio.em_disputa:
-            self._treino_pendente = True
-            self._avisar("🧠 Treino agendado: roda quando a disputa atual terminar", 10)
-        else:
-            self.treinar()
+            self._encerrar_torneio("interrompida")
+        self.treinar()
 
     def _arquitetura_do_treino(self):
         """Reveza as arquiteturas: depois de uma desafiante da mesma arquitetura
