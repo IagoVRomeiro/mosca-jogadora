@@ -213,8 +213,11 @@ class Torneio:
     - a desafiante vira campeã se fizer mais de MARGEM a mais E a diferença for
       maior que 2x a incerteza (variação entre rodadas): não ganha por sorte;
     - é descartada se fizer MARGEM a menos E a diferença for maior que 2x a
-      incerteza (não perde por azar), ou se chegar a MAXIMO_S sem vencer.
-    Na dúvida, a campeã fica. Descartada, continua guardada no Supabase.
+      incerteza (não perde por azar), ou se chegar a MAXIMO_S sem vencer; se
+      nessa hora ela estiver mais de MARGEM na frente, a disputa segue até MAXIMO_NA_FRENTE_S
+      (mais rodadas, menos incerteza: uma melhora pequena e real aparece).
+    Rodada em que nada aconteceu (jogo parado, menu, cena) não vira amostra nem
+    conta tempo. Na dúvida, a campeã fica. Descartada, continua no Supabase.
     """
 
     RODADA_S = 60
@@ -222,6 +225,7 @@ class Torneio:
     MINIMO_S = 240
     MINIMO_RODADAS = 3
     MAXIMO_S = 900
+    MAXIMO_NA_FRENTE_S = 1800
     MARGEM = 0.5  # de recompensa por minuto
     PAPEIS = ("campea", "desafiante")
 
@@ -241,7 +245,7 @@ class Torneio:
         return {papel: {"segundos": 0.0, "recompensa": 0.0} for papel in self.PAPEIS}
 
     def _rodada_zerada(self):
-        return {"segundos": 0.0, "recompensa": 0.0}
+        return {"segundos": 0.0, "recompensa": 0.0, "eventos": 0}
 
     def _rodadas_zeradas(self):
         return {papel: [] for papel in self.PAPEIS}  # recompensa/min de cada rodada
@@ -286,6 +290,8 @@ class Torneio:
         for acumulado in (self.estado["placar"][papel], self.estado["rodada"]):
             acumulado["segundos"] += segundos
             acumulado["recompensa"] += recompensa
+        if recompensa:
+            self.estado["rodada"]["eventos"] = self.estado["rodada"].get("eventos", 0) + 1
         if self.estado["rodada"]["segundos"] >= self.RODADA_S:
             self.fechar_rodada(papel)
             self.estado["vez"] = "campea" if papel == "desafiante" else "desafiante"
@@ -296,7 +302,9 @@ class Torneio:
     def fechar_rodada(self, papel):
         """Fim de rodada (ou o controle foi desligado no meio): vira uma amostra."""
         r = self.estado["rodada"]
-        if r["segundos"] >= self.RODADA_MINIMA_S:
+        if not r.get("eventos", 1):  # nada aconteceu: não mede nada, e o tempo não conta
+            self.estado["placar"][papel]["segundos"] -= r["segundos"]
+        elif r["segundos"] >= self.RODADA_MINIMA_S:
             self.estado["rodadas"][papel].append(r["recompensa"] / r["segundos"] * 60)
         self.estado["rodada"] = self._rodada_zerada()
         self.salvar()
@@ -326,7 +334,11 @@ class Torneio:
         diferenca = self.por_minuto("desafiante") - self.por_minuto("campea")
         if diferenca > self.MARGEM and diferenca > 2 * self.incerteza():
             return "venceu"
-        if (diferenca < -self.MARGEM and -diferenca > 2 * self.incerteza()) or min(tempos) >= self.MAXIMO_S:
+        if diferenca < -self.MARGEM and -diferenca > 2 * self.incerteza():
+            return "perdeu"
+        if min(tempos) >= self.MAXIMO_S:
+            if diferenca > self.MARGEM and min(tempos) < self.MAXIMO_NA_FRENTE_S:
+                return None  # na frente o bastante para poder vencer, mas sem certeza: mais rodadas
             return "perdeu"
         return None
 

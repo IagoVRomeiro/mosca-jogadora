@@ -27,7 +27,9 @@ class TesteTorneio(unittest.TestCase):
         rodadas = {p: 0 for p in Torneio.PAPEIS}
         for _ in range(int(limite_min * 60 / QUADRO_S)):
             papel = t.quem_joga()
-            trocou = t.contar(papel, QUADRO_S, por_minuto(papel, rodadas[papel]) / 60 * QUADRO_S)
+            # + um "evento" desprezível por quadro: no jogo sempre acontece algo (uma
+            # rodada sem nenhum evento é jogo parado e não conta)
+            trocou = t.contar(papel, QUADRO_S, por_minuto(papel, rodadas[papel]) / 60 * QUADRO_S + 1e-9)
             if trocou:
                 rodadas[papel] += 1
             resultado = t.veredito()
@@ -68,6 +70,22 @@ class TesteTorneio(unittest.TestCase):
             return -8.0 if rodada < 2 else 4.0
         _, minutos = self.disputar(self.novo(), por_minuto)
         self.assertGreater(minutos["desafiante"], 5)
+
+    def test_na_frente_sem_certeza_ganha_mais_tempo(self):
+        # um pouco melhor, mas com rodadas muito variáveis: aos 15 min ainda não
+        # dá para ter certeza, então a disputa segue em vez de descartá-la
+        def por_minuto(papel, rodada):
+            ruido = (-12, 6, -2, 8, -10, 4)[rodada % 6]
+            return ruido + (1.5 if papel == "desafiante" else 0.0)
+        _, minutos = self.disputar(self.novo(), por_minuto, limite_min=80)
+        self.assertGreater(minutos["desafiante"], Torneio.MAXIMO_S / 60 + 1)
+
+    def test_rodada_sem_nada_nao_conta(self):
+        t = self.novo()
+        for _ in range(int(Torneio.RODADA_S / QUADRO_S) + 1):  # 1 min parado num menu
+            t.contar("desafiante", QUADRO_S, 0.0)
+        self.assertEqual(t.estado["rodadas"]["desafiante"], [])
+        self.assertAlmostEqual(t.estado["placar"]["desafiante"]["segundos"], 0.0, places=3)
 
     def test_nao_vence_por_sorte(self):
         """Rodadas muito variáveis: a vantagem média não basta para vencer no mínimo."""

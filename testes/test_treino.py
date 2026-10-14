@@ -193,6 +193,20 @@ class TestePartirDaMelhor(unittest.TestCase):
         for i, acao in enumerate(ACOES):
             np.testing.assert_allclose(depois[:, i], antes[:, acoes_base.index(acao)], rtol=1e-4, atol=1e-5)
 
+    def test_escolhe_a_candidata_com_melhor_validacao(self):
+        dados = dados_do_jogo_demo()
+        antes = treinar.EPOCAS
+        treinar.EPOCAS = 4
+        try:
+            boa, _, _ = treinar.treinar(dados, "mlp")
+        finally:
+            treinar.EPOCAS = antes
+        ruim = treinar.RedeMLP.iniciar(boa.p["w1"].shape[0], len(ACOES), np.random.default_rng(9))
+        extras = {"media": dados.media, "desvio": dados.desvio, "acoes": np.array(ACOES)}
+        candidatos = [({**ruim.para_salvar(), **extras}, 1), ({**boa.para_salvar(), **extras}, 2)]
+        _, escolhida = treinar.escolher_partida(dados, "mlp", candidatos)
+        self.assertEqual(escolhida, 2)
+
     def test_formato_diferente_comeca_do_zero(self):
         rng = np.random.default_rng(4)
         base = {**treinar.RedeMLP.iniciar(100, len(ACOES) + 1, rng).para_salvar(),

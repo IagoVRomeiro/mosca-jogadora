@@ -599,32 +599,58 @@ def perda(rede, dados, idx, peso_pos, ponderar=False):
     return float(np.average(por_quadro, weights=dados.pesos[idx] if ponderar else None))
 
 
-def ponto_de_partida(arquitetura):
-    """A melhor versão já treinada deste cérebro, para a nova partir dela: a
-    campeã, a desafiante atual ou, se nenhuma for deste cérebro, a mais recente
-    dele no Supabase. Devolve (pesos, treino_id) ou (None, None)."""
+CANDIDATOS_SUPABASE = 3  # versões recentes do mesmo cérebro testadas como ponto de partida
+
+
+def candidatos_de_partida(arquitetura):
+    """Versões já treinadas deste cérebro que podem servir de ponto de partida:
+    a campeã e a desafiante (se forem dele) e as CANDIDATOS_SUPABASE mais recentes
+    dele no Supabase. Lista de (pesos, treino_id)."""
+    candidatos, vistos = [], set()
     for arquivo in (ARQUIVO_MODELO, ARQUIVO_DESAFIANTE):
         if arquivo.exists():
             with np.load(arquivo) as m:
-                desta = (str(m["arquitetura"]) if "arquitetura" in m.files else "mlp") == arquitetura
-                if desta:
-                    info = arquivo.with_suffix(".json")
-                    tid = json.loads(info.read_text()).get("treino_id") if info.exists() else None
-                    return {k: m[k] for k in m.files}, tid
+                if (str(m["arquitetura"]) if "arquitetura" in m.files else "mlp") != arquitetura:
+                    continue
+                info = arquivo.with_suffix(".json")
+                tid = json.loads(info.read_text()).get("treino_id") if info.exists() else None
+                candidatos.append(({k: m[k] for k in m.files}, tid))
+                vistos.add(tid)
     try:
         from registro import Supabase, baixar_treino
 
         banco = Supabase.do_env()
-        if banco is None:
-            return None, None
-        for t in banco._pedir("GET", "/rest/v1/treinos?select=id,config&order=id.desc&limit=100"):
-            if (t.get("config") or {}).get("arquitetura", "mlp") == arquitetura:
+        if banco is not None:
+            achados = 0
+            for t in banco._pedir("GET", "/rest/v1/treinos?select=id,config&order=id.desc&limit=100"):
+                if achados >= CANDIDATOS_SUPABASE:
+                    break
+                if (t.get("config") or {}).get("arquitetura", "mlp") != arquitetura or t["id"] in vistos:
+                    continue
                 arquivo, _ = baixar_treino(t["id"], PASTA / "modelos_base")
                 with np.load(arquivo) as m:
-                    return {k: m[k] for k in m.files}, t["id"]
-    except Exception as e:  # sem internet: começa do zero
-        print(f"⚠ sem ponto de partida no Supabase ({e})")
-    return None, None
+                    candidatos.append(({k: m[k] for k in m.files}, t["id"]))
+                achados += 1
+    except Exception as e:  # sem internet: fica com os locais
+        print(f"⚠ sem candidatas do Supabase ({e})")
+    return candidatos
+
+
+def escolher_partida(dados, arquitetura, candidatos):
+    """A candidata com a melhor validação nos dados de agora: o progresso de uma
+    desafiante que empatou não se perde, mesmo sem ela ter vencido."""
+    peso_pos = pesos_positivos(dados)
+    n_ent, n_sai = dados.entrada(dados.treino[:1]).shape[1], dados.teclas.shape[1]
+    melhor, melhor_perda = (None, None), np.inf
+    for pesos, tid in candidatos:
+        rede = criar_rede(arquitetura, n_ent, n_sai, np.random.default_rng(0))
+        if not partir_de(rede, pesos, arquitetura, dados):
+            continue
+        pv = perda(rede, dados, dados.valid, peso_pos)
+        print(f"  candidata #{tid}: validação {pv:.4f}")
+        if pv < melhor_perda:
+            melhor, melhor_perda = (pesos, tid), pv
+    return melhor
 
 
 def partir_de(rede, base, arquitetura, dados):
@@ -675,6 +701,13 @@ def partir_de(rede, base, arquitetura, dados):
     return True
 
 
+def pesos_positivos(dados):
+    """Teclas raras pesam mais, senão a rede só aprende "nunca aperta"; mas pouco
+    mais (até PESO_MAXIMO), senão ela aperta à toa teclas que não dá para prever."""
+    frac = dados.teclas[dados.treino].mean(axis=0)
+    return np.clip((1 - frac) / np.maximum(frac, 1e-3), 1, PESO_MAXIMO).astype(np.float32)
+
+
 def treinar(dados, arquitetura="mlp", base=None):
     """Cada quadro de treino pesa pela recompensa futura (dados.pesos). A
     validação não usa peso: mede o quanto ela imita você, para comparar treinos.
@@ -689,10 +722,7 @@ def treinar(dados, arquitetura="mlp", base=None):
         print("  a versão de partida tem outro formato: treinando do zero")
     taxa = TAXA_AJUSTE if partiu else TAXA
     epocas = EPOCAS_CONECTOMA if arquitetura == "conectoma" else EPOCAS
-    # Teclas raras pesam mais, senão a rede só aprende "nunca aperta"; mas pouco
-    # mais (até 3x), senão ela aperta à toa teclas que não dá para prever
-    frac = dados.teclas[dados.treino].mean(axis=0)
-    peso_pos = np.clip((1 - frac) / np.maximum(frac, 1e-3), 1, PESO_MAXIMO).astype(np.float32)
+    peso_pos = pesos_positivos(dados)
     p = rede.p
     m = {k: np.zeros_like(v) for k, v in p.items()}
     v = {k: np.zeros_like(v) for k, v in p.items()}
@@ -804,7 +834,10 @@ def main():
         f"\ntreinando com {len(dados.treino):,} quadros, validando com {len(dados.valid):,} "
         f"(olho versão {VERSAO_OLHO}: {dados.entrada(dados.treino[:1]).shape[1]:,} entradas)".replace(",", ".")
     )
-    base, base_id = (None, None) if args.do_zero else ponto_de_partida(arquitetura)
+    base, base_id = None, None
+    if not args.do_zero:
+        print("escolhendo o ponto de partida (a melhor nos dados de agora):")
+        base, base_id = escolher_partida(dados, arquitetura, candidatos_de_partida(arquitetura))
     if base is not None:
         print(f"partindo da versão #{base_id} (o que ela sabe não se perde)")
     rede, perda_validacao, aprendeu = treinar(dados, arquitetura, base)
