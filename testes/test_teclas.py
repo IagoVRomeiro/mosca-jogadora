@@ -14,6 +14,7 @@ QUADRO_S = 1 / 30
 def captura_falsa(foco_no_jogo=True):
     c = CapturaJanela.__new__(CapturaJanela)
     c.apertadas, c._ativas, c._desde, c._apertou_em, c._descanso_ate = set(), set(), {}, {}, {}
+    c._soltou_em = {}
     c.controlando, c.aviso, c.aviso_controle = True, None, None
     c.janela = type("Janela", (), {"id": 42})()
     c.janelas_proprias = set()

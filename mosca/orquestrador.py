@@ -445,6 +445,20 @@ class Orquestrador(QtCore.QObject):
     def _mosca_joga(self):
         return getattr(self.jogo, "controlando", False) and not self.correcao.ativa
 
+    def _suas_teclas(self):
+        """As ações que VOCÊ está acionando agora (na ordem de ACOES). Com o
+        plugin, como o jogo as lê: teclado ou controle, dá no mesmo (a mosca
+        aprende "Pular", não "botão A"). Sem ele, só o teclado. As da mosca
+        ficam de fora."""
+        estado = self._estado_jogo
+        if estado is not None and "acoes" in estado:
+            suas = set(estado["acoes"])
+        else:
+            suas = {a for a, t in zip(ACOES, self.jogo.teclas_do_usuario()) if t}
+        if self.jogo.controlando:
+            suas -= self.jogo.da_mosca()
+        return np.array([a in suas for a in ACOES])
+
     def _vigiar_correcao(self):
         """Com a mosca ligada, uma tecla do jogo que ela não apertou é sua: você
         assume. Devolve as suas teclas enquanto você joga, ou None."""
@@ -454,8 +468,8 @@ class Orquestrador(QtCore.QObject):
         teclas = np.zeros(len(ACOES), bool)
         no_jogo = self.jogo.controlando and not self.jogo.aviso and self.jogo.em_foco()
         if no_jogo:
-            teclas = self.jogo.teclas_do_usuario()
-        voce = any(t and a not in self.jogo.apertadas for a, t in zip(ACOES, teclas))
+            teclas = self._suas_teclas()
+        voce = bool(teclas.any())
         if not self.correcao.ativa:
             self.correcao.eventos(self._eventos_quadro, agora)
         mudanca = self.correcao.passo(voce, agora) if self.jogo.controlando else None
@@ -507,7 +521,7 @@ class Orquestrador(QtCore.QObject):
         texto = f"⏺ Gravando {minutos:02d}:{segundos:02d} · {g.total:,} quadros".replace(",", ".")
         if self.jogo.aviso or not self.jogo.em_foco():
             return texto + " · pausado: clique no jogo", {a: 0.0 for a in ACOES}
-        teclas = self.jogo.teclas_do_usuario()
+        teclas = self._suas_teclas()
         g.adicionar(
             self.cerebro.reduzida, teclas, self._recompensa_quadro, self._vida,
             self._eventos_quadro, self._estado_jogo,
@@ -645,7 +659,7 @@ class Orquestrador(QtCore.QObject):
         if self._mosca_joga:
             apertadas = self.jogo.apertadas
         elif self.gravador is not None or self.correcao.ativa:  # você jogando: as suas teclas
-            apertadas = {a for a, t in zip(ACOES, self.jogo.teclas_do_usuario()) if t}
+            apertadas = {a for a, t in zip(ACOES, self._suas_teclas()) if t}
         else:
             apertadas = set()
         esquerda, direita = "Esquerda" in apertadas, "Direita" in apertadas

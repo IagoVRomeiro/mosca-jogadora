@@ -89,6 +89,7 @@ class TesteNoPainel(unittest.TestCase):
                                      usuario=set())
         jogo.em_foco = lambda: True
         jogo.teclas_do_usuario = lambda: np.array([a in jogo.usuario | jogo.apertadas for a in ACOES])
+        jogo.da_mosca = lambda: set(jogo.apertadas)
 
         def soltar_tudo():
             jogo.apertadas.clear()
@@ -104,6 +105,7 @@ class TesteNoPainel(unittest.TestCase):
         )
         o._notificar = o.avisos.append
         o._fim_correcao = lambda tipo: Orquestrador._fim_correcao(o, tipo)
+        o._suas_teclas = lambda: Orquestrador._suas_teclas(o)
         return o
 
     def test_sua_tecla_tira_a_mosca_e_ela_volta(self):
@@ -151,6 +153,25 @@ class TesteNoPainel(unittest.TestCase):
                 Orquestrador._vigiar_correcao(o)
         self.assertEqual(o.partida["eventos"]["ajuda"], 1)
         self.assertEqual(o.gravador_mosca.ajustes, [])
+
+    def test_pelo_controle_com_o_plugin(self):
+        """Com o plugin, as ações vêm do jogo (teclado ou controle): o controle
+        também assume, e o que a mosca aperta não conta como seu."""
+        o = self.orq()
+        o._estado_jogo = {"acoes": ["Direita", "Pular"]}  # Direita é da mosca; Pular é seu (botão A)
+        relogio = [0.0]
+        with mock.patch.object(orquestrador, "Gravador", GravadorFalso), \
+             mock.patch.object(orquestrador.time, "monotonic", lambda: relogio[0]):
+            suas = Orquestrador._vigiar_correcao(o)
+        self.assertTrue(o.correcao.ativa)
+        self.assertEqual(suas["Pular"], 1.0)
+        self.assertEqual(suas["Direita"], 0.0)
+
+    def test_so_a_mosca_pelo_plugin_nao_assume(self):
+        o = self.orq()
+        o._estado_jogo = {"acoes": ["Direita"]}  # o jogo vê a tecla da mosca
+        self.assertIsNone(Orquestrador._vigiar_correcao(o))
+        self.assertFalse(o.correcao.ativa)
 
     def test_mosca_desligada_nao_assume(self):
         o = self.orq()

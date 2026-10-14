@@ -84,6 +84,7 @@ class CapturaJanela:
         self.apertadas = set()  # teclas fisicamente apertadas agora
         self._ativas = set()  # ações que a mosca quer (podem estar entre dois toques)
         self._desde, self._apertou_em = {}, {}
+        self._soltou_em = {}  # quando a mosca soltou cada tecla (ver da_mosca)
         self._descanso_ate = {}  # tecla solta à força (SEGURAR_MAXIMO_S): até quando fica solta
         self.janelas_proprias = set()  # o painel: pode devolver o foco ao jogo
         self.aviso_controle = None
@@ -111,6 +112,12 @@ class CapturaJanela:
             [bool(mapa[c // 8] & (1 << (c % 8))) for c in (self._codigos[a] for a in ACOES)]
         )
 
+    def da_mosca(self, folga=0.25):
+        """Teclas da mosca: as apertadas e as soltas há menos de `folga` s (o jogo
+        e o plugin ainda podem vê-las acionadas por um instante)."""
+        agora = time.monotonic()
+        return set(self.apertadas) | {a for a, t in self._soltou_em.items() if agora - t < folga}
+
     def focar(self):
         """Pede ao gerenciador de janelas para trazer o jogo para o foco."""
         if self.janela is None or time.monotonic() - self._ultimo_foco < 0.5:
@@ -135,8 +142,10 @@ class CapturaJanela:
 
     def soltar_tudo(self):
         try:
+            agora = time.monotonic()
             for acao in list(self.apertadas):
                 self._tecla(acao, False)  # soltar é seguro com qualquer foco
+                self._soltou_em[acao] = agora
             self.display.flush()
         except Exception:
             pass
@@ -172,6 +181,8 @@ class CapturaJanela:
                     self._tecla(acao, apertar)
                     if apertar:
                         self._apertou_em[acao] = agora
+                    else:
+                        self._soltou_em[acao] = agora
             self.display.flush()
         except Exception:
             self.soltar_tudo()

@@ -18,3 +18,18 @@ foreach (var (tipo, nomes) in new[] {
         Console.WriteLine($"{tipo}.{n}: " + (m.Any() ? string.Join(" | ", m) : "—"));
     }
 }
+
+foreach (var nome in new[]{"HeroActions", "InputHandler"}) {
+    var t = asm.GetType(nome);
+    if (t == null) { Console.WriteLine($"{nome}: NÃO EXISTE"); continue; }
+    var membros = t.GetMembers(f).Where(x => x is FieldInfo || x is PropertyInfo).Select(x => x.Name);
+    Console.WriteLine($"{nome}: " + string.Join(", ", membros));
+}
+
+{
+    var t = asm.GetType("HeroActions");
+    var campo = t.GetField("left", f);
+    var tipo = campo.FieldType;
+    Console.WriteLine($"tipo da ação: {tipo.FullName} em {tipo.Assembly.GetName().Name}");
+    Console.WriteLine("IsPressed: " + string.Join(", ", tipo.GetMembers(BindingFlags.Public | BindingFlags.Instance).Where(m => m.Name is "IsPressed" or "Value" or "WasPressed").Select(m => m.Name + " (" + m.DeclaringType.Name + ")")));
+}

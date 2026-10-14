@@ -4,6 +4,10 @@
 // 30 vezes por segundo manda um JSON por UDP para 127.0.0.1:47123 com o estado
 // atual e contadores que só crescem (golpes, inimigos mortos): se um pacote se
 // perder, a diferença aparece no próximo.
+//
+// "acoes": as ações do jogo acionadas agora, como o próprio jogo as lê, venham
+// do teclado ou do controle. Assim você pode ajudar a mosca pelo controle: ela
+// aprende "Pular", não "botão A" nem "Space".
 using System.Globalization;
 using System.Net.Sockets;
 using System.Text;
@@ -25,6 +29,28 @@ public class Plugin : BaseUnityPlugin
         udp.Connect("127.0.0.1", PORTA);
         new Harmony("mosca.jogadora.eventos").PatchAll(typeof(Plugin).Assembly);
         Logger.LogInfo($"Mosca jogadora: mandando eventos para a porta {PORTA}");
+    }
+
+    // nome no painel (mosca/config.py) -> ação do jogo
+    static readonly (string nome, System.Func<HeroActions, InControl.PlayerAction> acao)[] ACOES =
+    {
+        ("Esquerda", a => a.left), ("Direita", a => a.right), ("Cima", a => a.up), ("Baixo", a => a.down),
+        ("Pular", a => a.jump), ("Atacar", a => a.attack), ("Esquiva", a => a.dash),
+        ("Foco", a => a.focus), ("Foco", a => a.cast), ("Super Investida", a => a.superDash),
+        ("Ferrão dos Sonhos", a => a.dreamNail), ("Magia Rápida", a => a.quickCast), ("Mapa", a => a.quickMap),
+    };
+
+    static string Acoes()
+    {
+        var ih = InputHandler.Instance;
+        if (ih == null || ih.inputActions == null) return "";
+        var nomes = new System.Collections.Generic.List<string>();
+        foreach (var (nome, acao) in ACOES)
+        {
+            var a = acao(ih.inputActions);
+            if (a != null && a.IsPressed && !nomes.Contains(nome)) nomes.Add(nome);
+        }
+        return string.Join(",", nomes.ConvertAll(n => "\"" + n + "\""));
     }
 
     void Update()
@@ -56,6 +82,7 @@ public class Plugin : BaseUnityPlugin
             .Append(",\"no_chao\":").Append(s != null && s.onGround ? "true" : "false")
             .Append(",\"na_parede\":").Append(s != null && s.wallSliding ? "true" : "false")
             .Append(",\"curando\":").Append(s != null && s.focusing ? "true" : "false")
+            .Append(",\"acoes\":[").Append(Acoes()).Append(']')
             .Append('}').ToString();
         try
         {
