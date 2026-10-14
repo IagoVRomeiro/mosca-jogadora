@@ -1,5 +1,5 @@
-"""Estímulos do jogo: o leitor do HUD (dano, morte, acerto, geo, cura), a parada e
-as salas novas (exploração)."""
+"""Estímulos do jogo: o leitor do HUD (dano, morte, acerto, geo, cura), a parada,
+ficar presa (contra parede, pulando onde não alcança) e as salas novas (exploração)."""
 
 from pathlib import Path
 
@@ -31,7 +31,7 @@ class LeitorHUD:
     SUMIDO_MORTE = 30  # quadros sem HUD (~1 s) que, com 1 máscara, indicam morte
     RECOMPENSA = {
         "dano": -1.0, "morte": -3.0, "cura": 0.3, "acerto": 0.3, "geo": 0.5, "parada": -0.2,
-        "sala_nova": 1.0,
+        "sala_nova": 1.0, "presa": -0.3,
     }
 
     def __init__(self):
@@ -236,3 +236,82 @@ class ExploradorSalas:
             np.savez_compressed(temporario, salas=self.memoria)
             temporario.replace(self.arquivo)
             self.alterada = False
+
+
+def deslizamento(antes, depois):
+    """Quanto a câmera andou (dx, dy em pixels de OLHO; dx > 0 = para a direita)
+    de `antes` para `depois`, por correlação de fase, sem a faixa do HUD (que fica
+    parada e puxaria para zero)."""
+    a, b = cinza(antes)[24:].astype(np.float32), cinza(depois)[24:].astype(np.float32)
+    janela = _janela(a.shape)
+    a, b = (a - a.mean()) * janela, (b - b.mean()) * janela
+    f = np.fft.rfft2(a) * np.conj(np.fft.rfft2(b))
+    r = np.fft.irfft2(f / (np.abs(f) + 1e-6), s=a.shape)
+    y, x = np.unravel_index(np.argmax(r), r.shape)
+    if y > a.shape[0] // 2:
+        y -= a.shape[0]
+    if x > a.shape[1] // 2:
+        x -= a.shape[1]
+    return int(x), int(y)
+
+
+_JANELAS = {}
+
+
+def _janela(forma):
+    if forma not in _JANELAS:
+        _JANELAS[forma] = np.outer(np.hanning(forma[0]), np.hanning(forma[1])).astype(np.float32)
+    return _JANELAS[forma]
+
+
+class DetectorPresa:
+    """Presa: apertando para andar, mas a câmera não sai do lugar na horizontal.
+
+    O jogo segue o Cavaleiro com a câmera; a cada PASSO quadros mede quanto a
+    imagem deslizou (sem o HUD). Se em JANELA_S segundos uma direção ficou
+    apertada em >= 70% do tempo e a câmera não andou nada na horizontal (nem
+    para lá e para cá), é "presa": contra uma parede ou pulando onde não alcança
+    (o pulo mexe a câmera na vertical, por isso só a horizontal conta). Repete a
+    cada REPETE_S enquanto continuar. Medido nas suas gravações: com 6 s, só ~4%
+    dos trechos em que você andava contariam (câmera travada, luta na parede).
+    """
+
+    PASSO = 10  # quadros entre duas medidas (~0,33 s): quadro a quadro é < 1 pixel
+    JANELA_S, REPETE_S = 6.0, 3.0
+    LIMITE_PX = 6  # deslizamento horizontal total na janela
+
+    def __init__(self, dt=QUADRO_MS / 1000):
+        self.medidas = int(self.JANELA_S / dt) // self.PASSO
+        self.repete = int(self.REPETE_S / dt)
+        self.reiniciar()
+
+    def reiniciar(self):
+        self._quadro, self._anterior = 0, None
+        self._dx, self._lados = [], []
+        self._espera = 0
+        self.lado = None  # "Esquerda" ou "Direita": para onde ela estava forçando
+
+    def passo(self, reduzida, esquerda, direita, hud_visivel):
+        """`esquerda`/`direita`: se a tecla está apertada neste quadro."""
+        if not hud_visivel:
+            self.reiniciar()
+            return []
+        self._lados.append(1 if direita else -1 if esquerda else 0)
+        self._lados = self._lados[-self.medidas * self.PASSO :]
+        self._espera = max(0, self._espera - 1)
+        self._quadro += 1
+        if self._quadro % self.PASSO:
+            return []
+        if self._anterior is not None:
+            self._dx.append(abs(deslizamento(self._anterior, reduzida)[0]))
+            self._dx = self._dx[-self.medidas :]
+        self._anterior = reduzida
+        lados = np.array(self._lados)
+        forcando = max((lados == 1).mean(), (lados == -1).mean()) if len(lados) else 0
+        if len(self._dx) < self.medidas or forcando < 0.7 or self._espera:
+            return []
+        if sum(self._dx) > self.LIMITE_PX:
+            return []
+        self.lado = "Direita" if (lados == 1).mean() >= (lados == -1).mean() else "Esquerda"
+        self._espera = self.repete
+        return ["presa"]

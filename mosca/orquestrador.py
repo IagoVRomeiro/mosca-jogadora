@@ -14,7 +14,7 @@ from comparar import melhoria_percentual
 from registro import registrar_partida, marcar_torneio
 from .aprendizado import Gravador, Imitacao, Torneio
 from .config import ACOES, ARQUIVO_DESAFIANTE, PASTA, PASTA_GRAVACOES_MOSCA, QUADRO_MS, ROTULO_TECLA
-from .estimulos import DetectorParada, ExploradorSalas, LeitorHUD
+from .estimulos import DetectorParada, DetectorPresa, ExploradorSalas, LeitorHUD
 from .interface import Painel
 
 
@@ -43,6 +43,7 @@ class Orquestrador(QtCore.QObject):
         self.gravador = None
         self.hud = LeitorHUD() if hasattr(jogo, "controlando") else None
         self.parada = DetectorParada()
+        self.presa = DetectorPresa()
         self.explorador = ExploradorSalas() if self.hud is not None else None
         self._desde_mapa = 0.0  # segundos de jogo da mosca desde a última olhada no mapa
         self._foto_mapa_em = None
@@ -214,7 +215,7 @@ class Orquestrador(QtCore.QObject):
         if self.gravador_mosca is not None:
             self.gravador_mosca.adicionar(
                 self.cerebro.reduzida, teclas, self._recompensa_quadro, self.hud.vida,
-                "sala_nova" in self._eventos_quadro,
+                "sala_nova" in self._eventos_quadro, "presa" in self._eventos_quadro,
             )
         self._habito_do_mapa()
         if self.torneio is not None:
@@ -357,7 +358,7 @@ class Orquestrador(QtCore.QObject):
         teclas = self.jogo.teclas_do_usuario()
         g.adicionar(
             self.cerebro.reduzida, teclas, self._recompensa_quadro, self.hud.vida,
-            "sala_nova" in self._eventos_quadro,
+            "sala_nova" in self._eventos_quadro, "presa" in self._eventos_quadro,
         )
         return texto, {a: float(t) for a, t in zip(ACOES, teclas)}
 
@@ -404,6 +405,7 @@ class Orquestrador(QtCore.QObject):
         if self.hud is not None:
             self.hud.reiniciar()
         self.parada.reiniciar()
+        self.presa.reiniciar()
         self.cerebro.reiniciar()
         self.jogo.reiniciar()
         self.mosca.pedido_reinicio = True
@@ -412,6 +414,7 @@ class Orquestrador(QtCore.QObject):
     NOMES_EVENTOS = {
         "dano": "tomou dano", "cura": "curou", "acerto": "acertou inimigo", "geo": "pegou geo",
         "parada": "ficou parada", "morte": "morreu", "sala_nova": "sala nova!",
+        "presa": "ficou presa",
     }
 
     # Reflexo de sair do lugar: moscas paradas demais fazem movimentos
@@ -423,6 +426,15 @@ class Orquestrador(QtCore.QObject):
         acao = self._sorteio.choice(self.REFLEXOS)
         self.cerebro.pulsar_zona(acao)
         return f"reflexo: tentou {ROTULO_TECLA[acao]}"
+
+    def _escapar(self):
+        """Presa forçando para um lado: meia-volta (às vezes pulando junto)."""
+        outro = "Esquerda" if self.presa.lado == "Direita" else "Direita"
+        self.cerebro.pulsar_zona(outro)
+        if self._sorteio.random() < 0.5:
+            self.cerebro.pulsar_zona("Pular")
+            return f"reflexo: meia-volta ({ROTULO_TECLA[outro]}) pulando"
+        return f"reflexo: meia-volta ({ROTULO_TECLA[outro]})"
 
     def _ler_hud(self, imagem):
         """Eventos do jogo -> dopamina no cérebro + painel de recompensa."""
@@ -440,8 +452,20 @@ class Orquestrador(QtCore.QObject):
         eventos += self.parada.passo(
             self.cerebro.movimento_medio, self.hud.visivel, self.hud.gastando_alma
         )
+        if self.cerebro.reduzida is not None:
+            if self.jogo.controlando:
+                apertadas = self.jogo.apertadas
+            elif self.gravador is not None:  # você jogando: as suas teclas
+                apertadas = {a for a, t in zip(ACOES, self.jogo.teclas_do_usuario()) if t}
+            else:
+                apertadas = set()
+            eventos += self.presa.passo(
+                self.cerebro.reduzida, "Esquerda" in apertadas, "Direita" in apertadas, self.hud.visivel
+            )
         reflexo = None
-        if "parada" in eventos and self.jogo.controlando:
+        if "presa" in eventos and self.jogo.controlando:
+            reflexo = self._escapar()
+        elif "parada" in eventos and self.jogo.controlando:
             reflexo = self._reflexo()
         valor = sum(LeitorHUD.RECOMPENSA[e] for e in eventos)
         self._eventos_quadro = eventos

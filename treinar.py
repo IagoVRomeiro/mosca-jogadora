@@ -29,7 +29,7 @@ import numpy as np
 
 from mosca.config import ACOES, ARQUIVO_DESAFIANTE, ARQUIVO_MODELO, PASTA, PASTA_GRAVACOES, PASTA_GRAVACOES_MOSCA, QUADRO_MS, TOQUE_S
 from mosca.conectoma import RedeConectoma, carregar_conectoma
-from mosca.estimulos import ExploradorSalas, LeitorHUD
+from mosca.estimulos import DetectorPresa, ExploradorSalas, LeitorHUD
 from mosca.olho import ATRASO_OLHO, FOVEA, GRADE_FOVEA, GRADE_OLHO, OLHO, VERSAO_OLHO, entrada, retrato
 from registro import registrar_treino
 
@@ -51,6 +51,7 @@ ARQUIVO_INFO_MODELO = ARQUIVO_SAIDA.with_suffix(".json")  # qual treino gerou o 
 # só as mais recentes, para o treino não crescer sem fim
 PESO_MOSCA = 0.5
 RECOMPENSA_SALA = LeitorHUD.RECOMPENSA["sala_nova"]
+RECOMPENSA_PRESA = LeitorHUD.RECOMPENSA["presa"]
 MAXIMO_QUADROS_MOSCA = 60_000  # ~33 min
 # Telas das partidas da mosca mais antigas que isto são apagadas (as teclas e
 # recompensas delas ficam no Supabase). As suas gravações nunca são apagadas.
@@ -143,9 +144,11 @@ def carregar_sessoes(pastas):
     # Salas novas: as gravações antigas não marcam; o explorador passa por todas,
     # em ordem, com uma memória só deste treino (não mexe na memória do painel)
     explorador = ExploradorSalas(Path(os.devnull + ".npz"))
+    i_esq, i_dir = ACOES.index("Esquerda"), ACOES.index("Direita")
     for nome, pasta in pastas.items():
         olhos, teclas, recompensas, extra = [], [], [], []
         com_hud = True
+        presa = DetectorPresa()  # presa também é recalculada nas gravações antigas
         for arquivo in sorted(pasta.glob("parte_*.npz")):
             with np.load(arquivo) as parte:
                 if "recompensas" in parte.files:
@@ -155,12 +158,16 @@ def carregar_sessoes(pastas):
                 acoes = [str(a) for a in parte["acoes"]]
                 colunas = [acoes.index(a) if a in acoes else None for a in ACOES]
                 ja_marcadas = "salas_novas" in parte.files  # gravada já com o explorador
+                presas_marcadas = "presas" in parte.files
                 anterior = None
                 for tela, apertadas in zip(parte["telas"], parte["teclas"]):
                     olhos.append(retrato(tela, anterior))
                     teclas.append([apertadas[c] if c is not None else False for c in colunas])
                     nova = bool(explorador.passo(tela))
-                    extra.append(RECOMPENSA_SALA if nova and not ja_marcadas else 0.0)
+                    t = [apertadas[c] if c is not None else False for c in colunas]
+                    ficou_presa = bool(presa.passo(tela, t[i_esq], t[i_dir], True))
+                    extra.append((RECOMPENSA_SALA if nova and not ja_marcadas else 0.0)
+                                 + (RECOMPENSA_PRESA if ficou_presa and not presas_marcadas else 0.0))
                     anterior = tela
         if olhos:
             extra = np.array(extra, dtype=np.float32)
