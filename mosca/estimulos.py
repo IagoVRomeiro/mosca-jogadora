@@ -1,5 +1,6 @@
 """Estímulos do jogo: o leitor do HUD (dano, morte, acerto, geo, cura), a parada,
-ficar presa (contra parede, pulando onde não alcança) e as salas novas (exploração)."""
+ficar presa (contra parede, pulando onde não alcança), andar em círculos (loop) e a
+exploração (salas novas e lugares novos no mapa)."""
 
 from pathlib import Path
 
@@ -41,7 +42,7 @@ class LeitorHUD:
     PRETO = 40  # contorno abaixo disto: tela preta (morte, passagem de sala), não só escurecida
     RECOMPENSA = {
         "dano": -1.0, "morte": -3.0, "cura": 0.3, "acerto": 0.3, "geo": 0.5, "parada": -0.2,
-        "sala_nova": 1.0, "presa": -0.3, "mapa_novo": 0.5,
+        "sala_nova": 1.0, "presa": -0.3, "mapa_novo": 0.5, "loop": -0.3,
     }
 
     def __init__(self):
@@ -436,3 +437,52 @@ class LeitorMapa:
         titulos = np.array(self.titulos) if self.titulos else np.zeros((0, 1, 1), bool)
         np.savez_compressed(temporario, titulos=titulos, celulas=np.array(sorted(self.celulas)).reshape(-1, 3))
         temporario.replace(self.arquivo)
+
+
+class DetectorLoop:
+    """Andando em círculos: indo e voltando no mesmo trecho sem nada de bom acontecer.
+
+    A cada PASSO quadros mede o deslizamento horizontal da câmera. Em JANELA_S:
+    andou bastante (soma > ANDOU_PX), mas o saldo ficou perto de zero (< SALDO_PX)
+    e não houve nenhum evento bom (acerto, geo, sala ou lugar novo, cura). Lutar
+    indo e voltando dá acertos, então não conta. Medido: ~1% dos trechos com você
+    jogando, ~40% com a mosca. Repete a cada REPETE_S enquanto continuar.
+    """
+
+    PASSO = 10
+    JANELA_S, REPETE_S = 15.0, 5.0
+    ANDOU_PX, SALDO_PX = 60, 15
+
+    def __init__(self, dt=QUADRO_MS / 1000):
+        self.medidas = int(self.JANELA_S / dt) // self.PASSO
+        self.repete = int(self.REPETE_S / dt)
+        self.reiniciar()
+
+    def reiniciar(self):
+        self._quadro, self._anterior = 0, None
+        self._dx, self._bom = [], []
+        self._bom_agora = False
+        self._espera = 0
+
+    def passo(self, reduzida, algo_bom, hud_visivel):
+        """`algo_bom`: houve recompensa positiva neste quadro."""
+        if not hud_visivel:
+            self.reiniciar()
+            return []
+        self._bom_agora = self._bom_agora or algo_bom
+        self._espera = max(0, self._espera - 1)
+        self._quadro += 1
+        if self._quadro % self.PASSO:
+            return []
+        if self._anterior is not None:
+            self._dx.append(deslizamento(self._anterior, reduzida)[0])
+            self._bom.append(self._bom_agora)
+            self._dx, self._bom = self._dx[-self.medidas :], self._bom[-self.medidas :]
+        self._anterior, self._bom_agora = reduzida, False
+        if len(self._dx) < self.medidas or self._espera or any(self._bom):
+            return []
+        andou, saldo = sum(abs(d) for d in self._dx), abs(sum(self._dx))
+        if andou <= self.ANDOU_PX or saldo >= self.SALDO_PX:
+            return []
+        self._espera = self.repete
+        return ["loop"]

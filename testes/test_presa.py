@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 
-from mosca.estimulos import DetectorPresa, deslizamento
+from mosca.estimulos import DetectorLoop, DetectorPresa, deslizamento
 
 
 def cenario(largura=400):
@@ -55,6 +55,32 @@ class TestePresa(unittest.TestCase):
         eventos = [e for i in range(30 * 15) for e in d.passo(vista(100), True, False, True)]
         self.assertGreaterEqual(eventos.count("presa"), 3)  # 6 s para notar, depois a cada 3 s
         self.assertEqual(d.lado, "Esquerda")
+
+
+class TesteLoop(unittest.TestCase):
+    def indo_e_voltando(self, i):
+        return 100 + int(30 * np.sin(i / 20))  # vai e volta ~60 px a cada ~4 s
+
+    def test_indo_e_voltando_sem_nada_de_bom_e_loop(self):
+        d = DetectorLoop()
+        eventos = [e for i in range(30 * 25) for e in d.passo(vista(self.indo_e_voltando(i)), False, True)]
+        self.assertIn("loop", eventos)
+
+    def test_lutando_indo_e_voltando_nao_e_loop(self):
+        d = DetectorLoop()  # acertos de vez em quando: está lutando, não em círculos
+        eventos = [e for i in range(30 * 25)
+                   for e in d.passo(vista(self.indo_e_voltando(i)), i % 120 == 0, True)]
+        self.assertEqual(eventos, [])
+
+    def test_andando_para_um_lado_nao_e_loop(self):
+        d = DetectorLoop()
+        eventos = [e for i in range(30 * 25) for e in d.passo(vista(i % 230), False, True)]
+        self.assertEqual(eventos, [])
+
+    def test_parada_nao_e_loop(self):
+        d = DetectorLoop()  # parada tem detector próprio
+        eventos = [e for i in range(30 * 25) for e in d.passo(vista(100), False, True)]
+        self.assertEqual(eventos, [])
 
 
 if __name__ == "__main__":

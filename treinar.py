@@ -34,7 +34,7 @@ import numpy as np
 
 from mosca.config import ACOES, ARQUIVO_DESAFIANTE, ARQUIVO_MODELO, PASTA, PASTA_GRAVACOES, PASTA_GRAVACOES_MOSCA, QUADRO_MS, TOQUE_S
 from mosca.conectoma import RedeConectoma, carregar_conectoma
-from mosca.estimulos import DetectorPresa, ExploradorSalas, LeitorHUD
+from mosca.estimulos import DetectorLoop, DetectorPresa, ExploradorSalas, LeitorHUD
 from mosca.olho import ATRASO_OLHO, FOVEA, GRADE_FOVEA, GRADE_OLHO, OLHO, VERSAO_OLHO, entrada, retrato
 from registro import registrar_treino
 
@@ -54,7 +54,7 @@ REGULARIZACAO_VALOR = 0.05  # do estimador de retorno (por quadro de treino)
 SUBAMOSTRA = 2  # usa 1 a cada 2 quadros: vizinhos são quase iguais (menos decoreba)
 RUIDO = 0.1  # ruído nas entradas (já normalizadas) durante o treino
 PASTA_CACHE = PASTA / "cache_olho"
-VERSAO_CACHE = 2  # mude se o que vai no cache mudar
+VERSAO_CACHE = 3  # mude se o que vai no cache mudar
 ARQUIVO_SAIDA = ARQUIVO_DESAFIANTE  # todo treino gera uma desafiante (ver jogar.Torneio)
 ARQUIVO_INFO_MODELO = ARQUIVO_SAIDA.with_suffix(".json")  # qual treino gerou o modelo
 # Partidas da própria mosca: entram com menos peso que as suas (ela erra mais) e
@@ -63,6 +63,7 @@ PESO_MOSCA = 0.5
 RECOMPENSA_SALA = LeitorHUD.RECOMPENSA["sala_nova"]
 RECOMPENSA_PRESA = LeitorHUD.RECOMPENSA["presa"]
 RECOMPENSA_MORTE = LeitorHUD.RECOMPENSA["morte"]
+RECOMPENSA_LOOP = LeitorHUD.RECOMPENSA["loop"]
 MAXIMO_QUADROS_MOSCA = 60_000  # ~33 min
 # Telas das partidas da mosca mais antigas que isto são apagadas (as teclas e
 # recompensas delas ficam no Supabase). As suas gravações nunca são apagadas.
@@ -172,6 +173,7 @@ def processar_sessao(pasta):
     entradas_idx, entradas_sig = [], []
     com_hud = True
     presa = DetectorPresa()  # recalculada nas gravações antigas, que não marcam
+    loop = DetectorLoop()  # idem
     salas = ExploradorSalas(Path(os.devnull + ".npz"))  # só para achar as entradas
     i_esq, i_dir = ACOES.index("Esquerda"), ACOES.index("Direita")
     for arquivo in sorted(pasta.glob("parte_*.npz")):
@@ -190,14 +192,17 @@ def processar_sessao(pasta):
             acoes = [str(a) for a in parte["acoes"]]
             colunas = [acoes.index(a) if a in acoes else None for a in ACOES]
             presas_marcadas = "presas" in parte.files
+            loops_marcados = "loops" in parte.files
             marcadas.append(np.full(n, "salas_novas" in parte.files))
             anterior = None
-            for tela, apertadas in zip(parte["telas"], parte["teclas"]):
+            for tela, apertadas, r_hud in zip(parte["telas"], parte["teclas"], hud[-1]):
                 olhos.append(retrato(tela, anterior).astype(np.float16))
                 t = [bool(apertadas[c]) if c is not None else False for c in colunas]
                 teclas.append(t)
                 ficou_presa = bool(presa.passo(tela, t[i_esq], t[i_dir], True))
-                presas.append(RECOMPENSA_PRESA if ficou_presa and not presas_marcadas else 0.0)
+                em_loop = bool(loop.passo(tela, r_hud > 0, True))
+                presas.append((RECOMPENSA_PRESA if ficou_presa and not presas_marcadas else 0.0)
+                              + (RECOMPENSA_LOOP if em_loop and not loops_marcados else 0.0))
                 assinatura = salas.entrada_de_sala(tela)
                 if assinatura is not None:
                     entradas_idx.append(len(olhos) - 1)

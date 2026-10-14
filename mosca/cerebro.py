@@ -171,8 +171,8 @@ class CerebroDemo:
     def pulsar_selecao(self):
         self.pulso_selecao_ate = self.t + DURACAO_PULSO_S
 
-    def pulsar_zona(self, nome):
-        self.pulso_zona_ate[nome] = self.t + DURACAO_PULSO_S
+    def pulsar_zona(self, nome, duracao=DURACAO_PULSO_S):
+        self.pulso_zona_ate[nome] = self.t + duracao
 
     def recompensa(self, valor):
         """Evento do jogo: positivo acende os PAM, negativo os PPL1."""

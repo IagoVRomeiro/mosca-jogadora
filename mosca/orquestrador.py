@@ -14,7 +14,7 @@ from comparar import melhoria_percentual
 from registro import registrar_partida, marcar_torneio
 from .aprendizado import Gravador, Imitacao, Torneio
 from .config import ACOES, ARQUIVO_DESAFIANTE, PASTA, PASTA_GRAVACOES_MOSCA, QUADRO_MS, ROTULO_TECLA
-from .estimulos import DetectorParada, DetectorPresa, ExploradorSalas, LeitorHUD, LeitorMapa
+from .estimulos import DetectorLoop, DetectorParada, DetectorPresa, ExploradorSalas, LeitorHUD, LeitorMapa
 from .interface import Painel
 
 
@@ -44,6 +44,7 @@ class Orquestrador(QtCore.QObject):
         self.hud = LeitorHUD() if hasattr(jogo, "controlando") else None
         self.parada = DetectorParada()
         self.presa = DetectorPresa()
+        self.loop = DetectorLoop()
         self.explorador = ExploradorSalas() if self.hud is not None else None
         self.leitor_mapa = LeitorMapa() if self.hud is not None else None
         self._treino_pendente = False  # parou uma gravação no meio de uma disputa
@@ -222,6 +223,7 @@ class Orquestrador(QtCore.QObject):
             self.gravador_mosca.adicionar(
                 self.cerebro.reduzida, teclas, self._recompensa_quadro, self.hud.vida,
                 "sala_nova" in self._eventos_quadro, "presa" in self._eventos_quadro,
+                "loop" in self._eventos_quadro,
             )
         self._habito_do_mapa()
         if self.torneio is not None:
@@ -388,6 +390,7 @@ class Orquestrador(QtCore.QObject):
         g.adicionar(
             self.cerebro.reduzida, teclas, self._recompensa_quadro, self.hud.vida,
             "sala_nova" in self._eventos_quadro, "presa" in self._eventos_quadro,
+                "loop" in self._eventos_quadro,
         )
         return texto, {a: float(t) for a, t in zip(ACOES, teclas)}
 
@@ -435,6 +438,7 @@ class Orquestrador(QtCore.QObject):
             self.hud.reiniciar()
         self.parada.reiniciar()
         self.presa.reiniciar()
+        self.loop.reiniciar()
         self.cerebro.reiniciar()
         self.jogo.reiniciar()
         self.mosca.pedido_reinicio = True
@@ -443,7 +447,7 @@ class Orquestrador(QtCore.QObject):
     NOMES_EVENTOS = {
         "dano": "tomou dano", "cura": "curou", "acerto": "acertou inimigo", "geo": "pegou geo",
         "parada": "ficou parada", "morte": "morreu", "sala_nova": "sala nova!",
-        "presa": "ficou presa", "mapa_novo": "lugar novo no mapa!",
+        "presa": "ficou presa", "mapa_novo": "lugar novo no mapa!", "loop": "andando em círculos",
     }
 
     # Reflexo de sair do lugar: moscas paradas demais fazem movimentos
@@ -455,6 +459,16 @@ class Orquestrador(QtCore.QObject):
         acao = self._sorteio.choice(self.REFLEXOS)
         self.cerebro.pulsar_zona(acao)
         return f"reflexo: tentou {ROTULO_TECLA[acao]}"
+
+    def _mudar_de_ideia(self):
+        """Andando em círculos: escolhe um lado e se compromete com ele por ~3 s,
+        com um pulo no começo (o loop é justamente ficar trocando de lado)."""
+        lado = self._sorteio.choice(["Esquerda", "Direita"])
+        outro = "Direita" if lado == "Esquerda" else "Esquerda"
+        self.cerebro.pulso_zona_ate[outro] = 0.0
+        self.cerebro.pulsar_zona(lado, 3.0)
+        self.cerebro.pulsar_zona("Pular", 0.5)
+        return f"reflexo: mudou de ideia ({ROTULO_TECLA[lado]} por 3 s)"
 
     def _escapar(self):
         """Presa forçando para um lado: meia-volta (às vezes pulando junto)."""
@@ -521,8 +535,13 @@ class Orquestrador(QtCore.QObject):
             eventos += self.presa.passo(
                 self.cerebro.reduzida, "Esquerda" in apertadas, "Direita" in apertadas, self.hud.visivel
             )
+        if self.cerebro.reduzida is not None:
+            bom = any(LeitorHUD.RECOMPENSA[e] > 0 for e in eventos)
+            eventos += self.loop.passo(self.cerebro.reduzida, bom, self.hud.visivel)
         reflexo = None
-        if "presa" in eventos and self.jogo.controlando:
+        if "loop" in eventos and self.jogo.controlando:
+            reflexo = self._mudar_de_ideia()
+        elif "presa" in eventos and self.jogo.controlando:
             reflexo = self._escapar()
         elif "parada" in eventos and self.jogo.controlando:
             reflexo = self._reflexo()
