@@ -12,7 +12,7 @@ from .olho import cinza, ver
 
 # Versão da leitura do HUD, guardada nas gravações. Até a 1, o HUD escurecido
 # (mapa aberto, transição) virava "morte" falsa: o treino ignora as mortes delas.
-VERSAO_HUD = 2
+VERSAO_HUD = 3  # 3: máscara cheia pela fração clara (a última tremendo não pisca mais)
 
 
 class LeitorHUD:
@@ -31,6 +31,7 @@ class LeitorHUD:
 
     MASCARA_X0, MASCARA_PASSO, MASCARA_Y = 0.263, 0.0457, 0.0876
     MAX_MASCARAS = 11
+    MASCARA_CHEIA = 0.15  # fração clara da caixa que conta como máscara cheia
     ALMA = (0.187, 0.118, 0.040)  # centro x, centro y, raio
     GEO = (0.286, 0.495, 0.137, 0.181)  # x0, x1, y0, y1
     ESTAVEL = 3  # quadros iguais para aceitar uma leitura
@@ -75,7 +76,10 @@ class LeitorHUD:
         cheias = 0
         for i in range(self.MAX_MASCARAS):
             caixa = self._caixa(cinza, self.MASCARA_X0 + i * self.MASCARA_PASSO, self.MASCARA_Y, 0.008)
-            if caixa.size and caixa.max() > 150:
+            # Cheia = boa parte da caixa clara. Só "algum pixel claro" não serve: com
+            # 1 máscara o jogo faz a última tremer e a borda dela invade a caixa da
+            # seguinte (medido: cheia >= 35% clara; a borda tremendo <= 2%)
+            if caixa.size and (caixa > 150).mean() >= self.MASCARA_CHEIA:
                 cheias += 1
             else:
                 break

@@ -61,7 +61,7 @@ REGULARIZACAO_VALOR = 0.05  # do estimador de retorno (por quadro de treino)
 SUBAMOSTRA = 2  # usa 1 a cada 2 quadros: vizinhos são quase iguais (menos decoreba)
 RUIDO = 0.1  # ruído nas entradas (já normalizadas) durante o treino
 PASTA_CACHE = PASTA / "cache_olho"
-VERSAO_CACHE = 6  # mude se o que vai no cache mudar
+VERSAO_CACHE = 7  # mude se o que vai no cache mudar
 ARQUIVO_SAIDA = ARQUIVO_DESAFIANTE  # todo treino gera uma desafiante (ver jogar.Torneio)
 ARQUIVO_INFO_MODELO = ARQUIVO_SAIDA.with_suffix(".json")  # qual treino gerou o modelo
 # Partidas da própria mosca: entram com menos peso que as suas (ela erra mais) e
@@ -207,7 +207,8 @@ def processar_sessao(pasta):
             presas_marcadas = "presas" in parte.files
             loops_marcados = "loops" in parte.files
             if "recompensas" in parte.files:
-                ajustar_dano_e_morte(hud[-1], parte)
+                piscadas = tirar_piscadas_da_vida(hud[-1], parte)
+                ajustar_dano_e_morte(hud[-1], parte, piscadas)
             # gravações marcadas já trazem a punição na recompensa, com o valor da
             # época (-0,3 antes de valor_presa/valor_loop existirem): acerta para o atual.
             # A presa sai toda e é recalculada abaixo com o detector atual (que não
@@ -250,13 +251,39 @@ def processar_sessao(pasta):
     return dados
 
 
-def ajustar_dano_e_morte(r, parte):
+PISCADA_QUADROS = 30  # vida que muda e volta em menos de 1 s não foi dano nem cura
+RECOMPENSA_CURA_GRAVADA = 0.3  # a cura sempre valeu isto
+
+
+def tirar_piscadas_da_vida(r, parte):
+    """Leitura antiga do HUD (VERSAO_HUD < 3): com 1 máscara a última treme e a
+    vida lida pulava 1 -> 2 -> 1, virando cura + dano falsos. Pela vida gravada
+    quadro a quadro, desfaz em `r` cada mudança que voltou ao valor anterior em
+    menos de PISCADA_QUADROS (curar de verdade leva mais que isso). Devolve os
+    quadros desfeitos."""
+    if "vidas" not in parte.files:
+        return []
+    v = parte["vidas"].astype(int)
+    valor_dano = float(parte["valor_dano"]) if "valor_dano" in parte.files else DANO_ANTIGO
+    mudancas = [i for i in range(1, len(v)) if v[i] != v[i - 1] and v[i] >= 0 and v[i - 1] >= 0]
+    desfeitos = []
+    for a, b in zip(mudancas, mudancas[1:]):
+        if b - a < PISCADA_QUADROS and v[b] == v[a - 1] and a not in desfeitos:
+            for i in (a, b):
+                d = v[i] - v[i - 1]
+                r[i] -= RECOMPENSA_CURA_GRAVADA * d if d > 0 else valor_dano * -d
+            desfeitos += [a, b]
+    return desfeitos
+
+
+def ajustar_dano_e_morte(r, parte, piscadas=()):
     """Leva o dano e a morte de uma parte gravada para os pesos atuais (em `r`).
     Gravações novas marcam os quadros; nas antigas, o valor do quadro diz: só a
     morte (-3) passa de -2,5, e tirada ela, só o dano (-1) passa de -0,45 (os
     outros eventos: parada -0,2, positivos até +1; presa/loop marcados à parte)."""
     if "danos" in parte.files:
-        danos, mortes = parte["danos"], parte["mortes"]
+        danos, mortes = parte["danos"].copy(), parte["mortes"]
+        danos[list(piscadas)] = False  # já desfeitos
         v_dano, v_morte = float(parte["valor_dano"]), float(parte["valor_morte"])
     else:
         base = r.copy()

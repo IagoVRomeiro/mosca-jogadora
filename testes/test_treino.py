@@ -89,6 +89,19 @@ class TesteDanoEMorte(unittest.TestCase):
         d, m = treinar.RECOMPENSA_DANO, treinar.RECOMPENSA_MORTE
         np.testing.assert_allclose(r, [-0.2, d, d + m, 0.3, d + 0.3, -0.6], atol=1e-5)
 
+    def test_piscada_da_vida_e_desfeita(self):
+        # 1 máscara tremendo: lida 1 -> 2 -> 1 em 3 quadros (cura + dano falsos);
+        # depois um dano de verdade (1 -> 0 ... fica)
+        vidas = np.array([1, 1, 2, 2, 1, 1, 1, 1] + [1] * 40 + [0] * 5, np.int8)
+        r = np.zeros(len(vidas), np.float32)
+        r[2], r[4], r[48] = 0.3, -1.0, -1.0
+        parte = Parte(vidas=vidas)
+        desfeitos = treinar.tirar_piscadas_da_vida(r, parte)
+        self.assertEqual(desfeitos, [2, 4])
+        self.assertAlmostEqual(float(r[2]), 0.0, places=5)
+        self.assertAlmostEqual(float(r[4]), 0.0, places=5)
+        self.assertAlmostEqual(float(r[48]), -1.0, places=5)  # o dano de verdade fica
+
     def test_gravacao_nova_usa_as_marcas(self):
         r = np.array([-1.0, -0.2], np.float32)  # gravada com dano valendo -1
         parte = Parte(danos=np.array([1, 0], bool), mortes=np.array([0, 0], bool),
