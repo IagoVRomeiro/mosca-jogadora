@@ -20,10 +20,17 @@ O "olho" de cada sessão fica guardado em cache_olho/: só sessões novas ou
 alteradas são recalculadas.
 """
 
+import os
+
+# Metade dos núcleos (antes do numpy carregar): o resto fica para o jogo e o
+# painel, que costumam estar abertos enquanto o treino roda
+THREADS = str(max(1, (os.cpu_count() or 2) // 2))
+for _var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ[_var] = THREADS
+
 import argparse
 import hashlib
 import json
-import os
 import shutil
 import subprocess
 import time
@@ -519,6 +526,7 @@ def relatorio(rede, dados):
 
 
 def main():
+    os.nice(15)  # o jogo vem primeiro: o treino só usa a CPU que sobrar
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "--arquitetura", choices=["mlp", "conectoma"], default=None,
