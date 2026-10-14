@@ -18,7 +18,12 @@ using UnityEngine;
 [BepInPlugin("mosca.jogadora.eventos", "Mosca jogadora: eventos", "1.0.0")]
 public class Plugin : BaseUnityPlugin
 {
-    internal static int golpes, inimigosMortos;
+    internal static int golpes, inimigosMortos, chefesDerrotados;
+    // Vida de cada inimigo no primeiro golpe que levou: chefe fora do Salão dos
+    // Deuses é quem começou a luta com pelo menos VIDA_DE_CHEFE
+    internal static readonly System.Collections.Generic.Dictionary<HealthManager, int> vidaInicial =
+        new System.Collections.Generic.Dictionary<HealthManager, int>();
+    internal const int VIDA_DE_CHEFE = 200;
     const int PORTA = 47123;
     UdpClient udp;
     float proximo;
@@ -78,6 +83,7 @@ public class Plugin : BaseUnityPlugin
             .Append(",\"alma\":").Append(pd.MPCharge)
             .Append(",\"golpes\":").Append(golpes)
             .Append(",\"inimigos_mortos\":").Append(inimigosMortos)
+            .Append(",\"chefes_derrotados\":").Append(chefesDerrotados)
             .Append(",\"morta\":").Append(s != null && s.dead ? "true" : "false")
             .Append(",\"no_chao\":").Append(s != null && s.onGround ? "true" : "false")
             .Append(",\"na_parede\":").Append(s != null && s.wallSliding ? "true" : "false")
@@ -100,6 +106,11 @@ public class Plugin : BaseUnityPlugin
 [HarmonyPatch(typeof(HealthManager), "TakeDamage")]
 static class AoAcertar
 {
+    static void Prefix(HealthManager __instance)
+    {
+        if (!Plugin.vidaInicial.ContainsKey(__instance)) Plugin.vidaInicial[__instance] = __instance.hp;
+    }
+
     static void Postfix() => Plugin.golpes++;
 }
 
@@ -110,6 +121,18 @@ static class AoMatar
     static void Prefix(HealthManager __instance, out bool __state) => __state = __instance.isDead;
     static void Postfix(HealthManager __instance, bool __state)
     {
-        if (!__state && __instance.isDead) Plugin.inimigosMortos++;
+        if (__state || !__instance.isDead) return;
+        Plugin.inimigosMortos++;
+        if (EhChefe(__instance)) Plugin.chefesDerrotados++;
+        Plugin.vidaInicial.Remove(__instance);
+    }
+
+    static bool EhChefe(HealthManager inimigo)
+    {
+        // No Salão dos Deuses o jogo sabe quais são os chefes da luta
+        var luta = BossSceneController.Instance;
+        if (luta != null && BossSceneController.IsBossScene && luta.bosses != null && System.Array.IndexOf(luta.bosses, inimigo) >= 0)
+            return true;
+        return Plugin.vidaInicial.TryGetValue(inimigo, out var vida) && vida >= Plugin.VIDA_DE_CHEFE;
     }
 }

@@ -29,7 +29,7 @@ MAX_GOLPES_QUADRO = 3
 # Vai e volta pela mesma passagem: em PASSAGEM_S, PASSAGEM_VEZES trocas entre as
 # mesmas duas salas (A->B->A->B->A) sem nada de bom no meio
 PASSAGEM_S, PASSAGEM_VEZES = 90.0, 4
-BONS = {"inimigo_morto", "cena_nova", "banco_novo", "geo", "acerto", "cura"}  # um pacote atrasado não vira uma chuva de acertos
+BONS = {"inimigo_morto", "chefe_derrotado", "cena_nova", "banco_novo", "geo", "acerto", "cura"}  # um pacote atrasado não vira uma chuva de acertos
 
 
 def eventos_entre(antes, agora, curou_ha_s):
@@ -54,6 +54,8 @@ def eventos_entre(antes, agora, curou_ha_s):
         eventos.append("geo")
     eventos += ["acerto"] * min(MAX_GOLPES_QUADRO, max(0, agora["golpes"] - antes["golpes"]))
     eventos += ["inimigo_morto"] * min(MAX_GOLPES_QUADRO, max(0, agora["inimigos_mortos"] - antes["inimigos_mortos"]))
+    chefes = agora.get("chefes_derrotados", 0) - antes.get("chefes_derrotados", 0)
+    eventos += ["chefe_derrotado"] * min(MAX_GOLPES_QUADRO, max(0, chefes))
     return eventos
 
 

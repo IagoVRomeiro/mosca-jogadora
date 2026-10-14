@@ -13,6 +13,7 @@
     <Reference Include="BepInEx"><HintPath>$(JOGO)/BepInEx/core/BepInEx.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="0Harmony"><HintPath>$(JOGO)/BepInEx/core/0Harmony.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Assembly-CSharp"><HintPath>$(GERENCIADO)/Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="PlayMaker"><HintPath>$(GERENCIADO)/PlayMaker.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine"><HintPath>$(GERENCIADO)/UnityEngine.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(GERENCIADO)/UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.Physics2DModule"><HintPath>$(GERENCIADO)/UnityEngine.Physics2DModule.dll</HintPath><Private>false</Private></Reference>

@@ -547,7 +547,7 @@ class Orquestrador(QtCore.QObject):
         "presa": "ficou presa", "loop": "andando em círculos",
         "inimigo_morto": "matou inimigo!", "cena_nova": "sala nova!", "lugar_novo": "lugar novo",
         "banco_novo": "banco novo!", "cura_critica": "curou na hora certa", "perigo": "caiu em espinhos/ácido",
-        "vai_e_volta": "indo e voltando pela mesma passagem",
+        "vai_e_volta": "indo e voltando pela mesma passagem", "chefe_derrotado": "🏆 venceu o chefe!",
     }
 
     # Reflexo de sair do lugar: moscas paradas demais fazem movimentos

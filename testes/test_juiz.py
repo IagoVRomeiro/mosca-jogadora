@@ -52,6 +52,11 @@ class TesteEventos(unittest.TestCase):
         self.assertEqual(eventos_entre(estado(), estado(vida=4, perigo=True), LONGE), ["dano", "perigo"])
         self.assertEqual(eventos_entre(estado(perigo=True), estado(perigo=True), LONGE), [])  # uma vez só
 
+    def test_chefe_derrotado(self):
+        self.assertEqual(eventos_entre(estado(), estado(inimigos_mortos=1, chefes_derrotados=1), LONGE),
+                         ["inimigo_morto", "chefe_derrotado"])
+        self.assertEqual(eventos_entre(estado(), estado(inimigos_mortos=1), LONGE), ["inimigo_morto"])
+
     def test_carregar_o_save_nao_gera_eventos(self):
         menu = estado(cena="Menu_Title", geo=0, vida=5)
         self.assertEqual(eventos_entre(menu, estado(geo=900, vida=3), LONGE), [])

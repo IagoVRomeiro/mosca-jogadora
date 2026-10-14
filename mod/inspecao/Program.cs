@@ -46,3 +46,13 @@ foreach (var nome in new[]{"HeroActions", "InputHandler"}) {
         }
     }
 }
+
+{
+    foreach (var nome in new[]{"HealthManager", "BossSceneController"}) {
+        var t = asm.GetType(nome);
+        if (t == null) { Console.WriteLine($"chefe? {nome}: NÃO EXISTE"); continue; }
+        var membros = t.GetMembers(f).Where(x => x is FieldInfo || x is PropertyInfo || x is MethodInfo)
+            .Select(x => x.Name).Where(n => n.ToLower().Contains("boss") || n.ToLower().Contains("hp") || n is "Instance" or "IsBossScene" or "bossesDeadWaitTime" or "BossHealthLookup").Distinct();
+        Console.WriteLine($"chefe? {nome}: " + string.Join(", ", membros));
+    }
+}

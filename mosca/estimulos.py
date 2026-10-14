@@ -56,6 +56,9 @@ class LeitorHUD:
         "cura_critica": 0.3,  # a mais na cura com 1-2 máscaras (curar quando importa)
         "perigo": -1.0,  # a mais no dano ao cair em espinhos ou ácido (erro evitável)
         "vai_e_volta": -1.0,  # entrando e saindo pela mesma passagem sem ganhar nada
+        # chefe vencido (Salão dos Deuses ou 200+ de vida): uma luta longa ganha precisa
+        # valer mais que o dano tomado nela
+        "chefe_derrotado": 5.0,
     }
 
     def __init__(self):
