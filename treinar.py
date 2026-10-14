@@ -61,7 +61,7 @@ REGULARIZACAO_VALOR = 0.05  # do estimador de retorno (por quadro de treino)
 SUBAMOSTRA = 2  # usa 1 a cada 2 quadros: vizinhos são quase iguais (menos decoreba)
 RUIDO = 0.1  # ruído nas entradas (já normalizadas) durante o treino
 PASTA_CACHE = PASTA / "cache_olho"
-VERSAO_CACHE = 4  # mude se o que vai no cache mudar
+VERSAO_CACHE = 5  # mude se o que vai no cache mudar
 ARQUIVO_SAIDA = ARQUIVO_DESAFIANTE  # todo treino gera uma desafiante (ver jogar.Torneio)
 ARQUIVO_INFO_MODELO = ARQUIVO_SAIDA.with_suffix(".json")  # qual treino gerou o modelo
 # Partidas da própria mosca: entram com menos peso que as suas (ela erra mais) e
@@ -201,10 +201,12 @@ def processar_sessao(pasta):
             presas_marcadas = "presas" in parte.files
             loops_marcados = "loops" in parte.files
             # gravações marcadas já trazem a punição na recompensa, com o valor da
-            # época (-0,3 antes de valor_presa/valor_loop existirem): acerta para o atual
+            # época (-0,3 antes de valor_presa/valor_loop existirem): acerta para o atual.
+            # A presa sai toda e é recalculada abaixo com o detector atual (que não
+            # pune mais a escalada de parede)
             if presas_marcadas:
                 gravado = float(parte["valor_presa"]) if "valor_presa" in parte.files else -0.3
-                hud[-1] += (RECOMPENSA_PRESA - gravado) * parte["presas"]
+                hud[-1] -= gravado * parte["presas"]
             if loops_marcados:
                 gravado = float(parte["valor_loop"]) if "valor_loop" in parte.files else -0.3
                 hud[-1] += (RECOMPENSA_LOOP - gravado) * parte["loops"]
@@ -216,7 +218,7 @@ def processar_sessao(pasta):
                 teclas.append(t)
                 ficou_presa = bool(presa.passo(tela, t[i_esq], t[i_dir], True))
                 em_loop = bool(loop.passo(tela, r_hud > 0, True))
-                presas.append((RECOMPENSA_PRESA if ficou_presa and not presas_marcadas else 0.0)
+                presas.append((RECOMPENSA_PRESA if ficou_presa else 0.0)
                               + (RECOMPENSA_LOOP if em_loop and not loops_marcados else 0.0))
                 assinatura = salas.entrada_de_sala(tela)
                 if assinatura is not None:

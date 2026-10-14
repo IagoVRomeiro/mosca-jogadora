@@ -329,11 +329,16 @@ class DetectorPresa:
 
     Antes disso, com AVISO_S segundos encostada, liga `encostada` (sem punir):
     é a deixa para o reflexo de meia-volta agir cedo.
+
+    Escalando a parede (Garra de Louva-a-deus) também não anda na horizontal,
+    mas a câmera sobe (ou desce) de verdade: com saldo vertical acima de
+    SUBIU_PX na janela não é presa. Pular onde não alcança sobe e volta, saldo ~0.
     """
 
     PASSO = 10  # quadros entre duas medidas (~0,33 s): quadro a quadro é < 1 pixel
     JANELA_S, REPETE_S, AVISO_S = 6.0, 3.0, 4.0
     LIMITE_PX = 6  # deslizamento horizontal total na janela
+    SUBIU_PX = 15  # saldo vertical que indica escalada (ou descida) de verdade
 
     def __init__(self, dt=QUADRO_MS / 1000):
         self.medidas = int(self.JANELA_S / dt) // self.PASSO
@@ -343,7 +348,7 @@ class DetectorPresa:
 
     def reiniciar(self):
         self._quadro, self._anterior = 0, None
-        self._dx, self._lados = [], []
+        self._dx, self._dy, self._lados = [], [], []
         self._espera = self._espera_aviso = 0
         self.lado = None  # "Esquerda" ou "Direita": para onde ela estava forçando
         self.encostada = False  # aviso de 4 s; quem usar desliga
@@ -368,20 +373,23 @@ class DetectorPresa:
         if self._quadro % self.PASSO:
             return []
         if self._anterior is not None:
-            self._dx.append(abs(deslizamento(self._anterior, reduzida)[0]))
-            self._dx = self._dx[-self.medidas :]
+            dx, dy = deslizamento(self._anterior, reduzida)
+            self._dx.append(abs(dx))
+            self._dy.append(dy)  # com sinal: subir e descer se anulam
+            self._dx, self._dy = self._dx[-self.medidas :], self._dy[-self.medidas :]
         self._anterior = reduzida
         lados = np.array(self._lados)
         recentes = lados[-self.medidas_aviso * self.PASSO :]
         forcando, lado = self._forcando(recentes)
         if (len(self._dx) >= self.medidas_aviso and forcando >= 0.7 and not self._espera_aviso
-                and sum(self._dx[-self.medidas_aviso :]) <= self.LIMITE_PX):
+                and sum(self._dx[-self.medidas_aviso :]) <= self.LIMITE_PX
+                and abs(sum(self._dy[-self.medidas_aviso :])) <= self.SUBIU_PX * self.AVISO_S / self.JANELA_S):
             self.lado, self.encostada = lado, True
             self._espera_aviso = self.repete
         forcando, lado = self._forcando(lados)
         if len(self._dx) < self.medidas or forcando < 0.7 or self._espera:
             return []
-        if sum(self._dx) > self.LIMITE_PX:
+        if sum(self._dx) > self.LIMITE_PX or abs(sum(self._dy)) > self.SUBIU_PX:
             return []
         self.lado = lado
         self._espera = self.repete

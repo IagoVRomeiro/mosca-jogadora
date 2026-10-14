@@ -40,6 +40,12 @@ class TestePresa(unittest.TestCase):
         eventos = [e for i, y in enumerate(alturas) for e in d.passo(vista(100, y), False, True, True)]
         self.assertIn("presa", eventos)
 
+    def test_escalando_a_parede_nao_e_presa(self):
+        d = DetectorPresa()  # forçando para a parede, mas a câmera sobe de verdade
+        eventos = [e for i in range(300) for e in d.passo(vista(100, 30 - i // 5), False, True, True)]
+        self.assertEqual(eventos, [])
+        self.assertFalse(d.encostada)
+
     def test_andando_nao_e_presa(self):
         d = DetectorPresa()
         eventos = [e for i in range(300) for e in d.passo(vista(i // 2), False, True, True)]
