@@ -11,6 +11,7 @@ import numpy as np
 
 from .config import ACOES, ARQUIVO_DESAFIANTE, ARQUIVO_MODELO, ARQUIVO_TORNEIO, PASTA_GRAVACOES
 from .conectoma import CAMADAS_CONECTOMA, RedeConectoma
+from .estimulos import VERSAO_HUD
 from .olho import cinza, tamanho_entrada
 
 
@@ -127,7 +128,7 @@ class Gravador:
             args=(arquivo,),
             kwargs=dict(
                 telas=telas, teclas=teclas, recompensas=recompensas, vidas=vidas, salas_novas=salas,
-                presas=presas,
+                presas=presas, versao_hud=VERSAO_HUD,
                 acoes=np.array(ACOES),
             ),
         )

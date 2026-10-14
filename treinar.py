@@ -54,7 +54,7 @@ REGULARIZACAO_VALOR = 0.05  # do estimador de retorno (por quadro de treino)
 SUBAMOSTRA = 2  # usa 1 a cada 2 quadros: vizinhos são quase iguais (menos decoreba)
 RUIDO = 0.1  # ruído nas entradas (já normalizadas) durante o treino
 PASTA_CACHE = PASTA / "cache_olho"
-VERSAO_CACHE = 1  # mude se o que vai no cache mudar
+VERSAO_CACHE = 2  # mude se o que vai no cache mudar
 ARQUIVO_SAIDA = ARQUIVO_DESAFIANTE  # todo treino gera uma desafiante (ver jogar.Torneio)
 ARQUIVO_INFO_MODELO = ARQUIVO_SAIDA.with_suffix(".json")  # qual treino gerou o modelo
 # Partidas da própria mosca: entram com menos peso que as suas (ela erra mais) e
@@ -62,6 +62,7 @@ ARQUIVO_INFO_MODELO = ARQUIVO_SAIDA.with_suffix(".json")  # qual treino gerou o 
 PESO_MOSCA = 0.5
 RECOMPENSA_SALA = LeitorHUD.RECOMPENSA["sala_nova"]
 RECOMPENSA_PRESA = LeitorHUD.RECOMPENSA["presa"]
+RECOMPENSA_MORTE = LeitorHUD.RECOMPENSA["morte"]
 MAXIMO_QUADROS_MOSCA = 60_000  # ~33 min
 # Telas das partidas da mosca mais antigas que isto são apagadas (as teclas e
 # recompensas delas ficam no Supabase). As suas gravações nunca são apagadas.
@@ -177,7 +178,12 @@ def processar_sessao(pasta):
         with np.load(arquivo) as parte:
             n = len(parte["teclas"])
             if "recompensas" in parte.files:
-                hud.append(parte["recompensas"])
+                r = parte["recompensas"].astype(np.float32)
+                if "versao_hud" not in parte.files:
+                    # Leitura antiga: mapa aberto e transições viravam "morte" falsa
+                    # (-3). Não dá para separar das reais: tira a morte e fica o resto
+                    r = np.where(r <= RECOMPENSA_MORTE + 0.1, r - RECOMPENSA_MORTE, r)
+                hud.append(r)
             else:
                 com_hud = False
                 hud.append(np.zeros(n, np.float32))

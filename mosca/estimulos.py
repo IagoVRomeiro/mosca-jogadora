@@ -9,6 +9,11 @@ from .config import PASTA, QUADRO_MS
 from .olho import cinza, ver
 
 
+# Versão da leitura do HUD, guardada nas gravações. Até a 1, o HUD escurecido
+# (mapa aberto, transição) virava "morte" falsa: o treino ignora as mortes delas.
+VERSAO_HUD = 2
+
+
 class LeitorHUD:
     """Lê o HUD do Hollow Knight pela imagem e transforma em estímulos.
 
