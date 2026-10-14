@@ -285,17 +285,6 @@ class ExploradorSalas:
         self._ultima_entrada = self._quadro
         return ["sala_nova"] if self.lembrar(assinatura, intervalo) else []
 
-    def juntar_repetidas(self):
-        """Junta na memória as salas parecidas (>= LIMITE) com uma anterior."""
-        ficam = []
-        for i, assinatura in enumerate(self.memoria):
-            if not ficam or float((self.memoria[ficam] @ assinatura).max()) < self.LIMITE:
-                ficam.append(i)
-        antes = len(self.memoria)
-        self.memoria = self.memoria[ficam]
-        self.alterada = len(ficam) != antes
-        return antes - len(ficam)
-
     def salvar(self):
         if self.alterada:
             temporario = self.arquivo.with_name(self.arquivo.stem + ".tmp.npz")
