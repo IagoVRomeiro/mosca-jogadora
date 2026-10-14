@@ -6,7 +6,7 @@ import time
 import numpy as np
 
 from .config import (
-    ACOES, ACOES_JOGO, DURACAO_TOQUE_S, OPOSTAS, SEGURAR_MINIMO_S, TOQUE_S,
+    ACOES, ACOES_JOGO, DURACAO_TOQUE_S, OPOSTAS, SEGURAR_MAXIMO_S, SEGURAR_MINIMO_S, SOLTO_S, TOQUE_S,
 )
 
 
@@ -86,6 +86,7 @@ class CapturaJanela:
         self._desde, self._apertou_em = {}, {}
         self._soltou_em = {}  # quando a mosca soltou cada tecla (ver da_mosca)
         self._fisicas = set()  # códigos de tecla apertados de verdade (Foco e Magia dividem o K)
+        self._solto_ate = {}  # tecla solta por um instante (SEGURAR_MAXIMO_S): até quando
         self.janelas_proprias = set()  # o painel: pode devolver o foco ao jogo
         self.aviso_controle = None
         self._ultimo_foco = 0.0
@@ -222,6 +223,12 @@ class CapturaJanela:
         (self._ativas.add if ativa else self._ativas.discard)(acao)
         if acao in TOQUE_S:
             return ativa and (agora - self._desde[acao]) % TOQUE_S[acao] < DURACAO_TOQUE_S
+        if acao in SEGURAR_MAXIMO_S:
+            if agora < self._solto_ate.get(acao, 0.0):
+                return False  # o instante solta entre um pulo e o próximo
+            if acao in self.apertadas and agora - self._apertou_em[acao] >= SEGURAR_MAXIMO_S[acao]:
+                self._solto_ate[acao] = agora + SOLTO_S
+                return False
         if acao in SEGURAR_MINIMO_S and not ativa and acao in self.apertadas:
             return agora - self._apertou_em[acao] < SEGURAR_MINIMO_S[acao]
         return ativa

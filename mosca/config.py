@@ -51,6 +51,14 @@ DURACAO_TOQUE_S = 0.07
 SEGURAR_MINIMO_S = {"Foco": 1.5}
 
 
+# E no máximo isto: segurar o pulo mais que isso não pula mais alto, e para pular
+# de novo agarrada na parede (Garra de Louva-a-deus) é preciso soltar e apertar.
+# Passou do máximo, solta por SOLTO_S e aperta de novo se ela ainda quiser.
+# Medido nas suas gravações: 95% dos pulos duram até 0,5 s, 99% até 0,63 s.
+SEGURAR_MAXIMO_S = {"Pular": 0.6}
+SOLTO_S = 0.1
+
+
 QUADRO_MS = 33  # ~30 quadros por segundo
 
 

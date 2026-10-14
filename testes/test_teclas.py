@@ -14,7 +14,7 @@ QUADRO_S = 1 / 30
 def captura_falsa(foco_no_jogo=True):
     c = CapturaJanela.__new__(CapturaJanela)
     c.apertadas, c._ativas, c._desde, c._apertou_em = set(), set(), {}, {}
-    c._soltou_em, c._fisicas = {}, set()
+    c._soltou_em, c._fisicas, c._solto_ate = {}, set(), {}
     c._codigos = {a: ACOES_JOGO[a].tecla for a in ACOES}  # Foco e Magia: as duas no "k"
     c.controlando, c.aviso, c.aviso_controle = True, None, None
     c.janela = type("Janela", (), {"id": 42})()
@@ -53,6 +53,18 @@ class TesteTeclas(unittest.TestCase):
     def test_foco_fica_segurado_o_minimo(self):
         desenho, _ = simular(captura_falsa(), "Foco", [0.9] * 6 + [0.2] * 54)  # quis só 0,2 s
         self.assertAlmostEqual(desenho.count("█") * QUADRO_S, 1.5, delta=0.05)
+
+    def test_pulo_longo_vira_pulos_repetidos(self):
+        """Querendo pular por 2 s (agarrada na parede): solta e aperta de novo,
+        nunca segurando mais que 0,6 s, para conseguir pular de novo na parede."""
+        desenho, apertos = simular(captura_falsa(), "Pular", [0.9] * 60)
+        self.assertEqual(apertos, 3)
+        maior = max(len(t) for t in desenho.split("·") if t)
+        self.assertLessEqual(maior * QUADRO_S, 0.6 + QUADRO_S)
+
+    def test_pulo_normal_nao_muda(self):
+        desenho, apertos = simular(captura_falsa(), "Pular", [0.9] * 7 + [0.2] * 20)  # 0,23 s
+        self.assertEqual((desenho.count("█"), apertos), (7, 1))
 
     def test_andar_segura_enquanto_quer(self):
         desenho, apertos = simular(captura_falsa(), "Esquerda", [0.9] * 10 + [0.2] * 10)
