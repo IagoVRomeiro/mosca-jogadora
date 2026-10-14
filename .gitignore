@@ -42,3 +42,4 @@ mod/**/obj/
 mod/user.reg.antes_do_bepinex
 memoria_cenas*.json
 memoria_lugares*.json
+modelos_base/

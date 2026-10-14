@@ -127,6 +127,43 @@ class TesteMain(unittest.TestCase):
         self.assertEqual(usos, [])
 
 
+class TestePartirDaMelhor(unittest.TestCase):
+    """A versão nova parte dos pesos da melhor: no começo responde igual a ela,
+    mesmo com outra normalização e com entradas a mais (olho mais novo)."""
+
+    def checar(self, arquitetura, criar):
+        rng = np.random.default_rng(1)
+        n_base, n_novo = 3024, 3316  # olho 2 -> olho 3 (as entradas da memória vêm depois)
+        base_rede = criar(n_base)
+        base = {**base_rede.para_salvar(), "media": rng.normal(0, 1, n_base).astype(np.float32),
+                "desvio": rng.uniform(0.5, 2, n_base).astype(np.float32)}
+        dados = type("D", (), {"media": rng.normal(0, 1, n_novo).astype(np.float32),
+                               "desvio": rng.uniform(0.5, 2, n_novo).astype(np.float32)})()
+        nova = criar(n_novo)
+        self.assertTrue(treinar.partir_de(nova, base, arquitetura, dados))
+        x = rng.normal(0, 1, (8, n_novo)).astype(np.float32)  # entradas cruas
+        antes = base_rede.prever((x[:, :n_base] - base["media"]) / base["desvio"])
+        depois = nova.prever((x - dados.media) / dados.desvio)
+        np.testing.assert_allclose(depois, antes, rtol=1e-3, atol=1e-4)
+
+    def test_rede_inventada(self):
+        rng = np.random.default_rng(2)
+        self.checar("mlp", lambda n: treinar.RedeMLP.iniciar(n, len(ACOES), rng))
+
+    @unittest.skipUnless(ARQUIVO_CONECTOMA.exists(), "rode preparar_conectoma.py antes")
+    def test_conectoma(self):
+        rng = np.random.default_rng(3)
+        conectoma = treinar.carregar_conectoma()
+        self.checar("conectoma", lambda n: treinar.RedeConectoma.iniciar(n, len(ACOES), conectoma, rng))
+
+    def test_formato_diferente_comeca_do_zero(self):
+        rng = np.random.default_rng(4)
+        base = {**treinar.RedeMLP.iniciar(100, len(ACOES) + 1, rng).para_salvar(),
+                "media": np.zeros(100, np.float32), "desvio": np.ones(100, np.float32)}
+        dados = type("D", (), {"media": np.zeros(200, np.float32), "desvio": np.ones(200, np.float32)})()
+        self.assertFalse(treinar.partir_de(treinar.RedeMLP.iniciar(200, len(ACOES), rng), base, "mlp", dados))
+
+
 class TesteOlho(unittest.TestCase):
     def test_tamanhos(self):
         jogo = JogoDemo()
@@ -191,7 +228,8 @@ class TesteAprende(unittest.TestCase):
         antes = treinar.EPOCAS, treinar.EPOCAS_CONECTOMA
         treinar.EPOCAS = treinar.EPOCAS_CONECTOMA = epocas
         try:
-            rede, _ = treinar.treinar(dados, arquitetura)
+            rede, _, aprendeu = treinar.treinar(dados, arquitetura)
+            self.assertTrue(aprendeu)  # do zero, sempre
         finally:
             treinar.EPOCAS, treinar.EPOCAS_CONECTOMA = antes
         prev = treinar.prever(rede, dados, dados.valid) > 0.5

@@ -406,6 +406,9 @@ class Orquestrador(QtCore.QObject):
         self.treino = None
         if codigo == 0 and "modelo salvo" in log:
             self._nova_desafiante()
+        elif "nada novo aprendido" in log:  # não vale uma disputa: espera mais dados
+            self._info_treino = (f"🧠 Treino sem novidade: a {self._nome('campea')} continua; "
+                                 "o próximo terá mais dados")
         elif "mínimo" in log:
             self._info_treino = "🧠 Pouca gravação para treinar: grave um pouco mais"
         else:

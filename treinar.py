@@ -32,6 +32,7 @@ import argparse
 import hashlib
 import json
 import shutil
+import sys
 import subprocess
 import time
 from datetime import datetime
@@ -40,7 +41,7 @@ from pathlib import Path
 import numpy as np
 
 from mosca.config import ACOES, ARQUIVO_DESAFIANTE, ARQUIVO_MODELO, PASTA, PASTA_GRAVACOES, PASTA_GRAVACOES_MOSCA, QUADRO_MS, TOQUE_S
-from mosca.conectoma import RedeConectoma, carregar_conectoma
+from mosca.conectoma import CAMADAS_CONECTOMA, RedeConectoma, carregar_conectoma
 from mosca.estimulos import DetectorLoop, DetectorPresa, ExploradorSalas, LeitorHUD
 from mosca.olho import (
     ATRASO_OLHO, FOVEA, GRADE_FOVEA, GRADE_OLHO, MEMORIA_S, OLHO, VERSAO_OLHO, VERSAO_RETRATO, entrada,
@@ -52,6 +53,14 @@ INTERNEURONIOS = 64
 EPOCAS = 40
 EPOCAS_CONECTOMA = 20  # a rede do conectoma é maior: ~20 s por época
 PACIENCIA = 3  # para depois de tantas épocas sem melhorar na validação
+# Partindo de uma versão já treinada: ela só vira desafiante se a validação
+# melhorar pelo menos isto em relação ao ponto de partida (senão "nada novo
+# aprendido" e nenhuma disputa); e aprende com passo menor, para ajustar sem
+# desmanchar o que já sabia
+MELHORA_MINIMA = 0.002
+TAXA_AJUSTE = 3e-4
+PRIMEIRA_CAMADA = {"mlp": ("w1", "b1"), "conectoma": ("A", "a")}
+NADA_NOVO = 3  # código de saída: treinou e não aprendeu nada mensurável
 LOTE = 256
 TAXA = 1e-3
 VALIDACAO = 0.2  # o fim de cada sessão fica de fora do treino, para medir de verdade
@@ -556,13 +565,84 @@ def perda(rede, dados, idx, peso_pos, ponderar=False):
     return float(np.average(por_quadro, weights=dados.pesos[idx] if ponderar else None))
 
 
-def treinar(dados, arquitetura="mlp"):
+def ponto_de_partida(arquitetura):
+    """A melhor versão já treinada deste cérebro, para a nova partir dela: a
+    campeã, a desafiante atual ou, se nenhuma for deste cérebro, a mais recente
+    dele no Supabase. Devolve (pesos, treino_id) ou (None, None)."""
+    for arquivo in (ARQUIVO_MODELO, ARQUIVO_DESAFIANTE):
+        if arquivo.exists():
+            with np.load(arquivo) as m:
+                desta = (str(m["arquitetura"]) if "arquitetura" in m.files else "mlp") == arquitetura
+                if desta:
+                    info = arquivo.with_suffix(".json")
+                    tid = json.loads(info.read_text()).get("treino_id") if info.exists() else None
+                    return {k: m[k] for k in m.files}, tid
+    try:
+        from registro import Supabase, baixar_treino
+
+        banco = Supabase.do_env()
+        if banco is None:
+            return None, None
+        for t in banco._pedir("GET", "/rest/v1/treinos?select=id,config&order=id.desc&limit=100"):
+            if (t.get("config") or {}).get("arquitetura", "mlp") == arquitetura:
+                arquivo, _ = baixar_treino(t["id"], PASTA / "modelos_base")
+                with np.load(arquivo) as m:
+                    return {k: m[k] for k in m.files}, t["id"]
+    except Exception as e:  # sem internet: começa do zero
+        print(f"⚠ sem ponto de partida no Supabase ({e})")
+    return None, None
+
+
+def partir_de(rede, base, arquitetura, dados):
+    """Copia os pesos de `base` para `rede`, que pode ter mais entradas (olho
+    mais novo: as entradas novas entram com peso zero) e outra normalização (a
+    primeira camada é ajustada para a rede responder igual à base no começo).
+    Devolve False se as formas não batem (outro tamanho de rede): do zero."""
+    w, b = PRIMEIRA_CAMADA[arquitetura]
+    p = rede.p
+    base = dict(base)
+    if arquitetura == "conectoma":
+        # o modelo salvo guarda o peso efetivo (fiação real x ganho do grupo de
+        # destino); o treino ajusta o ganho: recupera dividindo pela fiação real
+        for k in CAMADAS_CONECTOMA:
+            if f"s_{k}" in base or k not in base or base[k].shape != rede.m[k].shape:
+                continue
+            with np.errstate(divide="ignore", invalid="ignore"):
+                razao = np.where(rede.m[k] != 0, base[k] / rede.m[k], np.nan)
+                ganho = np.log(np.nanmean(razao, axis=0))
+            base[f"s_{k}"] = np.where(np.isfinite(ganho), ganho, p[f"s_{k}"]).astype(np.float32)
+    if any(k not in base or (k != w and base[k].shape != p[k].shape) for k in p):
+        return False
+    wb = base[w].astype(np.float32)
+    n_b = wb.shape[0]
+    if n_b > p[w].shape[0] or wb.shape[1] != p[w].shape[1]:
+        return False
+    # x_base = (x - m_b)/d_b; x_nova = (x - m)/d  =>  x_base = (x_nova*d + m - m_b)/d_b
+    media_b, desvio_b = base["media"].astype(np.float32), base["desvio"].astype(np.float32)
+    media, desvio = dados.media[:n_b], dados.desvio[:n_b]
+    novo_w = np.zeros_like(p[w])
+    novo_w[:n_b] = wb * (desvio / desvio_b)[:, None]
+    p[w] = novo_w
+    p[b] = (base[b].astype(np.float32) + ((media - media_b) / desvio_b) @ wb).astype(np.float32)
+    for k in p:
+        if k not in (w, b):
+            p[k] = base[k].astype(np.float32).copy()
+    return True
+
+
+def treinar(dados, arquitetura="mlp", base=None):
     """Cada quadro de treino pesa pela recompensa futura (dados.pesos). A
     validação não usa peso: mede o quanto ela imita você, para comparar treinos.
-    Devolve a rede da melhor época (pela validação) e a perda dela."""
+    Com `base` (pesos de uma versão já treinada), parte dela.
+    Devolve a rede da melhor época (pela validação), a perda dela e se aprendeu
+    algo (sempre True do zero; partindo da base, só se melhorou MELHORA_MINIMA)."""
     rng = np.random.default_rng(0)
     n_ent, n_sai = dados.entrada(dados.treino[:1]).shape[1], dados.teclas.shape[1]
     rede = criar_rede(arquitetura, n_ent, n_sai, rng)
+    partiu = base is not None and partir_de(rede, base, arquitetura, dados)
+    if base is not None and not partiu:
+        print("  a versão de partida tem outro formato: treinando do zero")
+    taxa = TAXA_AJUSTE if partiu else TAXA
     epocas = EPOCAS_CONECTOMA if arquitetura == "conectoma" else EPOCAS
     # Teclas raras pesam mais, senão a rede só aprende "nunca aperta"; mas pouco
     # mais (até 3x), senão ela aperta à toa teclas que não dá para prever
@@ -572,6 +652,10 @@ def treinar(dados, arquitetura="mlp"):
     m = {k: np.zeros_like(v) for k, v in p.items()}
     v = {k: np.zeros_like(v) for k, v in p.items()}
     melhor, melhor_p, melhor_epoca, passo = np.inf, None, 0, 0
+    if partiu:
+        partida = perda(rede, dados, dados.valid, peso_pos)
+        print(f"  ponto de partida: validação {partida:.4f}")
+        melhor, melhor_p, melhor_epoca = partida, {k: a.copy() for k, a in p.items()}, -1
     for epoca in range(epocas):
         ordem = rng.permutation(dados.treino)
         for i in range(0, len(ordem), LOTE):
@@ -588,7 +672,7 @@ def treinar(dados, arquitetura="mlp"):
                 v[k] = 0.999 * v[k] + 0.001 * grad[k] ** 2
                 mh, vh = m[k] / (1 - 0.9**passo), v[k] / (1 - 0.999**passo)
                 passo_k = mh / (np.sqrt(vh) + 1e-8) + rede.regularizar.get(k, 0) * p[k]  # L2 (AdamW)
-                p[k] -= (TAXA * passo_k).astype(np.float32)
+                p[k] -= (taxa * passo_k).astype(np.float32)
             rede.limitar()
         pv = perda(rede, dados, dados.valid, peso_pos)
         amostra = rng.choice(dados.treino, min(5000, len(dados.treino)), replace=False)
@@ -600,7 +684,8 @@ def treinar(dados, arquitetura="mlp"):
             print(f"  parando: {PACIENCIA} épocas sem melhorar (fica a época {melhor_epoca + 1})")
             break
     rede.p.update(melhor_p)
-    return rede, melhor
+    aprendeu = not partiu or melhor < partida - MELHORA_MINIMA
+    return rede, melhor, aprendeu
 
 
 def relatorio(rede, dados):
@@ -630,7 +715,16 @@ def main():
         "--arquitetura", choices=["mlp", "conectoma"], default=None,
         help="cérebro a treinar (padrão: o mesmo da campeã atual)",
     )
-    arquitetura = parser.parse_args().arquitetura or arquitetura_da_campea()
+    parser.add_argument(
+        "--do-zero", action="store_true",
+        help="não parte da melhor versão já treinada deste cérebro",
+    )
+    parser.add_argument(
+        "--ensaio", action="store_true",
+        help="treina e mostra o resultado, sem salvar nem registrar (não cria desafiante)",
+    )
+    args = parser.parse_args()
+    arquitetura = args.arquitetura or arquitetura_da_campea()
     print(f"cérebro: {arquitetura}")
     inicio = time.time()
     pastas = pastas_de_sessoes()
@@ -663,8 +757,18 @@ def main():
         f"\ntreinando com {len(dados.treino):,} quadros, validando com {len(dados.valid):,} "
         f"(olho versão {VERSAO_OLHO}: {dados.entrada(dados.treino[:1]).shape[1]:,} entradas)".replace(",", ".")
     )
-    rede, perda_validacao = treinar(dados, arquitetura)
+    base, base_id = (None, None) if args.do_zero else ponto_de_partida(arquitetura)
+    if base is not None:
+        print(f"partindo da versão #{base_id} (o que ela sabe não se perde)")
+    rede, perda_validacao, aprendeu = treinar(dados, arquitetura, base)
+    if not aprendeu:
+        print(f"\nnada novo aprendido: a validação não melhorou {MELHORA_MINIMA} sobre a #{base_id}. "
+              "Nenhuma desafiante criada; o próximo treino terá mais dados.")
+        sys.exit(NADA_NOVO)
     metricas = relatorio(rede, dados)
+    if args.ensaio:
+        print(f"\nensaio: validação {perda_validacao:.4f} (nada salvo)")
+        return
 
     # Salva num temporário e troca de uma vez: o painel nunca lê um modelo pela metade
     temporario = ARQUIVO_SAIDA.with_name(ARQUIVO_SAIDA.stem + ".tmp.npz")
@@ -702,6 +806,7 @@ def main():
             "quadros_correcao": quadros_correcao,
             "peso_correcao": PESO_CORRECAO,
             "toque_s": TOQUE_S, "arquitetura": arquitetura,
+            "partiu_de": base_id,
         },
         "codigo_versao": versao_do_codigo(),
     }
