@@ -69,6 +69,9 @@ def main():
     # devolve o controle ao Python de vez em quando para os sinais serem tratados.
     signal.signal(signal.SIGINT, lambda *_: app.quit())
     signal.signal(signal.SIGTERM, lambda *_: app.quit())
+    # Atalhos do teclado (atalho_mosca.sh): USR1 = gravar, USR2 = controlar jogo
+    signal.signal(signal.SIGUSR1, lambda *_: QtCore.QTimer.singleShot(0, lambda: orq.atalho("gravar")))
+    signal.signal(signal.SIGUSR2, lambda *_: QtCore.QTimer.singleShot(0, lambda: orq.atalho("controlar")))
     vigia = QtCore.QTimer()
     vigia.timeout.connect(lambda: None)
     vigia.start(200)

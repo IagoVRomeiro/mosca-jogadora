@@ -43,4 +43,4 @@ if ! pgrep -f "python evolucao.py" > /dev/null; then
     setsid "$PYTHON" evolucao.py >> "$LOG" 2>&1 < /dev/null &
 fi
 
-avisar "Pronto. Carregue o save e ligue o 🎮 Controlar jogo no painel."
+avisar "Pronto. Carregue o save e aperte Ctrl+Alt+C (mosca joga) ou Ctrl+Alt+G (você grava)."

@@ -22,6 +22,7 @@ class Orquestrador(QtCore.QObject):
     """Um passo por quadro: jogo -> cérebro -> (mosca 3D, ações no jogo)."""
 
     CICLO_S = 600  # a cada ~10 min de jogo da mosca, treina uma nova desafiante
+    GRAVACAO_MINIMA_S = 60  # gravação mais curta (um atalho apertado sem querer) não treina
 
     def __init__(self, jogo, cerebro, mosca, manual=False):
         """`manual`: versão escolhida à mão (--treino N): sem torneio nem ciclo."""
@@ -77,6 +78,27 @@ class Orquestrador(QtCore.QObject):
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(QUADRO_MS)
+
+    # Atalhos do teclado (atalho_mosca.sh manda um sinal ao painel): o mesmo
+    # atalho liga e desliga. A notificação avisa, porque o painel fica atrás do jogo.
+    def atalho(self, qual):
+        cartao = self.painel.cartao_mosca
+        botao = {"gravar": cartao.bt_gravar, "controlar": cartao.bt_controlar}[qual]
+        if not botao.isVisible():
+            return
+        if not botao.isEnabled():
+            self._notificar("Pare a gravação antes de ligar o Controlar jogo (Ctrl+Alt+G)")
+            return
+        botao.toggle()
+        if qual == "gravar":
+            self._notificar("⏺ Gravando: você joga" if botao.isChecked()
+                            else "⏹ Gravação parada (com 1 min ou mais, a mosca treina com ela)")
+        else:
+            self._notificar("🎮 A mosca está jogando" if botao.isChecked() else "🎮 Controlar jogo desligado")
+
+    @staticmethod
+    def _notificar(texto):
+        QtCore.QProcess.startDetached("notify-send", ["-a", "Mosca jogadora", "-t", "3000", "Mosca jogadora", texto])
 
     def alternar_controle(self, ligado):
         self.jogo.controlando = ligado
@@ -296,8 +318,14 @@ class Orquestrador(QtCore.QObject):
             self.jogo.focar()
         else:
             self.gravador.parar()
+            segundos = self.gravador.total * QUADRO_MS / 1000
             self.gravador = None
             bt_controlar.setEnabled(True)
+            if segundos < self.GRAVACAO_MINIMA_S:
+                # fica guardada (entra nos próximos treinos), mas não vale
+                # interromper uma disputa nem treinar só por ela
+                self._avisar(f"Gravação de {segundos:.0f} s: curta demais para treinar agora", 10)
+                return
             self._pedir_treino()  # aprende com tudo o que já foi gravado
 
     def _pedir_treino(self):
