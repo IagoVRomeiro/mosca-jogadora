@@ -4,8 +4,9 @@ import collections
 from pathlib import Path
 
 
-# Todos os controles de jogo do Hollow Knight, com as teclas configuradas no jogo, mais
-# o mapa rápido. Inventário e Esc ficam de fora: são menus que pausam o jogo.
+# Todos os controles de jogo do Hollow Knight, com as teclas configuradas no jogo.
+# Mapa (Tab), inventário e Esc ficam de fora: a mosca não usa o que vê neles e
+# eles a fazem parar de jogar.
 #   tecla: keysym do X11 · rotulo: o que aparece no painel · curto: nome no botão
 #   pata: pata que aperta a tecla · posicao: (linha, coluna) da tecla no teclado 3D
 Acao = collections.namedtuple("Acao", "tecla rotulo curto pata posicao")
@@ -23,9 +24,6 @@ ACOES_JOGO = {
     "Super Investida": Acao("l", "L", "S. Investida", "lh", (-1, 2)),
     "Ferrão dos Sonhos": Acao("n", "N", "Ferrão", "rh", (-1, -1)),
     "Magia Rápida": Acao("m", "M", "Magia Ráp.", "rm", (0, -2)),
-    # Mapa rápido: segurado, mostra o mapa da área (com a Bússola Errante, onde o
-    # Cavaleiro está). A mosca também olha o mapa sozinha de tempos em tempos.
-    "Mapa": Acao("Tab", "Tab", "Mapa", "rh", (-1, -2)),
 }
 
 
@@ -47,14 +45,7 @@ DURACAO_TOQUE_S = 0.07
 
 
 # O Foco só cura segurado por ~1 s: uma vez apertado, fica pelo menos isto
-SEGURAR_MINIMO_S = {"Foco": 1.5, "Mapa": 1.5}
-
-
-# E no máximo isto: com o mapa aberto a mosca vê o mapa e, como nas suas
-# gravações o Tab está sempre apertado com o mapa na tela, continuaria segurando
-# para sempre. Passou do máximo, solta e a tecla descansa por DESCANSO_S.
-SEGURAR_MAXIMO_S = {"Mapa": 3.0}
-DESCANSO_S = 10.0
+SEGURAR_MINIMO_S = {"Foco": 1.5}
 
 
 QUADRO_MS = 33  # ~30 quadros por segundo

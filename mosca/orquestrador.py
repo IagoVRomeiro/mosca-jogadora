@@ -16,7 +16,7 @@ from .aprendizado import Gravador, Imitacao, Torneio
 from .correcao import Correcao
 from .juiz import DetectoresPelaPosicao, JuizDoJogo
 from .config import ACOES, ARQUIVO_DESAFIANTE, PASTA, PASTA_GRAVACOES_MOSCA, QUADRO_MS, ROTULO_TECLA
-from .estimulos import DetectorLoop, DetectorParada, DetectorPresa, ExploradorSalas, LeitorHUD, LeitorMapa
+from .estimulos import DetectorLoop, DetectorParada, DetectorPresa, ExploradorSalas, LeitorHUD
 from .interface import Painel
 
 
@@ -52,7 +52,6 @@ class Orquestrador(QtCore.QObject):
         self.presa = DetectorPresa()
         self.loop = DetectorLoop()
         self.explorador = ExploradorSalas() if self.hud is not None else None
-        self.leitor_mapa = LeitorMapa() if self.hud is not None else None
         self.juiz = None  # eventos de dentro do jogo (mod/MoscaEventos); sem ele, pela tela
         if self.hud is not None:
             self.pela_posicao = DetectoresPelaPosicao()
@@ -60,8 +59,6 @@ class Orquestrador(QtCore.QObject):
                 self.juiz = JuizDoJogo()
             except OSError as e:  # porta ocupada (outro painel aberto?)
                 print(f"⚠ juiz do jogo desligado ({e}): eventos pela tela")
-        self._desde_mapa = 0.0  # segundos de jogo da mosca desde a última olhada no mapa
-        self._foto_mapa_em = None
         self._ultimo_dano = 0.0
         self._ultimas_telas = collections.deque(maxlen=10)  # ~0,3 s, para o diagnóstico
         self._sorteio = np.random.default_rng()
@@ -264,43 +261,8 @@ class Orquestrador(QtCore.QObject):
                 self.cerebro.reduzida, teclas, self._recompensa_quadro, self._vida,
                 self._eventos_quadro, self._estado_jogo,
             )
-        self._habito_do_mapa()
         if self.torneio is not None:
             self._torneio_quadro()
-
-    # --- olhar o mapa: de tempos em tempos, num momento calmo, segura Tab ---
-
-    OLHAR_MAPA_S = 45  # de jogo da mosca entre uma olhada e outra
-    CALMA_S = 5  # sem tomar dano há tanto tempo
-    PASTA_MAPAS = PASTA / "mapas"
-    GUARDAR_MAPAS = 100
-
-    def _habito_do_mapa(self):
-        """Só sem o plugin do jogo: o mapa era o jeito de saber onde ela está (para
-        premiar lugares novos). A mosca não usa o que vê nele (a memória dela é
-        curta); com o juiz de dentro do jogo, a sala já vem exata e parar para
-        abrir o mapa só atrapalha."""
-        if self._juiz_ativo:
-            return
-        self._desde_mapa += QUADRO_MS / 1000
-        agora = time.monotonic()
-        if self._desde_mapa >= self.OLHAR_MAPA_S and agora - self._ultimo_dano > self.CALMA_S:
-            self._desde_mapa = 0.0
-            self.cerebro.pulsar_zona("Mapa")  # a zona do mapa acende e a pata aperta Tab
-            self._foto_mapa_em = agora + 1.0  # o mapa leva um instante para abrir
-            self._avisar("🗺 Olhando o mapa", 3)
-
-    def _fotografar_mapa(self, imagem):
-        """Guarda o mapa aberto (para calibrar a leitura da posição pela Bússola)."""
-        from PIL import Image
-
-        self._foto_mapa_em = None
-        self.PASTA_MAPAS.mkdir(exist_ok=True)
-        Image.fromarray(np.ascontiguousarray(imagem)).save(
-            self.PASTA_MAPAS / time.strftime("mapa_%Y-%m-%d_%H%M%S.png")
-        )
-        for velho in sorted(self.PASTA_MAPAS.glob("mapa_*.png"))[: -self.GUARDAR_MAPAS]:
-            velho.unlink()
 
     def _terminar_partida(self):
         p, self.partida = self.partida, None
@@ -329,7 +291,6 @@ class Orquestrador(QtCore.QObject):
             "salas_novas": p["eventos"]["sala_nova"],
             "presas": p["eventos"]["presa"],
             "loops": p["eventos"]["loop"],
-            "lugares_mapa": p["eventos"]["mapa_novo"],
             "ajudas": p["eventos"]["ajuda"],
             "inimigos_mortos": p["eventos"]["inimigo_morto"],
             "cenas_novas": p["eventos"]["cena_nova"],
@@ -563,7 +524,7 @@ class Orquestrador(QtCore.QObject):
     NOMES_EVENTOS = {
         "dano": "tomou dano", "cura": "curou", "acerto": "acertou inimigo", "geo": "pegou geo",
         "parada": "ficou parada", "morte": "morreu", "sala_nova": "sala nova!",
-        "presa": "ficou presa", "mapa_novo": "lugar novo no mapa!", "loop": "andando em círculos",
+        "presa": "ficou presa", "loop": "andando em círculos",
         "inimigo_morto": "matou inimigo!", "cena_nova": "sala nova!", "lugar_novo": "lugar novo",
     }
 
@@ -685,9 +646,6 @@ class Orquestrador(QtCore.QObject):
             reflexo = self._escapar()  # já com 4 s encostada; a punição só vem com 6 s
         elif "parada" in eventos and self._mosca_joga:
             reflexo = self._reflexo()
-        if self._foto_mapa_em is not None and time.monotonic() >= self._foto_mapa_em:
-            self._fotografar_mapa(imagem)
-            eventos += self.leitor_mapa.ler(imagem)
         valor = sum(LeitorHUD.RECOMPENSA[e] for e in eventos)
         self._eventos_quadro = eventos
         for evento in set(eventos) - {"parada", "lugar_novo"}:  # frequentes: sem foto
@@ -707,7 +665,6 @@ class Orquestrador(QtCore.QObject):
             self._vida if self._juiz_ativo or self.hud.visivel else None,
             texto if agora - quando < 3 else None,
             len(self.juiz.cenas) if self._juiz_ativo else self.explorador.salas,
-            self.leitor_mapa.posicao,
         )
 
     def tick(self):

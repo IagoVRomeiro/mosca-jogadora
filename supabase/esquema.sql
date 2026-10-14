@@ -54,7 +54,7 @@ create table if not exists public.partidas_mosca (
     salas_novas integer not null default 0,
     presas integer not null default 0,   -- ficou presa (parede, pulo que não alcança)
     loops integer not null default 0,    -- andando em círculos
-    lugares_mapa integer not null default 0,  -- células novas do mapa (Bússola)
+    lugares_mapa integer not null default 0,  -- antigo (até 14/10): células novas do mapa pela Bússola
     ajudas integer not null default 0,   -- vezes que você assumiu para corrigir (correção ao vivo)
     inimigos_mortos integer not null default 0,  -- só com o plugin do jogo (mod/MoscaEventos)
     cenas_novas integer not null default 0,      -- salas (cenas do jogo) nunca visitadas, idem

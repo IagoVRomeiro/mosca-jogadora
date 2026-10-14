@@ -6,7 +6,7 @@ import time
 import numpy as np
 
 from .config import (
-    ACOES, ACOES_JOGO, DESCANSO_S, DURACAO_TOQUE_S, OPOSTAS, SEGURAR_MAXIMO_S, SEGURAR_MINIMO_S, TOQUE_S,
+    ACOES, ACOES_JOGO, DURACAO_TOQUE_S, OPOSTAS, SEGURAR_MINIMO_S, TOQUE_S,
 )
 
 
@@ -85,7 +85,6 @@ class CapturaJanela:
         self._ativas = set()  # ações que a mosca quer (podem estar entre dois toques)
         self._desde, self._apertou_em = {}, {}
         self._soltou_em = {}  # quando a mosca soltou cada tecla (ver da_mosca)
-        self._descanso_ate = {}  # tecla solta à força (SEGURAR_MAXIMO_S): até quando fica solta
         self.janelas_proprias = set()  # o painel: pode devolver o foco ao jogo
         self.aviso_controle = None
         self._ultimo_foco = 0.0
@@ -190,14 +189,7 @@ class CapturaJanela:
 
     def _decidir(self, acao, vontade, agora):
         """A tecla deve estar apertada agora? Histerese na vontade, toques
-        repetidos (TOQUE_S) e tempo mínimo e máximo segurada (SEGURAR_*_S)."""
-        if agora < self._descanso_ate.get(acao, 0.0):
-            vontade = 0.0
-        elif (acao in SEGURAR_MAXIMO_S and acao in self.apertadas
-              and agora - self._apertou_em[acao] >= SEGURAR_MAXIMO_S[acao]):
-            self._descanso_ate[acao] = agora + DESCANSO_S
-            self._ativas.discard(acao)
-            return False
+        repetidos (TOQUE_S) e tempo mínimo segurada (SEGURAR_MINIMO_S)."""
         limiar = self.SOLTAR if acao in self._ativas else self.APERTAR
         ativa = vontade > limiar
         if ativa and acao not in self._ativas:

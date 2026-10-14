@@ -120,7 +120,7 @@ class CerebroDemo:
                 for acao in ACOES:
                     if acao in self._modelo.acoes:
                         candidatos = np.where(livres, leitura[:, self._modelo.acoes.index(acao)], -np.inf)
-                    else:  # tecla que o modelo não conhece (ex.: Mapa): grupos livres
+                    else:  # tecla que o modelo não conhece (ex.: uma ação nova): grupos livres
                         candidatos = np.where(livres, 0.0, -np.inf)
                     g = int(np.argmax(candidatos))
                     zonas[acao].append(g)

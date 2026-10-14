@@ -26,8 +26,6 @@ dados_conectoma/
 
 # Exploração: memória de salas e imagens do mapa (geradas jogando)
 memoria_salas*.npz
-memoria_mapa*.npz
-mapas/
 
 # Cache do olho de cada sessão (treinar.py recalcula se faltar)
 cache_olho/

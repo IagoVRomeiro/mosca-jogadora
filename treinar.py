@@ -35,6 +35,7 @@ import shutil
 import sys
 import subprocess
 import time
+import warnings
 from datetime import datetime
 from pathlib import Path
 
@@ -60,6 +61,7 @@ PACIENCIA = 3  # para depois de tantas épocas sem melhorar na validação
 MELHORA_MINIMA = 0.002
 TAXA_AJUSTE = 3e-4
 PRIMEIRA_CAMADA = {"mlp": ("w1", "b1"), "conectoma": ("A", "a")}
+ULTIMA_CAMADA = {"mlp": ("w2", "b2"), "conectoma": ("R", "r")}  # uma coluna por ação
 NADA_NOVO = 3  # código de saída: treinou e não aprendeu nada mensurável
 LOTE = 256
 TAXA = 1e-3
@@ -607,10 +609,21 @@ def partir_de(rede, base, arquitetura, dados):
         for k in CAMADAS_CONECTOMA:
             if f"s_{k}" in base or k not in base or base[k].shape != rede.m[k].shape:
                 continue
-            with np.errstate(divide="ignore", invalid="ignore"):
+            with np.errstate(divide="ignore", invalid="ignore"), warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)  # grupo sem ligação real: fica o ganho inicial
                 razao = np.where(rede.m[k] != 0, base[k] / rede.m[k], np.nan)
                 ganho = np.log(np.nanmean(razao, axis=0))
             base[f"s_{k}"] = np.where(np.isfinite(ganho), ganho, p[f"s_{k}"]).astype(np.float32)
+    # Saídas casadas pelo nome da ação: uma ação que saiu (ex.: Mapa) some, uma
+    # nova fica como a rede nova a iniciou
+    ws, bs = ULTIMA_CAMADA[arquitetura]
+    if "acoes" in base and ws in base and bs in base:
+        nomes = [str(a) for a in base["acoes"]]
+        saida_w, saida_b = p[ws].copy(), p[bs].copy()
+        for i, acao in enumerate(ACOES):
+            if acao in nomes:
+                saida_w[:, i], saida_b[i] = base[ws][:, nomes.index(acao)], base[bs][nomes.index(acao)]
+        base[ws], base[bs] = saida_w, saida_b
     if any(k not in base or (k != w and base[k].shape != p[k].shape) for k in p):
         return False
     wb = base[w].astype(np.float32)

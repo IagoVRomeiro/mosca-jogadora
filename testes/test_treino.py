@@ -156,6 +156,22 @@ class TestePartirDaMelhor(unittest.TestCase):
         conectoma = treinar.carregar_conectoma()
         self.checar("conectoma", lambda n: treinar.RedeConectoma.iniciar(n, len(ACOES), conectoma, rng))
 
+    def test_acao_que_saiu_e_casada_pelo_nome(self):
+        """A versão de partida tinha uma ação a mais (o Mapa): as outras saídas
+        continuam as mesmas, cada uma na sua ação."""
+        rng = np.random.default_rng(5)
+        acoes_base = list(ACOES[:3]) + ["Mapa"] + list(ACOES[3:])
+        base_rede = treinar.RedeMLP.iniciar(50, len(acoes_base), rng)
+        base = {**base_rede.para_salvar(), "acoes": np.array(acoes_base),
+                "media": np.zeros(50, np.float32), "desvio": np.ones(50, np.float32)}
+        dados = type("D", (), {"media": np.zeros(50, np.float32), "desvio": np.ones(50, np.float32)})()
+        nova = treinar.RedeMLP.iniciar(50, len(ACOES), rng)
+        self.assertTrue(treinar.partir_de(nova, base, "mlp", dados))
+        x = rng.normal(0, 1, (6, 50)).astype(np.float32)
+        antes, depois = base_rede.prever(x), nova.prever(x)
+        for i, acao in enumerate(ACOES):
+            np.testing.assert_allclose(depois[:, i], antes[:, acoes_base.index(acao)], rtol=1e-4, atol=1e-5)
+
     def test_formato_diferente_comeca_do_zero(self):
         rng = np.random.default_rng(4)
         base = {**treinar.RedeMLP.iniciar(100, len(ACOES) + 1, rng).para_salvar(),

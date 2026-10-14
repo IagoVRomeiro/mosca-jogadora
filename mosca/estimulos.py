@@ -1,6 +1,6 @@
 """Estímulos do jogo: o leitor do HUD (dano, morte, acerto, geo, cura), a parada,
 ficar presa (contra parede, pulando onde não alcança), andar em círculos (loop) e a
-exploração (salas novas e lugares novos no mapa)."""
+exploração (salas novas)."""
 
 from pathlib import Path
 
@@ -47,8 +47,8 @@ class LeitorHUD:
         # dano e morte pesam mais que parada e loop juntos (medido em 59 min da
         # mosca: com -1 e -3, ficar parada e andar em círculos puniam mais que morrer)
         "dano": -2.0, "morte": -8.0, "cura": 0.3, "acerto": 0.3, "geo": 0.5, "parada": -0.2,
-        # sala nova vale pouco (dá para burlar entrando e saindo); o mapa, mais
-        "sala_nova": 0.3, "presa": -0.6, "mapa_novo": 1.0, "loop": -0.6,
+        # sala nova pela tela vale pouco (dá para burlar entrando e saindo)
+        "sala_nova": 0.3, "presa": -0.6, "loop": -0.6,
         # só com o juiz de dentro do jogo (mosca/juiz.py): exatos, não dá para burlar
         "inimigo_morto": 1.0, "cena_nova": 1.0,
         "lugar_novo": 0.2,  # um pedaço novo de uma sala (8x8 unidades do jogo)
@@ -397,127 +397,6 @@ class DetectorPresa:
         self.lado = lado
         self._espera = self.repete
         return ["presa"]
-
-
-class LeitorMapa:
-    """Onde a mosca está no mapa rápido (Tab), pela marca da Bússola Errante.
-
-    - Posição: a marca (cabeça branca do Cavaleiro) achada por correlação com um
-      modelo recortado do seu jogo (marca_bussola.npy, numa tela de 523 de altura).
-    - Área: o título no alto do mapa ("Encruzilhada Esquecida"...), comparado pelo
-      desenho das letras; cada título diferente é uma área numerada.
-    - Exploração: o mapa da área é dividido em células de CELULA (fração da
-      altura); chegar numa célula nunca vista é "mapa_novo". A memória fica salva.
-    Sem a marca (mapa não abriu, área sem mapa), não lê nada.
-    """
-
-    MODELO = Path(__file__).with_name("marca_bussola.npy")
-    ALTURA_MODELO = 523
-    SEMELHANCA = 0.75  # medido: a marca dá 0,83-1,00; o resto do mapa ~0,5
-    TITULO = (0.06, 0.13, 0.35)  # y0, y1, meia largura (fração da altura, centrado)
-    # O título é comparado em tons de cinza, num tamanho fixo, levemente borrado e
-    # tolerando DESLOCAMENTO px: com a janela do jogo em outro tamanho ainda é a
-    # mesma área. Medido nos mapas/: mesma área 0,88-1,00; áreas diferentes <= 0,66
-    MESMA_AREA = 0.8
-    FORMA_TITULO = (24, 240)
-    DESLOCAMENTO = 3
-    CELULA = 0.045
-
-    def __init__(self, arquivo=PASTA / "memoria_mapa.npz"):
-        self.arquivo = Path(arquivo)
-        self._modelo = np.load(self.MODELO).astype(np.float32)
-        self._modelos = {}
-        self.titulos, self.celulas = [], set()
-        if self.arquivo.exists():
-            with np.load(self.arquivo) as dados:
-                # memória do formato antigo (título binarizado, sensível ao tamanho
-                # da janela) não dá para comparar: começa de novo
-                if dados["titulos"].dtype == np.float32:
-                    self.titulos = list(dados["titulos"])
-                    self.celulas = {tuple(int(v) for v in c) for c in dados["celulas"]}
-        self.posicao = None  # (área, x, y em fração da altura), da última leitura
-
-    def _modelo_na_escala(self, altura):
-        if altura not in self._modelos:
-            from PIL import Image
-
-            escala = altura / self.ALTURA_MODELO
-            h, w = (max(5, round(d * escala)) for d in self._modelo.shape)
-            m = np.asarray(Image.fromarray(self._modelo).resize((w, h)), np.float32)
-            m = m - m.mean()
-            self._modelos[altura] = m / (np.linalg.norm(m) + 1e-6)
-        return self._modelos[altura]
-
-    def achar_marca(self, quadro):
-        """(x, y) da marca em pixels e a semelhança, ou None se não achou."""
-        from scipy.ndimage import uniform_filter
-        from scipy.signal import fftconvolve
-
-        img = cinza(quadro).astype(np.float32)
-        t = self._modelo_na_escala(img.shape[0])
-        h, w = t.shape
-        num = fftconvolve(img, t[::-1, ::-1], mode="valid")
-        corte = (slice(h // 2, h // 2 + num.shape[0]), slice(w // 2, w // 2 + num.shape[1]))
-        media = uniform_filter(img, (h, w))[corte]
-        media2 = uniform_filter(img**2, (h, w))[corte]
-        semelhanca = num / np.sqrt(np.maximum(media2 - media**2, 1e-6) * h * w)
-        y, x = np.unravel_index(np.argmax(semelhanca), semelhanca.shape)
-        if semelhanca[y, x] < self.SEMELHANCA:
-            return None
-        return x + w // 2, y + h // 2, float(semelhanca[y, x])
-
-    @classmethod
-    def _titulo(cls, quadro):
-        """Desenho do título no alto do mapa, normalizado para comparar."""
-        from PIL import Image, ImageFilter
-
-        img = cinza(quadro)
-        alt, larg = img.shape
-        y0, y1, meia = cls.TITULO
-        corte = img[int(y0 * alt) : int(y1 * alt), larg // 2 - int(meia * alt) : larg // 2 + int(meia * alt)]
-        reduzido = Image.fromarray(corte).resize(cls.FORMA_TITULO[::-1], Image.Resampling.BOX)
-        d = np.asarray(reduzido.filter(ImageFilter.GaussianBlur(1)), np.float32)
-        d = d - d.mean()
-        return d / (np.linalg.norm(d) + 1e-6)
-
-    @classmethod
-    def _semelhanca(cls, a, b):
-        k = cls.DESLOCAMENTO
-        return max(
-            float((a * np.roll(b, (dy, dx), (0, 1))).sum())
-            for dy in range(-k, k + 1) for dx in range(-k, k + 1)
-        )
-
-    def _area(self, quadro):
-        """Número da área pelo desenho do título (nova área se não parecer com nenhuma)."""
-        desenho = self._titulo(quadro)
-        for i, conhecido in enumerate(self.titulos):
-            if self._semelhanca(conhecido, desenho) >= self.MESMA_AREA:
-                return i
-        self.titulos.append(desenho)
-        return len(self.titulos) - 1
-
-    def ler(self, quadro):
-        """Lê o mapa aberto. Devolve ["mapa_novo"] se chegou numa célula nova."""
-        marca = self.achar_marca(quadro)
-        if marca is None:
-            return []
-        alt = cinza(quadro).shape[0]
-        area = self._area(quadro)
-        x, y = marca[0] / alt, marca[1] / alt
-        self.posicao = (area, x, y)
-        celula = (area, int(x / self.CELULA), int(y / self.CELULA))
-        if celula in self.celulas:
-            return []
-        self.celulas.add(celula)
-        self.salvar()
-        return ["mapa_novo"]
-
-    def salvar(self):
-        temporario = self.arquivo.with_name(self.arquivo.stem + ".tmp.npz")
-        titulos = np.array(self.titulos, np.float32).reshape(-1, *self.FORMA_TITULO)
-        np.savez_compressed(temporario, titulos=titulos, celulas=np.array(sorted(self.celulas)).reshape(-1, 3))
-        temporario.replace(self.arquivo)
 
 
 class DetectorLoop:
