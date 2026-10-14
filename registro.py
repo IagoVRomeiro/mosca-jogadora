@@ -196,19 +196,7 @@ def registrar_partida(partida):
         if banco is None:
             return
         try:
-            # Colunas novas que o banco pode ainda não ter (falta rodar a migração)
-            opcionais = {"mortes": "migracao_003.sql", "salas_novas": "migracao_004.sql"}
-            linha = dict(partida)
-            while True:
-                try:
-                    banco.inserir("partidas_mosca", [linha])
-                    break
-                except RuntimeError as e:
-                    faltando = [c for c in opcionais if c in linha and c in str(e)]
-                    if not faltando:
-                        raise
-                    linha.pop(faltando[0])
-                    print(f"⚠ rode supabase/{opcionais[faltando[0]]} para registrar '{faltando[0]}' das partidas")
+            banco.inserir("partidas_mosca", [partida])
             print(f"partida da mosca registrada no Supabase ({partida['segundos']:.0f} s)")
         except Exception as e:
             print(f"⚠ não consegui registrar a partida no Supabase: {e}")

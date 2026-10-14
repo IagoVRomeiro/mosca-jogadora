@@ -2,7 +2,6 @@
 .env
 
 # Ambientes e caches
-.venv/
 .venv-flygym/
 __pycache__/
 
@@ -15,9 +14,6 @@ modelo_mosca*.npz
 modelos_baixados/
 treino.log
 modelo_mosca.json
-
-# Projeto clonado à parte (tem git próprio e ~370 MB de dados do conectoma)
-Drosophila_brain_model/
 
 # Arquivos temporários da CLI do Supabase
 supabase/.temp/

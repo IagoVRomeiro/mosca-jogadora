@@ -3,8 +3,9 @@
 Uso (uma vez; leva ~1 min):
     .venv-flygym/bin/python preparar_conectoma.py
 
-Lê o conectoma do FlyWire v783 (Drosophila_brain_model/) e as anotações oficiais
-dos neurônios (dados_conectoma/anotacoes_783.tsv, do flyconnectome/flywire_annotations)
+Lê o conectoma do FlyWire v783 (dados_conectoma/neuronios_783.csv e
+ligacoes_783.parquet, do github.com/philshiu/Drosophila_brain_model) e as anotações
+oficiais dos neurônios (dados_conectoma/anotacoes_783.tsv, do flyconnectome/flywire_annotations)
 e gera dados_conectoma/conectoma_mosca.npz, compacto, com:
 
 - grupos de neurônios por tipo celular e lado do cérebro, em três camadas:
@@ -31,9 +32,12 @@ import pandas as pd
 import scipy.sparse as sp
 
 PASTA = Path(__file__).resolve().parent
-ARQUIVO_ANOTACOES = PASTA / "dados_conectoma" / "anotacoes_783.tsv"
-ARQUIVO_SAIDA = PASTA / "dados_conectoma" / "conectoma_mosca.npz"
-MODELO = PASTA / "Drosophila_brain_model"
+DADOS = PASTA / "dados_conectoma"
+ARQUIVO_ANOTACOES = DADOS / "anotacoes_783.tsv"
+ARQUIVO_NEURONIOS = DADOS / "neuronios_783.csv"
+ARQUIVO_LIGACOES = DADOS / "ligacoes_783.parquet"
+ARQUIVO_SAIDA = DADOS / "conectoma_mosca.npz"
+URL_CONECTOMA = "https://github.com/philshiu/Drosophila_brain_model/raw/main"
 URL_ANOTACOES = (
     "https://github.com/flyconnectome/flywire_annotations/raw/main/"
     "supplemental_files/Supplemental_file1_neuron_annotations.tsv"
@@ -49,16 +53,21 @@ def num(x):
 
 
 def carregar():
-    if not ARQUIVO_ANOTACOES.exists():
-        raise SystemExit(
-            f"Faltam as anotações dos neurônios. Baixe com:\n"
-            f"  mkdir -p dados_conectoma && curl -L -o {ARQUIVO_ANOTACOES.relative_to(PASTA)} {URL_ANOTACOES}"
-        )
-    ids = pd.read_csv(MODELO / "Completeness_783.csv", index_col=0).index.values
+    faltando = [
+        (arquivo, url) for arquivo, url in (
+            (ARQUIVO_ANOTACOES, URL_ANOTACOES),
+            (ARQUIVO_NEURONIOS, f"{URL_CONECTOMA}/Completeness_783.csv"),
+            (ARQUIVO_LIGACOES, f"{URL_CONECTOMA}/Connectivity_783.parquet"),
+        ) if not arquivo.exists()
+    ]
+    if faltando:
+        comandos = "\n".join(f"  curl -L -o {a.relative_to(PASTA)} {u}" for a, u in faltando)
+        raise SystemExit(f"Faltam dados do conectoma. Baixe com:\n  mkdir -p dados_conectoma\n{comandos}")
+    ids = pd.read_csv(ARQUIVO_NEURONIOS, index_col=0).index.values
     anotacoes = pd.read_csv(ARQUIVO_ANOTACOES, sep="\t", low_memory=False)
     anotacoes = anotacoes.drop_duplicates("root_id").set_index("root_id").reindex(ids)
     ligacoes = pd.read_parquet(
-        MODELO / "Connectivity_783.parquet",
+        ARQUIVO_LIGACOES,
         columns=["Presynaptic_Index", "Postsynaptic_Index", "Excitatory x Connectivity"],
     )
     n = len(ids)

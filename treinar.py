@@ -214,6 +214,15 @@ def processar_sessao(pasta):
     return dados
 
 
+def limpar_cache(pastas):
+    """Apaga do cache as sessões que este treino não usou (apagadas ou antigas)."""
+    usadas = {f"{p.parent.name}_{p.name}.npz" for p in pastas.values()}
+    apagados = [c for c in PASTA_CACHE.glob("*.npz") if c.name not in usadas]
+    for cache in apagados:
+        cache.unlink()
+    return len(apagados)
+
+
 def carregar_sessoes(pastas):
     """Sessões em ordem cronológica, cada uma um dict com retratos, teclas e a
     recompensa por quadro (HUD + presa + salas novas pela memória de salas, que
@@ -575,6 +584,8 @@ def main():
     apagadas = limpar_partidas_antigas_da_mosca()
     if apagadas:
         print(f"apaguei as telas de {len(apagadas)} partidas antigas da mosca (as teclas e recompensas estão no Supabase)")
+    if limpar_cache(pastas):
+        print("limpei do cache_olho/ as sessões que não são mais usadas")
     print(
         "Nova desafiante. Ela só substitui a campeã se jogar melhor: ligue o "
         "'Controlar jogo' no painel para as duas disputarem."

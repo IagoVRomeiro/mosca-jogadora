@@ -1,45 +1,18 @@
 """O cérebro da mosca no painel: os neurônios desenhados, o que eles disparam e as
 ações que saem dele (`passo(imagem) -> (disparos, ações)`).
 
-Com os dados do conectoma (preparar_conectoma.py), é o cérebro real: neurônios do
-FlyWire nas posições de verdade, lobos ópticos vendo o jogo, os grupos da rede do
-conectoma acendendo, zonas de comando nos neurônios descendentes e a dopamina nos
-PAM/PPL1 reais. Sem eles, um cérebro desenhado (formas inventadas).
+É o cérebro real (dados do preparar_conectoma.py): neurônios do FlyWire nas
+posições de verdade, lobos ópticos vendo o jogo, os grupos da rede do conectoma
+acendendo, zonas de comando nos neurônios descendentes e a dopamina nos PAM/PPL1.
 """
 
 import collections
 
 import numpy as np
 
-from .conectoma import ARQUIVO_CONECTOMA, carregar_conectoma
-from .config import ACOES, ACOES_JOGO, DURACAO_PULSO_S, QUADRO_MS
+from .conectoma import carregar_conectoma
+from .config import ACOES, DURACAO_PULSO_S, QUADRO_MS
 from .olho import ATRASO_OLHO, GRADE_OLHO, _N_PERIFERIA, entrada, reduzir, retrato
-
-
-def _dentro_elipse(x, y, cx, cy, a, b, ang=0.0):
-    c, s = np.cos(ang), np.sin(ang)
-    dx, dy = x - cx, y - cy
-    u, v = c * dx + s * dy, -s * dx + c * dy
-    return (u / a) ** 2 + (v / b) ** 2 < 1
-
-
-def forma_cerebro(n, rng):
-    """Pontos 2D com a silhueta de um cérebro de mosca visto de frente."""
-    pontos = []
-    while sum(len(p) for p in pontos) < n:
-        x = rng.uniform(-1.45, 1.45, 4 * n)
-        y = rng.uniform(-0.8, 0.8, 4 * n)
-        dentro = (
-            _dentro_elipse(x, y, 0, 0.02, 0.6, 0.45)  # cérebro central
-            | _dentro_elipse(np.abs(x), y, 0.32, 0.38, 0.24, 0.17)  # corpos de cogumelo
-            | _dentro_elipse(x, y, 0, -0.38, 0.3, 0.2)  # gânglio subesofágico
-            | _dentro_elipse(np.abs(x), y, 1.02, 0.0, 0.36, 0.56, -0.25)  # medula
-            | _dentro_elipse(np.abs(x), y, 0.7, -0.05, 0.22, 0.42)  # lóbulo
-        )
-        dentro &= ~_dentro_elipse(x, y, 0, -0.15, 0.07, 0.06)  # esôfago
-        pontos.append(np.column_stack([x[dentro], y[dentro]]))
-    pos = np.vstack(pontos)[:n]
-    return pos + rng.normal(0, 0.008, pos.shape)
 
 
 class FormaReal:
@@ -74,40 +47,25 @@ class CerebroDemo:
       seu grupo na rede.
     """
 
-    ZONAS = {nome: a.zona for nome, a in ACOES_JOGO.items()}  # cérebro desenhado
     # Neurônios de dopamina do corpo de cogumelo: na mosca real, os PAM sinalizam
     # recompensa e os PPL1, punição. Piscam com os eventos do jogo (HUD).
-    DOPAMINA = {"PAM": (-0.13, 0.43, 0.07), "PPL1": (0.13, 0.43, 0.07)}  # desenhado
     DURACAO_DOPAMINA_S = 0.6
     GRADE = (GRADE_OLHO[0], GRADE_OLHO[1] // 2)  # resolução do olho em cada metade
     ESPONTANEA = 0.3  # Hz
     GRUPOS_POR_ACAO = 10  # grupos descendentes reais (de 1 ou 2 neurônios) por zona de comando
     ATIVIDADE_HZ = 60  # taxa de um grupo no máximo de atividade
 
-    def __init__(self, n=14000, dt=QUADRO_MS / 1000, modelo=None, real=None):
-        """`real`: usar o cérebro real (padrão: se os dados do conectoma existirem)."""
+    def __init__(self, dt=QUADRO_MS / 1000, modelo=None):
         self.dt = dt
         self.rng = np.random.default_rng(0)
-        if real is None:
-            real = ARQUIVO_CONECTOMA.exists()
-        self.real = FormaReal(carregar_conectoma()) if real else None
-        if self.real is not None:
-            self.posicoes = self.real.posicoes
-            classe = self.real.classe
-            optico = (classe == "optic") | (classe == "visual_projection")
-            tipo = self.real.tipo
-            self.dopamina = {
-                "PAM": np.flatnonzero(np.char.startswith(tipo, "PAM")),
-                "PPL1": np.flatnonzero(np.char.startswith(tipo, "PPL1")),
-            }
-        else:
-            self.posicoes = forma_cerebro(n, self.rng)
-            x, y = self.posicoes.T
-            optico = np.abs(x) > 0.55
-            self.dopamina = {
-                nome: np.flatnonzero((x - cx) ** 2 + (y - cy) ** 2 < r**2)
-                for nome, (cx, cy, r) in self.DOPAMINA.items()
-            }
+        self.real = FormaReal(carregar_conectoma())
+        self.posicoes = self.real.posicoes
+        classe, tipo = self.real.classe, self.real.tipo
+        optico = (classe == "optic") | (classe == "visual_projection")
+        self.dopamina = {
+            "PAM": np.flatnonzero(np.char.startswith(tipo, "PAM")),
+            "PPL1": np.flatnonzero(np.char.startswith(tipo, "PPL1")),
+        }
         self.n = len(self.posicoes)
         x, y = self.posicoes.T
         self.optico_esq = np.flatnonzero(optico & (x < 0))
@@ -116,8 +74,8 @@ class CerebroDemo:
         # Retinotopia: posição no lobo -> célula da grade na metade da imagem
         linhas, colunas = self.GRADE
         lobo = np.concatenate([self.optico_esq, self.optico_dir])
-        y0, y1 = np.percentile(y[lobo], [2, 98]) if len(lobo) else (-0.6, 0.6)
-        ax0, ax1 = np.percentile(np.abs(x[lobo]), [2, 98]) if len(lobo) else (0.5, 1.45)
+        y0, y1 = np.percentile(y[lobo], [2, 98])
+        ax0, ax1 = np.percentile(np.abs(x[lobo]), [2, 98])
         lin = np.clip(((y1 - y) / (y1 - y0) * linhas).astype(int), 0, linhas - 1)
         col_ext = np.clip(((np.abs(x) - ax0) / (ax1 - ax0) * colunas).astype(int), 0, colunas - 1)
         col = np.where(x < 0, colunas - 1 - col_ext, colunas + col_ext)  # borda = periferia
@@ -140,7 +98,7 @@ class CerebroDemo:
         """Trocar o cérebro treinado muda quem são os neurônios de cada zona."""
         self._modelo = modelo
         self._ligado_ao_conectoma = (
-            self.real is not None and modelo is not None
+            modelo is not None
             and getattr(modelo, "arquitetura", "mlp") == "conectoma"
             and all(np.array_equal(modelo.grupos[k], self.real.nomes_grupos[k]) for k in FormaReal.CAMADAS)
         )
@@ -151,12 +109,6 @@ class CerebroDemo:
         self.versao_zonas += 1
 
     def _zonas_de_comando(self):
-        if self.real is None:  # cérebro desenhado: zonas em lugares fixos
-            x, y = self.posicoes.T
-            return {
-                nome: np.flatnonzero((x - cx) ** 2 + (y - cy) ** 2 < r**2)
-                for nome, (cx, cy, r) in self.ZONAS.items()
-            }
         grupo_d = self.real.grupo["descendente"]
         if self._ligado_ao_conectoma:
             # Os descendentes reais que mais empurram cada tecla na rede treinada;

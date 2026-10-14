@@ -14,7 +14,6 @@ import registro
 
 class ServidorFalso(BaseHTTPRequestHandler):
     pedidos = []
-    recusar_mortes = False
 
     def log_message(self, *args):
         pass
@@ -22,11 +21,6 @@ class ServidorFalso(BaseHTTPRequestHandler):
     def _responder(self):
         corpo = self.rfile.read(int(self.headers.get("Content-Length", 0)))
         self.pedidos.append((self.command, self.path, dict(self.headers), corpo))
-        if self.recusar_mortes and self.path.startswith("/rest/v1/partidas_mosca") and b"mortes" in corpo:
-            self.send_response(400)
-            self.end_headers()
-            self.wfile.write(b'{"message":"column \\"mortes\\" does not exist"}')
-            return
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
@@ -58,7 +52,6 @@ class TesteRegistro(unittest.TestCase):
 
     def setUp(self):
         ServidorFalso.pedidos.clear()
-        ServidorFalso.recusar_mortes = False
 
     def sessao(self, pasta):
         pasta.mkdir(parents=True)
@@ -89,13 +82,10 @@ class TesteRegistro(unittest.TestCase):
         nova = [c for m, p, _, c in ServidorFalso.pedidos if p.endswith("sessoes/nova.npz")][0]
         self.assertLess(len(nova), 3000)
 
-    def test_partida_sem_coluna_mortes_ainda_e_registrada(self):
-        ServidorFalso.recusar_mortes = True
+    def test_partida_e_registrada(self):
         registro.registrar_partida({"segundos": 60, "mortes": 1, "danos": 2}).join(5)
         enviadas = [json.loads(c) for m, p, _, c in ServidorFalso.pedidos if p == "/rest/v1/partidas_mosca"]
-        self.assertEqual(len(enviadas), 2)  # tentou com mortes, repetiu sem
-        self.assertNotIn("mortes", enviadas[1][0])
-        self.assertEqual(enviadas[1][0]["danos"], 2)  # o resto da partida foi junto
+        self.assertEqual(enviadas, [[{"segundos": 60, "mortes": 1, "danos": 2}]])
 
     def test_sem_env_nao_quebra(self):
         registro.Supabase.do_env = classmethod(lambda c: None)

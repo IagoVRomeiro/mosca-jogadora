@@ -5,10 +5,8 @@ Uso:
     .venv-flygym/bin/python jogar.py --janela     # captura a janela do Hollow Knight
     .venv-flygym/bin/python jogar.py --janela "Outro Jogo"
 
-O cérebro aqui ainda é uma imitação (CerebroDemo): forma e regiões inventadas,
-disparos gerados a partir da imagem do jogo e do que você pinta no painel.
-Depois é só trocar pela ponte com o modelo do conectoma (Drosophila_brain_model)
-mantendo o mesmo método `passo`.
+O cérebro desenhado é o da mosca de verdade (dados do preparar_conectoma.py); o
+que decide as teclas é o cérebro treinado (treinar.py), escolhido pelo torneio.
 """
 
 import mosca  # noqa: F401  (configura Qt/MuJoCo antes de importar o resto)

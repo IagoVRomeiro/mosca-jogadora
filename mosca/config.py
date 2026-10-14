@@ -7,26 +7,25 @@ from pathlib import Path
 # Todos os controles de jogo do Hollow Knight, com as teclas configuradas no jogo, mais
 # o mapa rápido. Inventário e Esc ficam de fora: são menus que pausam o jogo.
 #   tecla: keysym do X11 · rotulo: o que aparece no painel · curto: nome no botão
-#   zona: (x, y, raio) da zona de comando no cérebro
 #   pata: pata que aperta a tecla · posicao: (linha, coluna) da tecla no teclado 3D
-Acao = collections.namedtuple("Acao", "tecla rotulo curto zona pata posicao")
+Acao = collections.namedtuple("Acao", "tecla rotulo curto pata posicao")
 
 
 ACOES_JOGO = {
-    "Esquerda": Acao("a", "A", "Esquerda", (-0.38, 0.0, 0.12), "lf", (1, 1)),
-    "Direita": Acao("d", "D", "Direita", (0.38, 0.0, 0.12), "rf", (1, -1)),
-    "Cima": Acao("w", "W", "Cima", (0.0, 0.28, 0.10), "lf", (2, 1)),
-    "Baixo": Acao("s", "S", "Baixo", (0.0, 0.05, 0.09), "rf", (2, -1)),
-    "Pular": Acao("space", "Space", "Pulo", (-0.2, -0.32, 0.09), "lm", (0, 1)),
-    "Atacar": Acao("h", "H", "Ataque", (0.2, -0.32, 0.09), "rm", (0, -1)),
-    "Esquiva": Acao("j", "J", "Esquiva", (0.0, -0.52, 0.08), "lh", (-1, 1)),
-    "Foco": Acao("k", "K", "Foco/Magia", (-0.2, 0.18, 0.08), "lm", (0, 2)),
-    "Super Investida": Acao("l", "L", "S. Investida", (-0.32, 0.38, 0.08), "lh", (-1, 2)),
-    "Ferrão dos Sonhos": Acao("n", "N", "Ferrão", (0.32, 0.38, 0.08), "rh", (-1, -1)),
-    "Magia Rápida": Acao("m", "M", "Magia Ráp.", (0.2, 0.18, 0.08), "rm", (0, -2)),
+    "Esquerda": Acao("a", "A", "Esquerda", "lf", (1, 1)),
+    "Direita": Acao("d", "D", "Direita", "rf", (1, -1)),
+    "Cima": Acao("w", "W", "Cima", "lf", (2, 1)),
+    "Baixo": Acao("s", "S", "Baixo", "rf", (2, -1)),
+    "Pular": Acao("space", "Space", "Pulo", "lm", (0, 1)),
+    "Atacar": Acao("h", "H", "Ataque", "rm", (0, -1)),
+    "Esquiva": Acao("j", "J", "Esquiva", "lh", (-1, 1)),
+    "Foco": Acao("k", "K", "Foco/Magia", "lm", (0, 2)),
+    "Super Investida": Acao("l", "L", "S. Investida", "lh", (-1, 2)),
+    "Ferrão dos Sonhos": Acao("n", "N", "Ferrão", "rh", (-1, -1)),
+    "Magia Rápida": Acao("m", "M", "Magia Ráp.", "rm", (0, -2)),
     # Mapa rápido: segurado, mostra o mapa da área (com a Bússola Errante, onde o
     # Cavaleiro está). A mosca também olha o mapa sozinha de tempos em tempos.
-    "Mapa": Acao("Tab", "Tab", "Mapa", (0.42, 0.22, 0.07), "rh", (-1, -2)),
+    "Mapa": Acao("Tab", "Tab", "Mapa", "rh", (-1, -2)),
 }
 
 
