@@ -14,7 +14,7 @@ from comparar import melhoria_percentual
 from registro import registrar_partida, marcar_torneio
 from .aprendizado import Gravador, Imitacao, Torneio
 from .config import ACOES, ARQUIVO_DESAFIANTE, PASTA, PASTA_GRAVACOES_MOSCA, QUADRO_MS, ROTULO_TECLA
-from .estimulos import DetectorParada, DetectorPresa, ExploradorSalas, LeitorHUD
+from .estimulos import DetectorParada, DetectorPresa, ExploradorSalas, LeitorHUD, LeitorMapa
 from .interface import Painel
 
 
@@ -45,6 +45,8 @@ class Orquestrador(QtCore.QObject):
         self.parada = DetectorParada()
         self.presa = DetectorPresa()
         self.explorador = ExploradorSalas() if self.hud is not None else None
+        self.leitor_mapa = LeitorMapa() if self.hud is not None else None
+        self._treino_pendente = False  # parou uma gravação no meio de uma disputa
         self._desde_mapa = 0.0  # segundos de jogo da mosca desde a última olhada no mapa
         self._foto_mapa_em = None
         self._ultimo_dano = 0.0
@@ -165,6 +167,9 @@ class Orquestrador(QtCore.QObject):
         self._usar("campea")
         self._comecar_partida()
         self._avisar(texto, 30)
+        if self._treino_pendente:  # uma gravação parada durante a disputa
+            self._treino_pendente = False
+            self.treinar()
 
     def _ciclo(self):
         """A mosca jogou o bastante desde o último treino: treina uma desafiante
@@ -290,7 +295,26 @@ class Orquestrador(QtCore.QObject):
             self.gravador.parar()
             self.gravador = None
             bt_controlar.setEnabled(True)
-            self.treinar()  # aprende com tudo o que já foi gravado
+            self._pedir_treino()  # aprende com tudo o que já foi gravado
+
+    def _pedir_treino(self):
+        """Treinar agora, ou depois do veredito se há uma disputa em andamento
+        (uma desafiante nova descartaria a atual sem resultado)."""
+        if self.torneio is not None and self.torneio.em_disputa:
+            self._treino_pendente = True
+            self._avisar("🧠 Treino agendado: roda quando a disputa atual terminar", 10)
+        else:
+            self.treinar()
+
+    def _arquitetura_do_treino(self):
+        """Reveza as arquiteturas: depois de uma desafiante da mesma arquitetura
+        da campeã, a próxima é da outra. Assim as duas seguem competindo."""
+        campea = self.modelos["campea"]
+        da_campea = getattr(campea, "arquitetura", "mlp") if campea is not None else "mlp"
+        if self.torneio is None:
+            return da_campea
+        outra = "conectoma" if da_campea == "mlp" else "mlp"
+        return outra if self.torneio.estado.get("ultima_arquitetura") == da_campea else da_campea
 
     def treinar(self):
         """Roda o treinar.py em outro processo (não trava o painel) e, no fim,
@@ -306,7 +330,9 @@ class Orquestrador(QtCore.QObject):
         self._log_treino = []
         self._info_treino = "🧠 Treinando a mosca…"
         self.treino = processo
-        processo.start(sys.executable, ["-u", str(PASTA / "treinar.py")])
+        arquitetura = self._arquitetura_do_treino()
+        self._info_treino = f"🧠 Treinando a mosca ({'conectoma' if arquitetura == 'conectoma' else 'rede inventada'})…"
+        processo.start(sys.executable, ["-u", str(PASTA / "treinar.py"), "--arquitetura", arquitetura])
 
     def _saida_treino(self):
         texto = bytes(self.treino.readAllStandardOutput()).decode(errors="replace")
@@ -338,12 +364,14 @@ class Orquestrador(QtCore.QObject):
             self._terminar_partida()
         promovida = self.torneio.nova_desafiante()
         if promovida:
-            self.modelos["campea"] = Imitacao.carregar()
+            nova = self.modelos["campea"] = Imitacao.carregar()
             self._info_treino = f"🧠 {promovida}"
         else:
-            self.modelos["desafiante"] = Imitacao.carregar(ARQUIVO_DESAFIANTE)
+            nova = self.modelos["desafiante"] = Imitacao.carregar(ARQUIVO_DESAFIANTE)
             self._info_treino = (f"⚔ Nova {self._nome('desafiante')} treinada: ela disputa com a "
                                  f"{self._nome('campea')} quando a mosca jogar")
+        self.torneio.estado["ultima_arquitetura"] = nova.arquitetura  # para revezar
+        self.torneio.salvar()
         self._usar(self.torneio.quem_joga() if jogando else "campea")
         if jogando:
             self._comecar_partida()
@@ -415,7 +443,7 @@ class Orquestrador(QtCore.QObject):
     NOMES_EVENTOS = {
         "dano": "tomou dano", "cura": "curou", "acerto": "acertou inimigo", "geo": "pegou geo",
         "parada": "ficou parada", "morte": "morreu", "sala_nova": "sala nova!",
-        "presa": "ficou presa",
+        "presa": "ficou presa", "mapa_novo": "lugar novo no mapa!",
     }
 
     # Reflexo de sair do lugar: moscas paradas demais fazem movimentos
@@ -498,6 +526,9 @@ class Orquestrador(QtCore.QObject):
             reflexo = self._escapar()
         elif "parada" in eventos and self.jogo.controlando:
             reflexo = self._reflexo()
+        if self._foto_mapa_em is not None and time.monotonic() >= self._foto_mapa_em:
+            self._fotografar_mapa(imagem)
+            eventos += self.leitor_mapa.ler(imagem)
         valor = sum(LeitorHUD.RECOMPENSA[e] for e in eventos)
         self._eventos_quadro = eventos
         for evento in set(eventos) - {"parada"}:  # parada é frequente e já foi conferida
@@ -517,9 +548,8 @@ class Orquestrador(QtCore.QObject):
             self.hud.vida if self.hud.visivel else None,
             texto if agora - quando < 3 else None,
             self.explorador.salas,
+            self.leitor_mapa.posicao,
         )
-        if self._foto_mapa_em is not None and agora >= self._foto_mapa_em:
-            self._fotografar_mapa(imagem)
 
     def tick(self):
         imagem = self.jogo.quadro()

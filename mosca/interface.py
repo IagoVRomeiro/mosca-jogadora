@@ -398,15 +398,18 @@ class CartaoMosca(QtWidgets.QFrame):
             )
         )
 
-    def atualizar_recompensa(self, soma, vida, ultimo, salas=None):
-        """`soma` dos últimos 10 s, vida lida no HUD, último evento (ou None) e
-        quantas salas a mosca conhece."""
+    def atualizar_recompensa(self, soma, vida, ultimo, salas=None, posicao=None):
+        """`soma` dos últimos 10 s, vida lida no HUD, último evento (ou None),
+        quantas salas a mosca conhece e onde ela estava no mapa (Bússola)."""
         cor = "#4ade80" if soma > 0 else "#f87171" if soma < 0 else COR_TEXTO
         self.m_recompensa.valor.setStyleSheet(f"color: {cor};")
         self.m_recompensa.definir_texto(f"{soma:+.1f}", abs(soma) / 3)
         partes = [f"♥ {vida}" if vida is not None else "HUD não visível"]
         if salas is not None:
             partes.append(f"🗺 {salas} salas")
+        if posicao is not None:
+            area, x, y = posicao
+            partes.append(f"📍 área {area + 1} · {x:.2f}, {y:.2f}")
         if ultimo:
             partes.append(ultimo)
         self.m_recompensa.titulo.setText(" · ".join(partes))

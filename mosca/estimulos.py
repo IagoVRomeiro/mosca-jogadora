@@ -41,7 +41,7 @@ class LeitorHUD:
     PRETO = 40  # contorno abaixo disto: tela preta (morte, passagem de sala), não só escurecida
     RECOMPENSA = {
         "dano": -1.0, "morte": -3.0, "cura": 0.3, "acerto": 0.3, "geo": 0.5, "parada": -0.2,
-        "sala_nova": 1.0, "presa": -0.3,
+        "sala_nova": 1.0, "presa": -0.3, "mapa_novo": 0.5,
     }
 
     def __init__(self):
@@ -340,3 +340,99 @@ class DetectorPresa:
         self.lado = "Direita" if (lados == 1).mean() >= (lados == -1).mean() else "Esquerda"
         self._espera = self.repete
         return ["presa"]
+
+
+class LeitorMapa:
+    """Onde a mosca está no mapa rápido (Tab), pela marca da Bússola Errante.
+
+    - Posição: a marca (cabeça branca do Cavaleiro) achada por correlação com um
+      modelo recortado do seu jogo (marca_bussola.npy, numa tela de 523 de altura).
+    - Área: o título no alto do mapa ("Encruzilhada Esquecida"...), comparado pelo
+      desenho das letras; cada título diferente é uma área numerada.
+    - Exploração: o mapa da área é dividido em células de CELULA (fração da
+      altura); chegar numa célula nunca vista é "mapa_novo". A memória fica salva.
+    Sem a marca (mapa não abriu, área sem mapa), não lê nada.
+    """
+
+    MODELO = Path(__file__).with_name("marca_bussola.npy")
+    ALTURA_MODELO = 523
+    SEMELHANCA = 0.75  # medido: a marca dá 0,83-1,00; o resto do mapa ~0,5
+    TITULO = (0.06, 0.13, 0.35)  # y0, y1, meia largura (fração da altura, centrado)
+    MESMA_AREA = 0.6  # sobreposição mínima do desenho do título
+    CELULA = 0.045
+
+    def __init__(self, arquivo=PASTA / "memoria_mapa.npz"):
+        self.arquivo = Path(arquivo)
+        self._modelo = np.load(self.MODELO).astype(np.float32)
+        self._modelos = {}
+        self.titulos, self.celulas = [], set()
+        if self.arquivo.exists():
+            with np.load(self.arquivo) as dados:
+                self.titulos = list(dados["titulos"])
+                self.celulas = {tuple(int(v) for v in c) for c in dados["celulas"]}
+        self.posicao = None  # (área, x, y em fração da altura), da última leitura
+
+    def _modelo_na_escala(self, altura):
+        if altura not in self._modelos:
+            from PIL import Image
+
+            escala = altura / self.ALTURA_MODELO
+            h, w = (max(5, round(d * escala)) for d in self._modelo.shape)
+            m = np.asarray(Image.fromarray(self._modelo).resize((w, h)), np.float32)
+            m = m - m.mean()
+            self._modelos[altura] = m / (np.linalg.norm(m) + 1e-6)
+        return self._modelos[altura]
+
+    def achar_marca(self, quadro):
+        """(x, y) da marca em pixels e a semelhança, ou None se não achou."""
+        from scipy.ndimage import uniform_filter
+        from scipy.signal import fftconvolve
+
+        img = cinza(quadro).astype(np.float32)
+        t = self._modelo_na_escala(img.shape[0])
+        h, w = t.shape
+        num = fftconvolve(img, t[::-1, ::-1], mode="valid")
+        corte = (slice(h // 2, h // 2 + num.shape[0]), slice(w // 2, w // 2 + num.shape[1]))
+        media = uniform_filter(img, (h, w))[corte]
+        media2 = uniform_filter(img**2, (h, w))[corte]
+        semelhanca = num / np.sqrt(np.maximum(media2 - media**2, 1e-6) * h * w)
+        y, x = np.unravel_index(np.argmax(semelhanca), semelhanca.shape)
+        if semelhanca[y, x] < self.SEMELHANCA:
+            return None
+        return x + w // 2, y + h // 2, float(semelhanca[y, x])
+
+    def _area(self, quadro):
+        """Número da área pelo desenho do título (nova área se não parecer com nenhuma)."""
+        img = cinza(quadro)
+        alt, larg = img.shape
+        y0, y1, meia = self.TITULO
+        desenho = img[int(y0 * alt) : int(y1 * alt), larg // 2 - int(meia * alt) : larg // 2 + int(meia * alt)] > 170
+        for i, conhecido in enumerate(self.titulos):
+            if conhecido.shape == desenho.shape:
+                uniao = np.count_nonzero(conhecido | desenho)
+                if uniao and np.count_nonzero(conhecido & desenho) / uniao >= self.MESMA_AREA:
+                    return i
+        self.titulos.append(desenho)
+        return len(self.titulos) - 1
+
+    def ler(self, quadro):
+        """Lê o mapa aberto. Devolve ["mapa_novo"] se chegou numa célula nova."""
+        marca = self.achar_marca(quadro)
+        if marca is None:
+            return []
+        alt = cinza(quadro).shape[0]
+        area = self._area(quadro)
+        x, y = marca[0] / alt, marca[1] / alt
+        self.posicao = (area, x, y)
+        celula = (area, int(x / self.CELULA), int(y / self.CELULA))
+        if celula in self.celulas:
+            return []
+        self.celulas.add(celula)
+        self.salvar()
+        return ["mapa_novo"]
+
+    def salvar(self):
+        temporario = self.arquivo.with_name(self.arquivo.stem + ".tmp.npz")
+        titulos = np.array(self.titulos) if self.titulos else np.zeros((0, 1, 1), bool)
+        np.savez_compressed(temporario, titulos=titulos, celulas=np.array(sorted(self.celulas)).reshape(-1, 3))
+        temporario.replace(self.arquivo)
