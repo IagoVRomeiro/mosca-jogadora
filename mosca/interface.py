@@ -325,8 +325,14 @@ class CartaoCerebro(QtWidgets.QFrame):
         disparando = pos[disparos]
         self.camada_disparo.setData(pos=disparando)
         self.brilho.setData(pos=disparando)
-        self.camada_pam.setData(pos=pos[np.intersect1d(disparos, self.cerebro.dopamina["PAM"])])
-        self.camada_ppl1.setData(pos=pos[np.intersect1d(disparos, self.cerebro.dopamina["PPL1"])])
+        # Verde/vermelho só durante um estímulo de verdade (evento do jogo): fora
+        # disso os PAM/PPL1 também disparam (espontâneo, atividade da rede) e
+        # pareceria recompensa com o Cavaleiro parado
+        for camada, nome in ((self.camada_pam, "PAM"), (self.camada_ppl1, "PPL1")):
+            if self.cerebro.t < self.cerebro.dopamina_ate[nome]:
+                camada.setData(pos=pos[np.intersect1d(disparos, self.cerebro.dopamina[nome])])
+            else:
+                camada.setData(pos=np.zeros((0, 2)))
 
 
 class CartaoMetrica(QtWidgets.QFrame):
