@@ -3,19 +3,23 @@
 import tempfile
 import types
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import numpy as np
 
+import mosca.orquestrador as orquestrador
 from mosca.orquestrador import Orquestrador
 
 class TesteTorneioETreino(unittest.TestCase):
-    def orq(self, campea="mlp", ultima=None, em_disputa=False):
+    def orq(self, campea="mlp", ultima=None, em_disputa=False, na_frente=False):
         o = types.SimpleNamespace(
             modelos={"campea": types.SimpleNamespace(arquitetura=campea)},
             torneio=types.SimpleNamespace(estado={"ultima_arquitetura": ultima}, em_disputa=em_disputa),
-            treinos=[], avisos=[], encerradas=[],
+            treinos=[], avisos=[], encerradas=[], _treino_pendente=False,
         )
+        o._desafiante_na_frente = lambda: na_frente
+        o._nome = lambda papel: papel
         o.treinar = lambda: o.treinos.append(1)
         o._encerrar_torneio = lambda resultado: o.encerradas.append(resultado)
         o._avisar = lambda texto, s: o.avisos.append(texto)
@@ -36,6 +40,55 @@ class TesteTorneioETreino(unittest.TestCase):
         o = self.orq(em_disputa=False)
         Orquestrador._pedir_treino(o)
         self.assertEqual((o.encerradas, o.treinos), ([], [1]))
+
+    def test_desafiante_na_frente_nao_e_interrompida(self):
+        o = self.orq(em_disputa=True, na_frente=True)
+        Orquestrador._pedir_treino(o)
+        self.assertEqual((o.encerradas, o.treinos), ([], []))  # espera o veredito
+        self.assertTrue(o._treino_pendente)
+
+    def test_na_frente_so_com_tempo_e_placar(self):
+        def placar(seg_d, rec_d, seg_c, rec_c):
+            estado = {"placar": {"desafiante": {"segundos": seg_d, "recompensa": rec_d},
+                                 "campea": {"segundos": seg_c, "recompensa": rec_c}}}
+            t = types.SimpleNamespace(estado=estado)
+            t.por_minuto = lambda papel: (estado["placar"][papel]["recompensa"] / estado["placar"][papel]["segundos"] * 60
+                                          if estado["placar"][papel]["segundos"] else 0.0)
+            return Orquestrador._desafiante_na_frente(types.SimpleNamespace(torneio=t, LIDERANDO_MINIMO_S=60))
+        self.assertTrue(placar(120, -2, 120, -8))
+        self.assertFalse(placar(120, -8, 120, -2))  # atrás
+        self.assertFalse(placar(30, -1, 120, -8))  # pouco tempo para saber
+
+
+class TesteEscapar(unittest.TestCase):
+    """Presa na parede: primeiro tenta escalar; se continuar presa, meia-volta."""
+
+    def orq(self):
+        pulsos = []
+        o = types.SimpleNamespace(
+            _lado_presa="Direita", _escalada_em=float("-inf"), _pulos_escalada=[],
+            _sorteio=types.SimpleNamespace(random=lambda: 0.9), _mosca_joga=True,
+            cerebro=types.SimpleNamespace(pulsar_zona=lambda nome, d=1.0: pulsos.append((nome, d))),
+            ESCALAR_S=Orquestrador.ESCALAR_S, PULOS_ESCALADA_S=Orquestrador.PULOS_ESCALADA_S,
+            DE_NOVO_ESCALAR_S=Orquestrador.DE_NOVO_ESCALAR_S,
+        )
+        return o, pulsos
+
+    def test_primeiro_escala_depois_meia_volta(self):
+        o, pulsos = self.orq()
+        relogio = [100.0]
+        with mock.patch.object(orquestrador.time, "monotonic", lambda: relogio[0]):
+            texto = Orquestrador._escapar(o)
+            self.assertIn("escalar", texto)
+            self.assertEqual(pulsos, [("Direita", Orquestrador.ESCALAR_S)])  # para o lado da parede
+            for t in (100.0, 100.8, 101.5):  # os pulos, separados
+                relogio[0] = t
+                Orquestrador._pular_na_escalada(o)
+            self.assertEqual([p for p in pulsos if p[0] == "Pular"], [("Pular", 0.4)] * 3)
+            relogio[0] = 104.0  # continuou presa: a tentativa não deu certo
+            texto = Orquestrador._escapar(o)
+        self.assertIn("meia-volta", texto)
+        self.assertEqual(pulsos[-1][0], "Esquerda")
 
 class TesteAtalhos(unittest.TestCase):
     def orq(self, controlar_habilitado=True):

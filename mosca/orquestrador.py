@@ -62,6 +62,9 @@ class Orquestrador(QtCore.QObject):
         self._ultimo_dano = 0.0
         self._ultimas_telas = collections.deque(maxlen=10)  # ~0,3 s, para o diagnóstico
         self._sorteio = np.random.default_rng()
+        self._escalada_em = float("-inf")  # última tentativa de escalar (reflexo de presa)
+        self._pulos_escalada = []  # quando dar os próximos pulos da tentativa
+        self._treino_pendente = False  # correções esperando a disputa (desafiante na frente)
         self._recompensas = collections.deque()  # (instante, valor) dos últimos 10 s
         self._ultimo_evento = (None, 0.0)
         self._recompensa_quadro = 0.0
@@ -206,6 +209,9 @@ class Orquestrador(QtCore.QObject):
         self._usar("campea")
         self._comecar_partida()
         self._avisar(texto, 30)
+        if self._treino_pendente:  # correções guardadas enquanto ela estava na frente
+            self._treino_pendente = False
+            self.treinar()
 
     def _ciclo(self):
         """A mosca jogou o bastante desde o último treino: treina uma desafiante
@@ -319,11 +325,25 @@ class Orquestrador(QtCore.QObject):
                 return
             self._pedir_treino()  # aprende com tudo o que já foi gravado
 
+    LIDERANDO_MINIMO_S = 60  # de jogo da desafiante para "estar na frente" valer
+
+    def _desafiante_na_frente(self):
+        t = self.torneio
+        return (t.estado["placar"]["desafiante"]["segundos"] >= self.LIDERANDO_MINIMO_S
+                and t.por_minuto("desafiante") > t.por_minuto("campea"))
+
     def _pedir_treino(self):
         """Fim de uma gravação sua: treina já. Uma disputa em andamento é
         interrompida (fica registrada assim no Supabase): a desafiante nova aprende
-        com tudo o que a atual aprendeu e mais a gravação, e a campeã não muda."""
+        com tudo o que a atual aprendeu e mais a gravação, e a campeã não muda.
+        Exceto se a desafiante estiver na frente: aí ela tem a chance de vencer, e o
+        treino espera o veredito."""
         if self.torneio is not None and self.torneio.em_disputa:
+            if self._desafiante_na_frente():
+                self._treino_pendente = True
+                self._avisar(f"🧠 A {self._nome('desafiante')} está na frente: o treino com a sua "
+                             "gravação roda quando a disputa terminar", 10)
+                return
             self._encerrar_torneio("interrompida")
         self.treinar()
 
@@ -548,14 +568,36 @@ class Orquestrador(QtCore.QObject):
         self.cerebro.pulsar_zona("Pular", 0.5)
         return f"reflexo: mudou de ideia ({ROTULO_TECLA[lado]} por 3 s)"
 
+    ESCALAR_S = 2.0  # tempo segurando para o lado da parede na tentativa
+    PULOS_ESCALADA_S = (0.0, 0.7, 1.4)  # pular de novo agarrada = subir (Garra de Louva-a-deus)
+    DE_NOVO_ESCALAR_S = 8.0  # presa de novo antes disto: a tentativa não deu certo
+
     def _escapar(self):
-        """Presa forçando para um lado: meia-volta (às vezes pulando junto)."""
-        outro = "Esquerda" if self._lado_presa == "Direita" else "Direita"
+        """Presa forçando contra uma parede: primeiro tenta escalar (pular e
+        segurar para o lado dela, pulando de novo agarrada); se continuar presa
+        logo depois, meia-volta (às vezes pulando junto)."""
+        agora = time.monotonic()
+        lado = self._lado_presa or "Direita"
+        if agora - self._escalada_em > self.DE_NOVO_ESCALAR_S:
+            self._escalada_em = agora
+            self.cerebro.pulsar_zona(lado, self.ESCALAR_S)
+            self._pulos_escalada = [agora + t for t in self.PULOS_ESCALADA_S]
+            return f"reflexo: tentou escalar ({ROTULO_TECLA[lado]} + pulos)"
+        outro = "Esquerda" if lado == "Direita" else "Direita"
         self.cerebro.pulsar_zona(outro)
         if self._sorteio.random() < 0.5:
             self.cerebro.pulsar_zona("Pular")
             return f"reflexo: meia-volta ({ROTULO_TECLA[outro]}) pulando"
         return f"reflexo: meia-volta ({ROTULO_TECLA[outro]})"
+
+    def _pular_na_escalada(self):
+        """Os pulos da tentativa de escalar: curtos e separados (soltar e apertar
+        de novo é o que faz subir agarrada na parede)."""
+        agora = time.monotonic()
+        while self._pulos_escalada and agora >= self._pulos_escalada[0]:
+            self._pulos_escalada.pop(0)
+            if self._mosca_joga:
+                self.cerebro.pulsar_zona("Pular", 0.4)
 
     # --- diagnóstico: um print de cada evento, para conferir se a leitura está certa ---
 
@@ -638,6 +680,7 @@ class Orquestrador(QtCore.QObject):
                 eventos += self.presa.passo(self.cerebro.reduzida, esquerda, direita, self.hud.visivel)
                 eventos += self.loop.passo(self.cerebro.reduzida, bom, self.hud.visivel)
         reflexo = None
+        self._pular_na_escalada()
         encostada, detector.encostada = detector.encostada, False
         self._lado_presa = detector.lado
         if "loop" in eventos and self._mosca_joga:
