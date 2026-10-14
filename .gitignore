@@ -41,3 +41,4 @@ mod/user.reg.antes_do_bepinex
 memoria_cenas*.json
 memoria_lugares*.json
 modelos_base/
+memoria_bancos*.json

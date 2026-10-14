@@ -83,6 +83,9 @@ public class Plugin : BaseUnityPlugin
             .Append(",\"na_parede\":").Append(s != null && s.wallSliding ? "true" : "false")
             .Append(",\"curando\":").Append(s != null && s.focusing ? "true" : "false")
             .Append(",\"acoes\":[").Append(Acoes()).Append(']')
+            // ponto de retorno (o último banco em que descansou) e cair em espinhos/ácido
+            .Append(",\"banco\":\"").Append(((pd.respawnScene ?? "") + "|" + (pd.respawnMarkerName ?? "")).Replace("\"", "")).Append('"')
+            .Append(",\"perigo\":").Append(s != null && (s.hazardDeath || s.hazardRespawning) ? "true" : "false")
             .Append('}').ToString();
         try
         {

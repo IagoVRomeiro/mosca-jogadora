@@ -44,6 +44,14 @@ class TesteEventos(unittest.TestCase):
         self.assertEqual(eventos_entre(estado(), estado(golpes=2, inimigos_mortos=1), LONGE),
                          ["acerto", "acerto", "inimigo_morto"])
 
+    def test_cura_com_pouca_vida_vale_mais(self):
+        self.assertEqual(eventos_entre(estado(vida=1), estado(vida=2), 0.5), ["cura", "cura_critica"])
+        self.assertEqual(eventos_entre(estado(vida=4), estado(vida=5), 0.5), ["cura"])
+
+    def test_cair_em_espinhos(self):
+        self.assertEqual(eventos_entre(estado(), estado(vida=4, perigo=True), LONGE), ["dano", "perigo"])
+        self.assertEqual(eventos_entre(estado(perigo=True), estado(perigo=True), LONGE), [])  # uma vez só
+
     def test_carregar_o_save_nao_gera_eventos(self):
         menu = estado(cena="Menu_Title", geo=0, vida=5)
         self.assertEqual(eventos_entre(menu, estado(geo=900, vida=3), LONGE), [])
@@ -85,6 +93,16 @@ class TesteRede(unittest.TestCase):
         self.assertEqual(self.mandar(cena="Fungus2_13", vida=0, morta=True), ["morte"])
         self.assertEqual(self.mandar(cena="Fungus2_23", vida=5), [])  # renasceu no banco
         self.assertEqual(self.mandar(cena="Fungus2_24"), ["cena_nova"])  # andando, vale
+
+    def test_banco_novo_uma_vez_e_carregar_nao_conta(self):
+        self.mandar(cena="Menu_Title")
+        self.assertEqual(self.mandar(banco="Town|Bench"), [])  # carregou o save neste banco
+        self.assertEqual(self.mandar(banco="Crossroads_47|RestBench"), ["banco_novo"])
+        self.assertEqual(self.mandar(banco="Town|Bench"), [])  # já conhecia
+        self.assertEqual(self.mandar(banco="Crossroads_47|RestBench"), [])
+        de_novo = JuizDoJogo(self.pasta / "cenas.json", porta=0)
+        self.assertEqual(de_novo.bancos, {"Town|Bench", "Crossroads_47|RestBench"})
+        de_novo.fechar()
 
     def test_eventos_pela_rede(self):
         self.mandar()

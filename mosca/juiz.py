@@ -24,6 +24,7 @@ from .config import PASTA
 PORTA = 47123
 ATIVO_S = 1.0
 CURA_S = 1.0  # vida que sobe até 1 s depois do Foco é cura (banco e renascer, não)
+VIDA_BAIXA = 2  # máscaras: curar com isto ou menos é "cura crítica"
 MAX_GOLPES_QUADRO = 3  # um pacote atrasado não vira uma chuva de acertos
 
 
@@ -41,6 +42,10 @@ def eventos_entre(antes, agora, curou_ha_s):
         ganhou = agora["vida"] - antes["vida"]
         if ganhou > 0 and curou_ha_s <= CURA_S:
             eventos += ["cura"] * ganhou
+            if antes["vida"] <= VIDA_BAIXA:  # curar quando importa vale mais
+                eventos.append("cura_critica")
+    if agora.get("perigo") and not antes.get("perigo"):  # caiu em espinhos ou ácido
+        eventos.append("perigo")
     if agora["geo"] > antes["geo"]:  # gastar ou perder geo não é prêmio
         eventos.append("geo")
     eventos += ["acerto"] * min(MAX_GOLPES_QUADRO, max(0, agora["golpes"] - antes["golpes"]))
@@ -59,6 +64,8 @@ class JuizDoJogo:
         self._recebido_em = float("-inf")
         self._curando_em = float("-inf")
         self._morreu_nesta_cena = False  # a próxima troca de sala é renascer no banco
+        self.arquivo_bancos = self.arquivo_cenas.with_name("memoria_bancos.json")
+        self.bancos = set(json.loads(self.arquivo_bancos.read_text())) if self.arquivo_bancos.exists() else set()
 
     @property
     def ativo(self):
@@ -96,6 +103,14 @@ class JuizDoJogo:
                 self._salvar_cenas()
             if mudou:
                 self._morreu_nesta_cena = False
+            # banco novo: o ponto de retorno mudou para um nunca visto (descansou nele).
+            # Carregar o save só registra o banco em que está
+            banco = novo.get("banco", "")
+            if banco and banco != "|" and banco not in self.bancos:
+                if antes is not None and not antes["cena"].startswith("Menu") and banco != antes.get("banco"):
+                    eventos.append("banco_novo")
+                self.bancos.add(banco)
+                self._salvar(self.arquivo_bancos, self.bancos)
             self.estado, self._recebido_em = novo, agora
         return eventos
 
@@ -104,9 +119,13 @@ class JuizDoJogo:
         return self.estado["vida"] if self.estado else None
 
     def _salvar_cenas(self):
-        temporario = self.arquivo_cenas.with_suffix(".tmp")
-        temporario.write_text(json.dumps(sorted(self.cenas)))
-        temporario.replace(self.arquivo_cenas)
+        self._salvar(self.arquivo_cenas, self.cenas)
+
+    @staticmethod
+    def _salvar(arquivo, conjunto):
+        temporario = arquivo.with_suffix(".tmp")
+        temporario.write_text(json.dumps(sorted(conjunto)))
+        temporario.replace(arquivo)
 
     def fechar(self):
         self.sock.close()

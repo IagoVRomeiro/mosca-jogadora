@@ -33,3 +33,16 @@ foreach (var nome in new[]{"HeroActions", "InputHandler"}) {
     Console.WriteLine($"tipo da ação: {tipo.FullName} em {tipo.Assembly.GetName().Name}");
     Console.WriteLine("IsPressed: " + string.Join(", ", tipo.GetMembers(BindingFlags.Public | BindingFlags.Instance).Where(m => m.Name is "IsPressed" or "Value" or "WasPressed").Select(m => m.Name + " (" + m.DeclaringType.Name + ")")));
 }
+
+{
+    foreach (var (tipo, nomes) in new[] {
+        ("PlayerData", new[]{"respawnScene", "respawnMarkerName", "respawnType"}),
+        ("HeroControllerStates", new[]{"hazardDeath", "hazardRespawning", "transitioning"}),
+    }) {
+        var t = asm.GetType(tipo);
+        foreach (var n in nomes) {
+            var m = t.GetMember(n, f);
+            Console.WriteLine($"campo {tipo}.{n}: " + (m.Length > 0 ? (m[0] is FieldInfo fi ? fi.FieldType.Name : "membro") : "—"));
+        }
+    }
+}

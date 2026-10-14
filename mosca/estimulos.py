@@ -52,6 +52,9 @@ class LeitorHUD:
         # só com o juiz de dentro do jogo (mosca/juiz.py): exatos, não dá para burlar
         "inimigo_morto": 1.0, "cena_nova": 1.0,
         "lugar_novo": 0.2,  # um pedaço novo de uma sala (8x8 unidades do jogo)
+        "banco_novo": 1.0,  # descansou num banco nunca usado: progresso real
+        "cura_critica": 0.3,  # a mais na cura com 1-2 máscaras (curar quando importa)
+        "perigo": -1.0,  # a mais no dano ao cair em espinhos ou ácido (erro evitável)
     }
 
     def __init__(self):
