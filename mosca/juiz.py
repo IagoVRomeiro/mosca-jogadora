@@ -56,6 +56,7 @@ class JuizDoJogo:
         self.estado = None  # último estado lido
         self._recebido_em = float("-inf")
         self._curando_em = float("-inf")
+        self._morreu_nesta_cena = False  # a próxima troca de sala é renascer no banco
 
     @property
     def ativo(self):
@@ -78,14 +79,21 @@ class JuizDoJogo:
             antes = self.estado if agora - self._recebido_em < ATIVO_S else None  # voltou: só referência
             if novo["curando"]:
                 self._curando_em = agora
-            eventos += eventos_entre(antes, novo, agora - self._curando_em)
+            novos = eventos_entre(antes, novo, agora - self._curando_em)
+            eventos += novos
+            if "morte" in novos:
+                self._morreu_nesta_cena = True
             cena = novo["cena"]
+            mudou = antes is not None and cena != antes["cena"]
             if cena and not cena.startswith("Menu") and cena not in self.cenas:
-                # chegar do menu (carregou o save) ou do nada não é explorar
-                if antes is not None and not antes["cena"].startswith("Menu"):
+                # chegar do menu (carregou o save), do nada ou renascendo no banco
+                # depois de morrer não é explorar
+                if mudou and not antes["cena"].startswith("Menu") and not self._morreu_nesta_cena:
                     eventos.append("cena_nova")
                 self.cenas.add(cena)
                 self._salvar_cenas()
+            if mudou:
+                self._morreu_nesta_cena = False
             self.estado, self._recebido_em = novo, agora
         return eventos
 

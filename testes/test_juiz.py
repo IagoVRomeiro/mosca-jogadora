@@ -80,6 +80,12 @@ class TesteRede(unittest.TestCase):
         self.assertEqual(self.mandar(cena="Fungus2_13"), [])
         self.assertIn("Fungus2_13", self.juiz.cenas)  # mas fica conhecida
 
+    def test_renascer_no_banco_nao_e_sala_nova(self):
+        self.mandar(cena="Fungus2_13")
+        self.assertEqual(self.mandar(cena="Fungus2_13", vida=0, morta=True), ["morte"])
+        self.assertEqual(self.mandar(cena="Fungus2_23", vida=5), [])  # renasceu no banco
+        self.assertEqual(self.mandar(cena="Fungus2_24"), ["cena_nova"])  # andando, vale
+
     def test_eventos_pela_rede(self):
         self.mandar()
         self.assertEqual(self.mandar(vida=4, golpes=1), ["dano", "acerto"])
