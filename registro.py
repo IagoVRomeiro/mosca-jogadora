@@ -196,7 +196,14 @@ def registrar_partida(partida):
         if banco is None:
             return
         try:
-            banco.inserir("partidas_mosca", [partida])
+            try:
+                banco.inserir("partidas_mosca", [partida])
+            except RuntimeError as e:
+                if "ajudas" not in str(e):
+                    raise
+                # coluna nova ainda não criada no Supabase (supabase/esquema.sql)
+                banco.inserir("partidas_mosca", [{k: v for k, v in partida.items() if k != "ajudas"}])
+                print("⚠ falta a coluna 'ajudas' em partidas_mosca: rode o SQL do supabase/esquema.sql")
             print(f"partida da mosca registrada no Supabase ({partida['segundos']:.0f} s)")
         except Exception as e:
             print(f"⚠ não consegui registrar a partida no Supabase: {e}")

@@ -3,6 +3,7 @@ campeã x desafiante."""
 
 import json
 import os
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -84,8 +85,8 @@ class Gravador:
 
     QUADROS_POR_PARTE = 900  # ~30 s
 
-    def __init__(self, base=PASTA_GRAVACOES):
-        nome = time.strftime("%Y-%m-%d_%H%M%S")
+    def __init__(self, base=PASTA_GRAVACOES, sufixo=""):
+        nome = time.strftime("%Y-%m-%d_%H%M%S") + sufixo
         self.pasta = base / nome
         n = 2
         while self.pasta.exists():  # duas gravações no mesmo segundo
@@ -145,6 +146,22 @@ class Gravador:
         if self.total == 0:
             self.pasta.rmdir()
 
+    def descartar(self):
+        """Joga fora a gravação inteira (um toque sem querer no teclado)."""
+        for t in self._salvando:
+            t.join()
+        shutil.rmtree(self.pasta, ignore_errors=True)
+        self._telas, self._teclas = [], []
+        self.total = 0
+
+    def ajustar_ultima(self, valor):
+        """Soma `valor` à recompensa do último quadro ainda não salvo. Devolve
+        False se não há quadro (acabou de salvar uma parte)."""
+        if not self._recompensas:
+            return False
+        self._recompensas[-1] += valor
+        return True
+
 
 class Torneio:
     """Campeã x desafiante: a mosca só troca de cérebro quando o novo prova que
@@ -156,7 +173,8 @@ class Torneio:
     amostra de recompensa por minuto. Com MINIMO_S e MINIMO_RODADAS de cada:
     - a desafiante vira campeã se fizer mais de MARGEM a mais E a diferença for
       maior que 2x a incerteza (variação entre rodadas): não ganha por sorte;
-    - é descartada se fizer MARGEM a menos, ou se chegar a MAXIMO_S sem vencer.
+    - é descartada se fizer MARGEM a menos E a diferença for maior que 2x a
+      incerteza (não perde por azar), ou se chegar a MAXIMO_S sem vencer.
     Na dúvida, a campeã fica. Descartada, continua guardada no Supabase.
     """
 
@@ -269,7 +287,7 @@ class Torneio:
         diferenca = self.por_minuto("desafiante") - self.por_minuto("campea")
         if diferenca > self.MARGEM and diferenca > 2 * self.incerteza():
             return "venceu"
-        if diferenca < -self.MARGEM or min(tempos) >= self.MAXIMO_S:
+        if (diferenca < -self.MARGEM and -diferenca > 2 * self.incerteza()) or min(tempos) >= self.MAXIMO_S:
             return "perdeu"
         return None
 

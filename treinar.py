@@ -67,6 +67,9 @@ ARQUIVO_INFO_MODELO = ARQUIVO_SAIDA.with_suffix(".json")  # qual treino gerou o 
 # Partidas da própria mosca: entram com menos peso que as suas (ela erra mais) e
 # só as mais recentes, para o treino não crescer sem fim
 PESO_MOSCA = 0.5
+# Correção ao vivo (você assumiu quando a mosca errou): mostra o certo
+# justamente onde ela erra, mas não tanto que uma correção ruim domine
+PESO_CORRECAO = 1.5
 RECOMPENSA_SALA = LeitorHUD.RECOMPENSA["sala_nova"]
 RECOMPENSA_PRESA = LeitorHUD.RECOMPENSA["presa"]
 RECOMPENSA_MORTE = LeitorHUD.RECOMPENSA["morte"]
@@ -274,8 +277,15 @@ def carregar_sessoes(pastas):
             "teclas": d["teclas"],
             "recompensa": d["hud"] + d["presa"] + sala,
             "da_mosca": nome.startswith("mosca_"),
+            "peso": peso_da_sessao(nome),
         })
     return sessoes
+
+
+def peso_da_sessao(nome):
+    if nome.startswith("mosca_"):
+        return PESO_MOSCA
+    return PESO_CORRECAO if nome.endswith("_correcao") else 1.0
 
 
 def resumir_sessao(nome, pasta):
@@ -323,7 +333,8 @@ class Dados:
         self.teclas = np.concatenate([s["teclas"] for s in sessoes])
         self.retorno = np.concatenate([retornos(s["recompensa"]) for s in sessoes])
         self.fator = np.concatenate(
-            [np.full(len(s["retratos"]), PESO_MOSCA if s["da_mosca"] else 1.0, np.float32) for s in sessoes]
+            [np.full(len(s["retratos"]), s.get("peso", PESO_MOSCA if s["da_mosca"] else 1.0), np.float32)
+             for s in sessoes]
         )
         self.sessao = np.concatenate([np.full(len(s["retratos"]), i) for i, s in enumerate(sessoes)])
         passado, treino, valid, inicio = [], [], [], 0
@@ -557,7 +568,8 @@ def main():
         idx = np.sort(dados.treino)
         dentro = dados.sessao[idx] == i
         w = dados.pesos[idx][dentro] / dados.fator[idx][dentro]
-        origem = f" · partida da mosca (peso {PESO_MOSCA})" if nome.startswith("mosca_") else ""
+        origem = (f" · partida da mosca (peso {PESO_MOSCA})" if nome.startswith("mosca_")
+                  else f" · correção ao vivo (peso {PESO_CORRECAO})" if nome.endswith("_correcao") else "")
         n = int((dados.sessao == i).sum())
         print(f"sessão {nome}: {n:,} quadros ({n / 30 / 60:.1f} min){origem} · ".replace(",", ".")
               + f"{(w > 1.3).mean():.0%} melhores que o esperado, {(w < 0.7).mean():.0%} piores")
@@ -603,6 +615,8 @@ def main():
             "peso_quadro": list(PESO_QUADRO), "subamostra": SUBAMOSTRA, "ruido": RUIDO,
             "git_commit": commit_do_codigo(),
             "papel": "desafiante", "quadros_mosca": quadros_mosca, "peso_mosca": PESO_MOSCA,
+            "quadros_correcao": sum(len(s["retratos"]) for s in sessoes if s["nome"].endswith("_correcao")),
+            "peso_correcao": PESO_CORRECAO,
             "toque_s": TOQUE_S, "arquitetura": arquitetura,
         },
         "codigo_versao": versao_do_codigo(),

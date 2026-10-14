@@ -59,6 +59,16 @@ class TesteTorneio(unittest.TestCase):
         self.assertAlmostEqual(minutos["desafiante"], Torneio.MAXIMO_S / 60, delta=0.2)
         self.assertEqual(self.campea.read_bytes(), b"campea")
 
+    def test_nao_perde_por_azar(self):
+        # começo ruim por azar (duas rodadas de -8) e depois bem melhor: com 4 min
+        # a média ainda é negativa, mas a variação é grande demais para descartar
+        def por_minuto(papel, rodada):
+            if papel == "campea":
+                return 0.0
+            return -8.0 if rodada < 2 else 4.0
+        _, minutos = self.disputar(self.novo(), por_minuto)
+        self.assertGreater(minutos["desafiante"], 5)
+
     def test_nao_vence_por_sorte(self):
         """Rodadas muito variáveis: a vantagem média não basta para vencer no mínimo."""
         sorte = np.random.default_rng(1).normal(0, 6, size=(2, 50))

@@ -13,6 +13,7 @@ from PyQt6 import QtCore, QtGui
 from comparar import melhoria_percentual
 from registro import registrar_partida, marcar_torneio
 from .aprendizado import Gravador, Imitacao, Torneio
+from .correcao import Correcao
 from .config import ACOES, ARQUIVO_DESAFIANTE, PASTA, PASTA_GRAVACOES_MOSCA, QUADRO_MS, ROTULO_TECLA
 from .estimulos import DetectorLoop, DetectorParada, DetectorPresa, ExploradorSalas, LeitorHUD, LeitorMapa
 from .interface import Painel
@@ -37,6 +38,9 @@ class Orquestrador(QtCore.QObject):
             self.modelos["desafiante"] = Imitacao.carregar(ARQUIVO_DESAFIANTE)
         self.papel = "campea"
         self.gravador_mosca = None  # as partidas da mosca, para ela aprender com elas
+        self.correcao = Correcao()  # você assumindo quando ela erra (mosca/correcao.py)
+        self.gravador_correcao = None
+        self._correcao_s = 0.0  # correções desde que a mosca foi ligada
 
         cartao_mosca = self.painel.cartao_mosca
         cartao_mosca.bt_evolucao.clicked.connect(lambda: QtCore.QProcess.startDetached(
@@ -111,8 +115,14 @@ class Orquestrador(QtCore.QObject):
             self._comecar_partida()
         else:
             self.jogo.soltar_tudo()
+            if self.correcao.ativa:
+                self._fim_correcao(self.correcao.terminar())
             self._terminar_partida()
             self._parar_gravacao_mosca()
+            if self._correcao_s >= self.GRAVACAO_MINIMA_S:
+                self._avisar(f"🧑 {self._correcao_s / 60:.1f} min de correções: treinando com elas", 10)
+                self._correcao_s = 0.0
+                self._pedir_treino()
             if self.torneio is not None and self.torneio.em_disputa:
                 self.torneio.fechar_rodada(self.papel)
 
@@ -305,6 +315,7 @@ class Orquestrador(QtCore.QObject):
             "presas": p["eventos"]["presa"],
             "loops": p["eventos"]["loop"],
             "lugares_mapa": p["eventos"]["mapa_novo"],
+            "ajudas": p["eventos"]["ajuda"],
             "uso_teclas": {a: round(float(u), 4) for a, u in zip(ACOES, uso)},
         }))
 
@@ -406,6 +417,67 @@ class Orquestrador(QtCore.QObject):
         if jogando:
             self._comecar_partida()
 
+    # --- correção ao vivo (mosca/correcao.py) ---
+
+    @property
+    def _mosca_joga(self):
+        return getattr(self.jogo, "controlando", False) and not self.correcao.ativa
+
+    def _vigiar_correcao(self):
+        """Com a mosca ligada, uma tecla do jogo que ela não apertou é sua: você
+        assume. Devolve as suas teclas enquanto você joga, ou None."""
+        if self.hud is None:  # jogo demo
+            return None
+        agora = time.monotonic()
+        teclas = np.zeros(len(ACOES), bool)
+        no_jogo = self.jogo.controlando and not self.jogo.aviso and self.jogo.em_foco()
+        if no_jogo:
+            teclas = self.jogo.teclas_do_usuario()
+        voce = any(t and a not in self.jogo.apertadas for a, t in zip(ACOES, teclas))
+        if not self.correcao.ativa:
+            self.correcao.eventos(self._eventos_quadro, agora)
+        mudanca = self.correcao.passo(voce, agora) if self.jogo.controlando else None
+        if mudanca == "assumiu":
+            self.jogo.soltar_tudo()
+            self.gravador_correcao = Gravador(sufixo="_correcao")
+            self._notificar("🧑 Você assumiu: solte o teclado e a mosca volta em 2 s")
+        elif mudanca is not None:
+            self._fim_correcao(mudanca)
+        if not self.correcao.ativa:
+            return None
+        if no_jogo:
+            self.gravador_correcao.adicionar(
+                self.cerebro.reduzida, teclas, self._recompensa_quadro, self.hud.vida,
+                "sala_nova" in self._eventos_quadro, "presa" in self._eventos_quadro,
+                "loop" in self._eventos_quadro,
+            )
+        return {a: float(t) for a, t in zip(ACOES, teclas)}
+
+    def _fim_correcao(self, tipo):
+        g, self.gravador_correcao = self.gravador_correcao, None
+        if tipo == "sem_querer":
+            if g is not None:
+                g.descartar()
+            return
+        if g is not None:
+            g.parar()
+        self._correcao_s += self.correcao.segundos
+        if self.partida is not None:
+            self.partida["eventos"]["ajuda"] += 1
+        if self.correcao.em_apuros:
+            # o que ela fazia antes de você entrar estava errado: estímulo ruim
+            # no último quadro dela (o desconto do treino espalha para trás)
+            punicao = Correcao.PUNICAO
+            if self.gravador_mosca is not None:
+                self.gravador_mosca.ajustar_ultima(punicao)
+            if self.partida is not None:
+                self.partida["recompensa"] += punicao
+            if self.torneio is not None and self.torneio.em_disputa:
+                self.torneio.contar(self.papel, 0.0, punicao)  # precisar de ajuda conta no placar
+            self.cerebro.recompensa(punicao)
+        if self.jogo.controlando:
+            self._notificar("🪰 A mosca voltou a jogar")
+
     def _gravar(self):
         """Um quadro de gravação: só com o jogo em foco, senão gravaria teclas
         que você digita em outro programa."""
@@ -432,6 +504,9 @@ class Orquestrador(QtCore.QObject):
         if self.gravador is not None:
             self.gravador.parar()  # salva o que falta
             self.gravador = None
+        if self.gravador_correcao is not None:
+            self.gravador_correcao.parar()
+            self.gravador_correcao = None
         self._parar_gravacao_mosca()
         if self.explorador is not None:
             self.explorador.salvar()
@@ -531,9 +606,9 @@ class Orquestrador(QtCore.QObject):
             self.cerebro.movimento_medio, self.hud.visivel, self.hud.gastando_alma
         )
         if self.cerebro.reduzida is not None:
-            if self.jogo.controlando:
+            if self._mosca_joga:
                 apertadas = self.jogo.apertadas
-            elif self.gravador is not None:  # você jogando: as suas teclas
+            elif self.gravador is not None or self.correcao.ativa:  # você jogando: as suas teclas
                 apertadas = {a for a, t in zip(ACOES, self.jogo.teclas_do_usuario()) if t}
             else:
                 apertadas = set()
@@ -545,11 +620,11 @@ class Orquestrador(QtCore.QObject):
             eventos += self.loop.passo(self.cerebro.reduzida, bom, self.hud.visivel)
         reflexo = None
         encostada, self.presa.encostada = self.presa.encostada, False
-        if "loop" in eventos and self.jogo.controlando:
+        if "loop" in eventos and self._mosca_joga:
             reflexo = self._mudar_de_ideia()
-        elif ("presa" in eventos or encostada) and self.jogo.controlando:
+        elif ("presa" in eventos or encostada) and self._mosca_joga:
             reflexo = self._escapar()  # já com 4 s encostada; a punição só vem com 6 s
-        elif "parada" in eventos and self.jogo.controlando:
+        elif "parada" in eventos and self._mosca_joga:
             reflexo = self._reflexo()
         if self._foto_mapa_em is not None and time.monotonic() >= self._foto_mapa_em:
             self._fotografar_mapa(imagem)
@@ -580,9 +655,14 @@ class Orquestrador(QtCore.QObject):
         imagem = self.jogo.quadro()
         _, acoes = self.cerebro.passo(imagem)
         self._ler_hud(imagem)  # depois do cérebro: usa o movimento que o olho viu
-        self.jogo.passo(acoes)
-        self._contar_partida(self._eventos_quadro)
         gravacao = None
+        suas = self._vigiar_correcao()
+        if suas is None:
+            self.jogo.passo(acoes)
+            self._contar_partida(self._eventos_quadro)
+        else:  # você está corrigindo: a mosca não aperta nada e as patas repetem você
+            acoes = suas
+            gravacao = "🧑 Você está jogando (correção) · a mosca volta 2 s depois que você soltar"
         if self.gravador is not None:
             # Gravando, as patas da mosca repetem as teclas que você aperta
             gravacao, acoes = self._gravar()

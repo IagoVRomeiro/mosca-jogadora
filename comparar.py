@@ -32,6 +32,7 @@ METRICAS = [  # (campo, nome, maior é melhor?)
     ("loops", "loops/min", False),
     ("salas_novas", "salas novas/min", True),
     ("lugares_mapa", "lugares mapa/min", True),
+    ("ajudas", "ajudas/min", False),  # vezes que você precisou assumir (correção ao vivo)
 ]
 
 

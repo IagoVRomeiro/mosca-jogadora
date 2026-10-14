@@ -55,6 +55,7 @@ create table if not exists public.partidas_mosca (
     presas integer not null default 0,   -- ficou presa (parede, pulo que não alcança)
     loops integer not null default 0,    -- andando em círculos
     lugares_mapa integer not null default 0,  -- células novas do mapa (Bússola)
+    ajudas integer not null default 0,   -- vezes que você assumiu para corrigir (correção ao vivo)
     uso_teclas jsonb not null            -- fração dos quadros com cada tecla apertada
 );
 
@@ -63,6 +64,8 @@ create table if not exists public.partidas_mosca (
 alter table public.sessoes enable row level security;
 alter table public.treinos enable row level security;
 alter table public.partidas_mosca enable row level security;
+-- Para um banco criado antes da correção ao vivo:
+alter table public.partidas_mosca add column if not exists ajudas integer not null default 0;
 
 -- Buckets privados: modelos de cada treino e dados leves das sessões
 insert into storage.buckets (id, name, public)

@@ -129,7 +129,7 @@ class PainelEvolucao(QtWidgets.QWidget):
         pequenos = QtWidgets.QHBoxLayout()
         self.g_detalhe = {}
         for campo, titulo in (("mortes", "Mortes/min (↓)"), ("danos", "Danos/min (↓)"),
-                              ("acertos", "Acertos/min (↑)"), ("paradas", "Paradas/min (↓)"),
+                              ("acertos", "Acertos/min (↑)"), ("ajudas", "Ajudas/min (↓)"),
                               ("loops", "Loops/min (↓)"), ("salas_novas", "Salas novas/min (↑)")):
             g = grafico(titulo)
             self.g_detalhe[campo] = g
