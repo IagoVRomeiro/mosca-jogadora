@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Plugin do BepInEx: manda o estado do Hollow Knight para o painel da mosca (UDP local) -->
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>MoscaEventos</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <JOGO>$(HOME)/.local/share/Steam/steamapps/common/Hollow Knight</JOGO>
+    <GERENCIADO>$(JOGO)/hollow_knight_Data/Managed</GERENCIADO>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="BepInEx"><HintPath>$(JOGO)/BepInEx/core/BepInEx.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(JOGO)/BepInEx/core/0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Assembly-CSharp"><HintPath>$(GERENCIADO)/Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>$(GERENCIADO)/UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(GERENCIADO)/UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.Physics2DModule"><HintPath>$(GERENCIADO)/UnityEngine.Physics2DModule.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

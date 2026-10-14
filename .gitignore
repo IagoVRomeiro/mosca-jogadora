@@ -35,3 +35,8 @@ cache_olho/
 # Diagnóstico: prints de cada evento do jogo (para conferir a leitura)
 diagnostico/
 iniciar_mosca.log
+
+# mod do Hollow Knight: só o código vai para o git
+mod/**/bin/
+mod/**/obj/
+mod/user.reg.antes_do_bepinex
