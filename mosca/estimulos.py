@@ -55,6 +55,7 @@ class LeitorHUD:
         "banco_novo": 1.0,  # descansou num banco nunca usado: progresso real
         "cura_critica": 0.3,  # a mais na cura com 1-2 máscaras (curar quando importa)
         "perigo": -1.0,  # a mais no dano ao cair em espinhos ou ácido (erro evitável)
+        "vai_e_volta": -1.0,  # entrando e saindo pela mesma passagem sem ganhar nada
     }
 
     def __init__(self):

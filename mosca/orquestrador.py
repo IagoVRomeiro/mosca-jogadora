@@ -547,6 +547,7 @@ class Orquestrador(QtCore.QObject):
         "presa": "ficou presa", "loop": "andando em círculos",
         "inimigo_morto": "matou inimigo!", "cena_nova": "sala nova!", "lugar_novo": "lugar novo",
         "banco_novo": "banco novo!", "cura_critica": "curou na hora certa", "perigo": "caiu em espinhos/ácido",
+        "vai_e_volta": "indo e voltando pela mesma passagem",
     }
 
     # Reflexo de sair do lugar: moscas paradas demais fazem movimentos
@@ -572,6 +573,16 @@ class Orquestrador(QtCore.QObject):
     ESCALAR_S = 2.0  # tempo segurando para o lado da parede na tentativa
     PULOS_ESCALADA_S = (0.0, 0.7, 1.4)  # pular de novo agarrada = subir (Garra de Louva-a-deus)
     DE_NOVO_ESCALAR_S = 8.0  # presa de novo antes disto: a tentativa não deu certo
+
+    def _seguir_em_frente(self):
+        """Indo e voltando pela mesma passagem: segue na direção em que entrou
+        na sala (para longe da porta) por 3 s, em vez de voltar por ela."""
+        vx = self.juiz.vx_ao_entrar if self.juiz is not None else 0.0
+        lado = ("Direita" if vx > 0 else "Esquerda") if abs(vx) > 0.5 else self._sorteio.choice(["Esquerda", "Direita"])
+        outro = "Esquerda" if lado == "Direita" else "Direita"
+        self.cerebro.pulso_zona_ate[outro] = 0.0
+        self.cerebro.pulsar_zona(lado, 3.0)
+        return f"reflexo: seguiu em frente ({ROTULO_TECLA[lado]} por 3 s)"
 
     def _escapar(self):
         """Presa forçando contra uma parede: primeiro tenta escalar (pular e
@@ -684,7 +695,9 @@ class Orquestrador(QtCore.QObject):
         self._pular_na_escalada()
         encostada, detector.encostada = detector.encostada, False
         self._lado_presa = detector.lado
-        if "loop" in eventos and self._mosca_joga:
+        if "vai_e_volta" in eventos and self._mosca_joga:
+            reflexo = self._seguir_em_frente()
+        elif "loop" in eventos and self._mosca_joga:
             reflexo = self._mudar_de_ideia()
         elif ("presa" in eventos or encostada) and self._mosca_joga:
             reflexo = self._escapar()  # já com 4 s encostada; a punição só vem com 6 s

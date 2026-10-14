@@ -104,6 +104,35 @@ class TesteRede(unittest.TestCase):
         self.assertEqual(de_novo.bancos, {"Town|Bench", "Crossroads_47|RestBench"})
         de_novo.fechar()
 
+    def vai_e_volta(self, salas, **no_meio):
+        eventos = []
+        for i, sala in enumerate(salas):
+            eventos += self.mandar(cena=sala, **(no_meio if i == 2 else {}))
+        return eventos
+
+    def test_indo_e_voltando_pela_mesma_passagem(self):
+        self.juiz.cenas.update({"A", "B"})  # salas já conhecidas
+        eventos = self.vai_e_volta(["A", "B", "A", "B", "A"])
+        self.assertEqual(eventos.count("vai_e_volta"), 1)
+        eventos = self.vai_e_volta(["B", "A"])  # mais um vai e volta: de novo
+        self.assertEqual(eventos.count("vai_e_volta"), 1)
+
+    def test_passando_por_varias_salas_nao_e_vai_e_volta(self):
+        self.juiz.cenas.update({"A", "B", "C", "D"})
+        self.assertNotIn("vai_e_volta", self.vai_e_volta(["A", "B", "C", "D", "C"]))
+
+    def test_ganhando_algo_no_meio_nao_e_vai_e_volta(self):
+        self.juiz.cenas.update({"A", "B"})
+        self.mandar(cena="A")
+        eventos = self.vai_e_volta(["B", "A", "B", "A"], inimigos_mortos=1)  # matou um inimigo no caminho
+        self.assertNotIn("vai_e_volta", eventos)
+
+    def test_renascer_nao_conta_como_passagem(self):
+        self.juiz.cenas.update({"A", "B"})
+        self.vai_e_volta(["A", "B", "A"])
+        self.mandar(cena="A", vida=0, morta=True)
+        self.assertNotIn("vai_e_volta", self.mandar(cena="B", vida=5))  # renasceu do outro lado
+
     def test_eventos_pela_rede(self):
         self.mandar()
         self.assertEqual(self.mandar(vida=4, golpes=1), ["dano", "acerto"])

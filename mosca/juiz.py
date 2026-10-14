@@ -25,7 +25,11 @@ PORTA = 47123
 ATIVO_S = 1.0
 CURA_S = 1.0  # vida que sobe até 1 s depois do Foco é cura (banco e renascer, não)
 VIDA_BAIXA = 2  # máscaras: curar com isto ou menos é "cura crítica"
-MAX_GOLPES_QUADRO = 3  # um pacote atrasado não vira uma chuva de acertos
+MAX_GOLPES_QUADRO = 3
+# Vai e volta pela mesma passagem: em PASSAGEM_S, PASSAGEM_VEZES trocas entre as
+# mesmas duas salas (A->B->A->B->A) sem nada de bom no meio
+PASSAGEM_S, PASSAGEM_VEZES = 90.0, 4
+BONS = {"inimigo_morto", "cena_nova", "banco_novo", "geo", "acerto", "cura"}  # um pacote atrasado não vira uma chuva de acertos
 
 
 def eventos_entre(antes, agora, curou_ha_s):
@@ -64,6 +68,9 @@ class JuizDoJogo:
         self._recebido_em = float("-inf")
         self._curando_em = float("-inf")
         self._morreu_nesta_cena = False  # a próxima troca de sala é renascer no banco
+        self._trocas = []  # (quando, sala de onde, sala para onde): o vai e volta
+        self._bom_em = float("-inf")
+        self.vx_ao_entrar = 0.0  # direção em que entrou na sala atual (reflexo de seguir em frente)
         self.arquivo_bancos = self.arquivo_cenas.with_name("memoria_bancos.json")
         self.bancos = set(json.loads(self.arquivo_bancos.read_text())) if self.arquivo_bancos.exists() else set()
 
@@ -90,6 +97,8 @@ class JuizDoJogo:
                 self._curando_em = agora
             novos = eventos_entre(antes, novo, agora - self._curando_em)
             eventos += novos
+            if BONS.intersection(novos):
+                self._bom_em = agora
             if "morte" in novos:
                 self._morreu_nesta_cena = True
             cena = novo["cena"]
@@ -99,8 +108,12 @@ class JuizDoJogo:
                 # depois de morrer não é explorar
                 if mudou and not antes["cena"].startswith("Menu") and not self._morreu_nesta_cena:
                     eventos.append("cena_nova")
+                    self._bom_em = agora
                 self.cenas.add(cena)
                 self._salvar_cenas()
+            if mudou and not antes["cena"].startswith("Menu") and not self._morreu_nesta_cena:
+                eventos += self._vai_e_volta(agora, antes["cena"], cena)
+                self.vx_ao_entrar = novo["vx"]
             if mudou:
                 self._morreu_nesta_cena = False
             # banco novo: o ponto de retorno mudou para um nunca visto (descansou nele).
@@ -109,10 +122,23 @@ class JuizDoJogo:
             if banco and banco != "|" and banco not in self.bancos:
                 if antes is not None and not antes["cena"].startswith("Menu") and banco != antes.get("banco"):
                     eventos.append("banco_novo")
+                    self._bom_em = agora
                 self.bancos.add(banco)
                 self._salvar(self.arquivo_bancos, self.bancos)
             self.estado, self._recebido_em = novo, agora
         return eventos
+
+    def _vai_e_volta(self, agora, de, para):
+        """Uma troca de sala. Devolve ["vai_e_volta"] se ela anda indo e voltando
+        pela mesma passagem sem ganhar nada com isso."""
+        self._trocas = [t for t in self._trocas if agora - t[0] < PASSAGEM_S and t[0] > self._bom_em]
+        self._trocas.append((agora, de, para))
+        par = {de, para}
+        mesmas = [t for t in self._trocas if {t[1], t[2]} == par]
+        if len(mesmas) >= PASSAGEM_VEZES:
+            self._trocas = mesmas[-(PASSAGEM_VEZES - 2):]  # punir de novo só depois de mais um vai e volta
+            return ["vai_e_volta"]
+        return []
 
     @property
     def vida(self):
