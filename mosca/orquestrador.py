@@ -252,8 +252,7 @@ class Orquestrador(QtCore.QObject):
         if self.gravador_mosca is not None:
             self.gravador_mosca.adicionar(
                 self.cerebro.reduzida, teclas, self._recompensa_quadro, self.hud.vida,
-                "sala_nova" in self._eventos_quadro, "presa" in self._eventos_quadro,
-                "loop" in self._eventos_quadro,
+                self._eventos_quadro,
             )
         self._habito_do_mapa()
         if self.torneio is not None:
@@ -448,8 +447,7 @@ class Orquestrador(QtCore.QObject):
         if no_jogo:
             self.gravador_correcao.adicionar(
                 self.cerebro.reduzida, teclas, self._recompensa_quadro, self.hud.vida,
-                "sala_nova" in self._eventos_quadro, "presa" in self._eventos_quadro,
-                "loop" in self._eventos_quadro,
+                self._eventos_quadro,
             )
         return {a: float(t) for a, t in zip(ACOES, teclas)}
 
@@ -489,8 +487,7 @@ class Orquestrador(QtCore.QObject):
         teclas = self.jogo.teclas_do_usuario()
         g.adicionar(
             self.cerebro.reduzida, teclas, self._recompensa_quadro, self.hud.vida,
-            "sala_nova" in self._eventos_quadro, "presa" in self._eventos_quadro,
-                "loop" in self._eventos_quadro,
+            self._eventos_quadro,
         )
         return texto, {a: float(t) for a, t in zip(ACOES, teclas)}
 

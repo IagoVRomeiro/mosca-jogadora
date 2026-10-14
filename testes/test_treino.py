@@ -72,6 +72,31 @@ class TestePesos(unittest.TestCase):
         np.testing.assert_array_equal(fases[:, ACOES.index("Esquerda")], 0)  # andar não muda
 
 
+class Parte(dict):
+    """Imita um .npz aberto: `files` e acesso por chave."""
+
+    @property
+    def files(self):
+        return list(self)
+
+
+class TesteDanoEMorte(unittest.TestCase):
+    def test_gravacao_antiga_deduz_pelo_valor(self):
+        # parada, dano, morte com o último dano, acerto, dano junto com acerto, presa marcada
+        r = np.array([-0.2, -1.0, -4.0, 0.3, -0.7, -0.6], np.float32)
+        parte = Parte(presas=np.array([0, 0, 0, 0, 0, 1], bool), valor_presa=np.float32(-0.6))
+        treinar.ajustar_dano_e_morte(r, parte)
+        d, m = treinar.RECOMPENSA_DANO, treinar.RECOMPENSA_MORTE
+        np.testing.assert_allclose(r, [-0.2, d, d + m, 0.3, d + 0.3, -0.6], atol=1e-5)
+
+    def test_gravacao_nova_usa_as_marcas(self):
+        r = np.array([-1.0, -0.2], np.float32)  # gravada com dano valendo -1
+        parte = Parte(danos=np.array([1, 0], bool), mortes=np.array([0, 0], bool),
+                      valor_dano=np.float32(-1.0), valor_morte=np.float32(-3.0))
+        treinar.ajustar_dano_e_morte(r, parte)
+        np.testing.assert_allclose(r, [treinar.RECOMPENSA_DANO, -0.2], atol=1e-5)
+
+
 class TesteOlho(unittest.TestCase):
     def test_tamanhos(self):
         jogo = JogoDemo()

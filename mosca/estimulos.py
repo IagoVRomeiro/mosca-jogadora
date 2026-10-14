@@ -41,7 +41,9 @@ class LeitorHUD:
     ACESO = 0.85
     PRETO = 40  # contorno abaixo disto: tela preta (morte, passagem de sala), não só escurecida
     RECOMPENSA = {
-        "dano": -1.0, "morte": -3.0, "cura": 0.3, "acerto": 0.3, "geo": 0.5, "parada": -0.2,
+        # dano e morte pesam mais que parada e loop juntos (medido em 59 min da
+        # mosca: com -1 e -3, ficar parada e andar em círculos puniam mais que morrer)
+        "dano": -2.0, "morte": -8.0, "cura": 0.3, "acerto": 0.3, "geo": 0.5, "parada": -0.2,
         # sala nova vale pouco (dá para burlar entrando e saindo); o mapa, mais
         "sala_nova": 0.3, "presa": -0.6, "mapa_novo": 1.0, "loop": -0.6,
     }

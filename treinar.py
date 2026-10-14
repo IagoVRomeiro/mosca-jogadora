@@ -61,7 +61,7 @@ REGULARIZACAO_VALOR = 0.05  # do estimador de retorno (por quadro de treino)
 SUBAMOSTRA = 2  # usa 1 a cada 2 quadros: vizinhos são quase iguais (menos decoreba)
 RUIDO = 0.1  # ruído nas entradas (já normalizadas) durante o treino
 PASTA_CACHE = PASTA / "cache_olho"
-VERSAO_CACHE = 5  # mude se o que vai no cache mudar
+VERSAO_CACHE = 6  # mude se o que vai no cache mudar
 ARQUIVO_SAIDA = ARQUIVO_DESAFIANTE  # todo treino gera uma desafiante (ver jogar.Torneio)
 ARQUIVO_INFO_MODELO = ARQUIVO_SAIDA.with_suffix(".json")  # qual treino gerou o modelo
 # Partidas da própria mosca: entram com menos peso que as suas (ela erra mais) e
@@ -74,6 +74,9 @@ RECOMPENSA_SALA = LeitorHUD.RECOMPENSA["sala_nova"]
 RECOMPENSA_PRESA = LeitorHUD.RECOMPENSA["presa"]
 RECOMPENSA_MORTE = LeitorHUD.RECOMPENSA["morte"]
 RECOMPENSA_LOOP = LeitorHUD.RECOMPENSA["loop"]
+RECOMPENSA_DANO = LeitorHUD.RECOMPENSA["dano"]
+# Gravações sem as marcas de dano/morte foram feitas com estes valores
+DANO_ANTIGO, MORTE_ANTIGA = -1.0, -3.0
 MAXIMO_QUADROS_MOSCA = 60_000  # ~33 min
 # Telas das partidas da mosca mais antigas que isto são apagadas (as teclas e
 # recompensas delas ficam no Supabase). As suas gravações nunca são apagadas.
@@ -194,7 +197,7 @@ def processar_sessao(pasta):
                 if "versao_hud" not in parte.files:
                     # Leitura antiga: mapa aberto e transições viravam "morte" falsa
                     # (-3). Não dá para separar das reais: tira a morte e fica o resto
-                    r = np.where(r <= RECOMPENSA_MORTE + 0.1, r - RECOMPENSA_MORTE, r)
+                    r = np.where(r <= MORTE_ANTIGA + 0.1, r - MORTE_ANTIGA, r)
                 hud.append(r)
             else:
                 com_hud = False
@@ -203,6 +206,8 @@ def processar_sessao(pasta):
             colunas = [acoes.index(a) if a in acoes else None for a in ACOES]
             presas_marcadas = "presas" in parte.files
             loops_marcados = "loops" in parte.files
+            if "recompensas" in parte.files:
+                ajustar_dano_e_morte(hud[-1], parte)
             # gravações marcadas já trazem a punição na recompensa, com o valor da
             # época (-0,3 antes de valor_presa/valor_loop existirem): acerta para o atual.
             # A presa sai toda e é recalculada abaixo com o detector atual (que não
@@ -243,6 +248,25 @@ def processar_sessao(pasta):
     np.savez(temporario, **dados)
     os.replace(temporario, cache)
     return dados
+
+
+def ajustar_dano_e_morte(r, parte):
+    """Leva o dano e a morte de uma parte gravada para os pesos atuais (em `r`).
+    Gravações novas marcam os quadros; nas antigas, o valor do quadro diz: só a
+    morte (-3) passa de -2,5, e tirada ela, só o dano (-1) passa de -0,45 (os
+    outros eventos: parada -0,2, positivos até +1; presa/loop marcados à parte)."""
+    if "danos" in parte.files:
+        danos, mortes = parte["danos"], parte["mortes"]
+        v_dano, v_morte = float(parte["valor_dano"]), float(parte["valor_morte"])
+    else:
+        base = r.copy()
+        for marca, valor in (("presas", "valor_presa"), ("loops", "valor_loop")):
+            if marca in parte.files:
+                base -= (float(parte[valor]) if valor in parte.files else -0.3) * parte[marca]
+        mortes = base <= -2.5
+        danos = base - MORTE_ANTIGA * mortes <= -0.45
+        v_dano, v_morte = DANO_ANTIGO, MORTE_ANTIGA
+    r += (RECOMPENSA_DANO - v_dano) * danos + (RECOMPENSA_MORTE - v_morte) * mortes
 
 
 def limpar_cache(pastas):

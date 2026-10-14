@@ -96,19 +96,22 @@ class Gravador:
         self.total = 0
         self._parte = 0
         self._telas, self._teclas = [], []
-        self._recompensas, self._vidas, self._salas, self._presas, self._loops = [], [], [], [], []
+        self._recompensas, self._vidas = [], []
+        self._marcas = {chave: [] for chave in self.MARCAS.values()}
         self._salvando = []
 
-    def adicionar(self, reduzida, teclas, recompensa=0.0, vida=None, sala_nova=False, presa=False, loop=False):
-        """`recompensa` e `vida` vêm do HUD; ficam guardadas para o aprendizado
-        por reforço no futuro (o treino de imitação não usa)."""
+    # evento -> marca por quadro no arquivo. A recompensa já inclui todos; as
+    # marcas deixam o treino reajustar se o peso de um evento mudar depois
+    MARCAS = {"sala_nova": "salas_novas", "presa": "presas", "loop": "loops", "dano": "danos", "morte": "mortes"}
+
+    def adicionar(self, reduzida, teclas, recompensa=0.0, vida=None, eventos=()):
+        """`recompensa`, `vida` e `eventos` vêm do HUD e dos detectores."""
         self._telas.append(cinza(reduzida))
         self._teclas.append(teclas)
         self._recompensas.append(recompensa)
         self._vidas.append(-1 if vida is None else vida)
-        self._salas.append(sala_nova)  # a recompensa já inclui; o treino não recalcula
-        self._presas.append(presa)
-        self._loops.append(loop)
+        for evento, chave in self.MARCAS.items():
+            self._marcas[chave].append(evento in eventos)
         self.total += 1
         if len(self._telas) >= self.QUADROS_POR_PARTE:
             self._salvar()
@@ -120,19 +123,18 @@ class Gravador:
         telas, teclas = np.stack(self._telas), np.stack(self._teclas)
         recompensas = np.array(self._recompensas, dtype=np.float32)
         vidas = np.array(self._vidas, dtype=np.int8)
-        salas = np.array(self._salas, dtype=bool)
-        presas = np.array(self._presas, dtype=bool)
-        loops = np.array(self._loops, dtype=bool)
+        marcas = {chave: np.array(v, dtype=bool) for chave, v in self._marcas.items()}
         self._telas, self._teclas = [], []
-        self._recompensas, self._vidas, self._salas, self._presas, self._loops = [], [], [], [], []
+        self._recompensas, self._vidas = [], []
+        self._marcas = {chave: [] for chave in self.MARCAS.values()}
         self._parte += 1
         t = threading.Thread(
             target=np.savez_compressed,
             args=(arquivo,),
             kwargs=dict(
-                telas=telas, teclas=teclas, recompensas=recompensas, vidas=vidas, salas_novas=salas,
-                presas=presas, loops=loops, versao_hud=VERSAO_HUD,
-                valor_presa=LeitorHUD.RECOMPENSA["presa"], valor_loop=LeitorHUD.RECOMPENSA["loop"],
+                telas=telas, teclas=teclas, recompensas=recompensas, vidas=vidas, **marcas,
+                versao_hud=VERSAO_HUD,
+                **{f"valor_{e}": LeitorHUD.RECOMPENSA[e] for e in ("presa", "loop", "dano", "morte")},
                 acoes=np.array(ACOES),
             ),
         )
