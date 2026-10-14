@@ -284,6 +284,9 @@ class Orquestrador(QtCore.QObject):
             "paradas": p["eventos"]["parada"],
             "mortes": p["eventos"]["morte"],
             "salas_novas": p["eventos"]["sala_nova"],
+            "presas": p["eventos"]["presa"],
+            "loops": p["eventos"]["loop"],
+            "lugares_mapa": p["eventos"]["mapa_novo"],
             "uso_teclas": {a: round(float(u), 4) for a, u in zip(ACOES, uso)},
         }))
 

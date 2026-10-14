@@ -52,6 +52,9 @@ create table if not exists public.partidas_mosca (
     curas integer not null,
     paradas integer not null default 0,
     salas_novas integer not null default 0,
+    presas integer not null default 0,   -- ficou presa (parede, pulo que não alcança)
+    loops integer not null default 0,    -- andando em círculos
+    lugares_mapa integer not null default 0,  -- células novas do mapa (Bússola)
     uso_teclas jsonb not null            -- fração dos quadros com cada tecla apertada
 );
 

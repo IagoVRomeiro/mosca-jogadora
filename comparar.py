@@ -28,6 +28,10 @@ METRICAS = [  # (campo, nome, maior é melhor?)
     ("acertos", "acertos/min", True),
     ("geo", "geo/min", True),
     ("paradas", "paradas/min", False),
+    ("presas", "presas/min", False),
+    ("loops", "loops/min", False),
+    ("salas_novas", "salas novas/min", True),
+    ("lugares_mapa", "lugares mapa/min", True),
 ]
 
 

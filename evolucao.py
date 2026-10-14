@@ -128,8 +128,9 @@ class PainelEvolucao(QtWidgets.QWidget):
         # Detalhe: medidas em escalas diferentes -> gráficos pequenos separados
         pequenos = QtWidgets.QHBoxLayout()
         self.g_detalhe = {}
-        for campo, titulo in (("mortes", "Mortes/min (↓ melhor)"), ("danos", "Danos/min (↓ melhor)"),
-                              ("acertos", "Acertos/min (↑ melhor)"), ("paradas", "Paradas/min (↓ melhor)")):
+        for campo, titulo in (("mortes", "Mortes/min (↓)"), ("danos", "Danos/min (↓)"),
+                              ("acertos", "Acertos/min (↑)"), ("paradas", "Paradas/min (↓)"),
+                              ("loops", "Loops/min (↓)"), ("salas_novas", "Salas novas/min (↑)")):
             g = grafico(titulo)
             self.g_detalhe[campo] = g
             pequenos.addWidget(g)
