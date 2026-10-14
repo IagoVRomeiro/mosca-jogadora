@@ -275,6 +275,12 @@ class Orquestrador(QtCore.QObject):
     GUARDAR_MAPAS = 100
 
     def _habito_do_mapa(self):
+        """Só sem o plugin do jogo: o mapa era o jeito de saber onde ela está (para
+        premiar lugares novos). A mosca não usa o que vê nele (a memória dela é
+        curta); com o juiz de dentro do jogo, a sala já vem exata e parar para
+        abrir o mapa só atrapalha."""
+        if self._juiz_ativo:
+            return
         self._desde_mapa += QUADRO_MS / 1000
         agora = time.monotonic()
         if self._desde_mapa >= self.OLHAR_MAPA_S and agora - self._ultimo_dano > self.CALMA_S:
