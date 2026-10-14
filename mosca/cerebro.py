@@ -81,7 +81,7 @@ class CerebroDemo:
     DURACAO_DOPAMINA_S = 0.6
     GRADE = (GRADE_OLHO[0], GRADE_OLHO[1] // 2)  # resolução do olho em cada metade
     ESPONTANEA = 0.3  # Hz
-    GRUPOS_POR_ACAO = 3  # neurônios descendentes reais de cada zona de comando
+    GRUPOS_POR_ACAO = 10  # grupos descendentes reais (de 1 ou 2 neurônios) por zona de comando
     ATIVIDADE_HZ = 60  # taxa de um grupo no máximo de atividade
 
     def __init__(self, n=14000, dt=QUADRO_MS / 1000, modelo=None, real=None):
