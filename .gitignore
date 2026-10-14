@@ -30,3 +30,6 @@ mapas/
 
 # Cache do olho de cada sessão (treinar.py recalcula se faltar)
 cache_olho/
+
+# Diagnóstico: prints de cada evento do jogo (para conferir a leitura)
+diagnostico/

@@ -48,6 +48,7 @@ class Orquestrador(QtCore.QObject):
         self._desde_mapa = 0.0  # segundos de jogo da mosca desde a última olhada no mapa
         self._foto_mapa_em = None
         self._ultimo_dano = 0.0
+        self._ultimas_telas = collections.deque(maxlen=10)  # ~0,3 s, para o diagnóstico
         self._sorteio = np.random.default_rng()
         self._recompensas = collections.deque()  # (instante, valor) dos últimos 10 s
         self._ultimo_evento = (None, 0.0)
@@ -436,12 +437,42 @@ class Orquestrador(QtCore.QObject):
             return f"reflexo: meia-volta ({ROTULO_TECLA[outro]}) pulando"
         return f"reflexo: meia-volta ({ROTULO_TECLA[outro]})"
 
+    # --- diagnóstico: um print de cada evento, para conferir se a leitura está certa ---
+
+    PASTA_DIAGNOSTICO = PASTA / "diagnostico"
+    GUARDAR_POR_EVENTO = 20
+
+    def _diagnostico(self, evento, imagem):
+        """Salva "antes" (~0,3 s antes) e "agora" lado a lado com o nome do evento."""
+        from PIL import Image, ImageDraw
+
+        antes = self._ultimas_telas[0]
+        largura = 480
+        quadros = []
+        for tela in (antes, imagem):
+            img = Image.fromarray(np.ascontiguousarray(tela))
+            quadros.append(img.resize((largura, round(img.height * largura / img.width))))
+        altura = quadros[0].height
+        folha = Image.new("RGB", (2 * largura + 10, altura + 34), (12, 13, 20))
+        folha.paste(quadros[0], (0, 34))
+        folha.paste(quadros[1], (largura + 10, 34))
+        texto = ImageDraw.Draw(folha)
+        nome = self.NOMES_EVENTOS.get(evento, evento)
+        texto.text((8, 10), f"{nome}   ·   antes (~0,3 s)", fill=(200, 205, 225))
+        texto.text((largura + 18, 10), f"agora   ·   {time.strftime('%H:%M:%S')}", fill=(200, 205, 225))
+        pasta = self.PASTA_DIAGNOSTICO / evento
+        pasta.mkdir(parents=True, exist_ok=True)
+        folha.save(pasta / time.strftime(f"%Y-%m-%d_%H%M%S_{evento}.jpg"), quality=85)
+        for velho in sorted(pasta.glob("*.jpg"))[: -self.GUARDAR_POR_EVENTO]:
+            velho.unlink()
+
     def _ler_hud(self, imagem):
         """Eventos do jogo -> dopamina no cérebro + painel de recompensa."""
         self._recompensa_quadro = 0.0
         self._eventos_quadro = []
         if self.hud is None or self.jogo.aviso:
             return
+        self._ultimas_telas.append(imagem)
         valor, eventos = self.hud.passo(imagem)
         if self.cerebro.reduzida is not None:
             eventos += self.explorador.passo(self.cerebro.reduzida)
@@ -469,6 +500,8 @@ class Orquestrador(QtCore.QObject):
             reflexo = self._reflexo()
         valor = sum(LeitorHUD.RECOMPENSA[e] for e in eventos)
         self._eventos_quadro = eventos
+        for evento in set(eventos) - {"parada"}:  # parada é frequente e já foi conferida
+            self._diagnostico(evento, imagem)
         agora = time.monotonic()
         if eventos:
             self._recompensa_quadro = valor
