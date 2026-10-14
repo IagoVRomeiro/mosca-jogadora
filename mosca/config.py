@@ -50,6 +50,13 @@ DURACAO_TOQUE_S = 0.07
 SEGURAR_MINIMO_S = {"Foco": 1.5, "Mapa": 1.5}
 
 
+# E no máximo isto: com o mapa aberto a mosca vê o mapa e, como nas suas
+# gravações o Tab está sempre apertado com o mapa na tela, continuaria segurando
+# para sempre. Passou do máximo, solta e a tecla descansa por DESCANSO_S.
+SEGURAR_MAXIMO_S = {"Mapa": 3.0}
+DESCANSO_S = 10.0
+
+
 QUADRO_MS = 33  # ~30 quadros por segundo
 
 

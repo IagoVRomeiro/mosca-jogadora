@@ -13,7 +13,7 @@ QUADRO_S = 1 / 30
 
 def captura_falsa(foco_no_jogo=True):
     c = CapturaJanela.__new__(CapturaJanela)
-    c.apertadas, c._ativas, c._desde, c._apertou_em = set(), set(), {}, {}
+    c.apertadas, c._ativas, c._desde, c._apertou_em, c._descanso_ate = set(), set(), {}, {}, {}
     c.controlando, c.aviso, c.aviso_controle = True, None, None
     c.janela = type("Janela", (), {"id": 42})()
     c.janelas_proprias = set()
@@ -52,6 +52,14 @@ class TesteTeclas(unittest.TestCase):
     def test_foco_fica_segurado_o_minimo(self):
         desenho, _ = simular(captura_falsa(), "Foco", [0.9] * 6 + [0.2] * 54)  # quis só 0,2 s
         self.assertAlmostEqual(desenho.count("█") * QUADRO_S, 1.5, delta=0.05)
+
+    def test_mapa_nao_fica_aberto_para_sempre(self):
+        # querendo o mapa por 20 s: abre por 3 s, descansa 10 s, abre de novo
+        desenho, apertos = simular(captura_falsa(), "Mapa", [0.9] * 600)
+        self.assertEqual(apertos, 2)
+        aberto = desenho.index("·")
+        self.assertAlmostEqual(aberto * QUADRO_S, 3.0, delta=0.05)
+        self.assertAlmostEqual(desenho.index("█", aberto) - aberto, 10.0 / QUADRO_S, delta=2)
 
     def test_andar_segura_enquanto_quer(self):
         desenho, apertos = simular(captura_falsa(), "Esquerda", [0.9] * 10 + [0.2] * 10)
