@@ -75,6 +75,11 @@ class TesteRede(unittest.TestCase):
         self.assertEqual(de_novo.cenas, {"Crossroads_01", "Crossroads_02"})
         de_novo.fechar()
 
+    def test_carregar_o_save_nao_e_sala_nova(self):
+        self.mandar(cena="Menu_Title")
+        self.assertEqual(self.mandar(cena="Fungus2_13"), [])
+        self.assertIn("Fungus2_13", self.juiz.cenas)  # mas fica conhecida
+
     def test_eventos_pela_rede(self):
         self.mandar()
         self.assertEqual(self.mandar(vida=4, golpes=1), ["dano", "acerto"])

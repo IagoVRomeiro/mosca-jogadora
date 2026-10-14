@@ -81,7 +81,8 @@ class JuizDoJogo:
             eventos += eventos_entre(antes, novo, agora - self._curando_em)
             cena = novo["cena"]
             if cena and not cena.startswith("Menu") and cena not in self.cenas:
-                if self.cenas or antes is not None:  # a primeira cena da vida toda é só o começo
+                # chegar do menu (carregou o save) ou do nada não é explorar
+                if antes is not None and not antes["cena"].startswith("Menu"):
                     eventos.append("cena_nova")
                 self.cenas.add(cena)
                 self._salvar_cenas()
