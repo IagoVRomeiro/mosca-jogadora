@@ -615,8 +615,6 @@ def main():
         acoes=np.array(ACOES), n_quadros=total, versao_olho=VERSAO_OLHO, arquitetura=arquitetura,
         metodo=("conectoma · " if arquitetura == "conectoma" else "") + "imitação + vantagem",
     )
-    os.replace(temporario, ARQUIVO_SAIDA)
-    print(f"\nmodelo salvo em {ARQUIVO_SAIDA.name} ({time.time() - inicio:.0f} s).")
 
     nomes = nomes_sessoes
     treino = {
@@ -645,12 +643,16 @@ def main():
         },
         "codigo_versao": versao_do_codigo(),
     }
+    # Registra antes de pôr no lugar: se o treino for interrompido aqui (painel
+    # fechado), não sobra uma desafiante sem número e fora do Supabase
     mensagem, treino_id = registrar_treino(
-        [resumir_sessao(n, pastas[n]) for n in nomes], treino, ARQUIVO_SAIDA, pastas
+        [resumir_sessao(n, pastas[n]) for n in nomes], treino, temporario, pastas
     )
     print(mensagem)
-    # O painel lê isto para dizer, nas partidas, qual treino estava jogando
+    # O painel lê o .json para dizer, nas partidas, qual treino estava jogando
     ARQUIVO_INFO_MODELO.write_text(json.dumps({"treino_id": treino_id, "n_quadros": total}))
+    os.replace(temporario, ARQUIVO_SAIDA)
+    print(f"modelo salvo em {ARQUIVO_SAIDA.name} ({time.time() - inicio:.0f} s).")
     apagadas = limpar_partidas_antigas_da_mosca()
     if apagadas:
         print(f"apaguei as telas de {len(apagadas)} partidas antigas da mosca (as teclas e recompensas estão no Supabase)")

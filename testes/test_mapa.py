@@ -19,8 +19,9 @@ def mapa(x, y, titulo=1, marca=True):
     rng = np.random.default_rng(0)
     img = rng.integers(10, 40, (ALTURA, LARGURA)).astype(np.float32)
     img[150:160, 100:850] = 150  # um corredor do mapa
-    t = np.random.default_rng(titulo).random((14, 160)) > 0.6
-    img[40:54, 400:560][t] = 230  # o título da área (cada área, um desenho)
+    # o título da área: "letras" em blocos (cada área, um desenho)
+    t = np.repeat(np.repeat(np.random.default_rng(titulo).random((2, 20)) > 0.5, 7, 0), 8, 1)
+    img[40:54, 400:560][t] = 230
     if marca:
         h, w = MARCA.shape
         img[y - h // 2 : y - h // 2 + h, x - w // 2 : x - w // 2 + w] = MARCA
@@ -44,6 +45,14 @@ class TesteMapa(unittest.TestCase):
         self.assertEqual(self.leitor.ler(mapa(437, 198)), ["mapa_novo"])
         self.assertEqual(self.leitor.ler(mapa(440, 200)), [])  # mesma célula
         self.assertEqual(self.leitor.ler(mapa(600, 300)), ["mapa_novo"])
+
+    def test_mesma_area_com_a_janela_de_outro_tamanho(self):
+        from PIL import Image
+
+        tela = mapa(437, 198, titulo=1)
+        maior = np.asarray(Image.fromarray(tela).resize((LARGURA * 5 // 3, ALTURA * 5 // 3)))
+        self.assertEqual(self.leitor._area(tela), self.leitor._area(maior))
+        self.assertEqual(len(self.leitor.titulos), 1)
 
     def test_areas_diferentes_pelo_titulo(self):
         self.leitor.ler(mapa(437, 198, titulo=1))

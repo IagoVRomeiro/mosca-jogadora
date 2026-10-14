@@ -414,7 +414,12 @@ class LeitorMapa:
     ALTURA_MODELO = 523
     SEMELHANCA = 0.75  # medido: a marca dá 0,83-1,00; o resto do mapa ~0,5
     TITULO = (0.06, 0.13, 0.35)  # y0, y1, meia largura (fração da altura, centrado)
-    MESMA_AREA = 0.6  # sobreposição mínima do desenho do título
+    # O título é comparado em tons de cinza, num tamanho fixo, levemente borrado e
+    # tolerando DESLOCAMENTO px: com a janela do jogo em outro tamanho ainda é a
+    # mesma área. Medido nos mapas/: mesma área 0,88-1,00; áreas diferentes <= 0,66
+    MESMA_AREA = 0.8
+    FORMA_TITULO = (24, 240)
+    DESLOCAMENTO = 3
     CELULA = 0.045
 
     def __init__(self, arquivo=PASTA / "memoria_mapa.npz"):
@@ -424,8 +429,11 @@ class LeitorMapa:
         self.titulos, self.celulas = [], set()
         if self.arquivo.exists():
             with np.load(self.arquivo) as dados:
-                self.titulos = list(dados["titulos"])
-                self.celulas = {tuple(int(v) for v in c) for c in dados["celulas"]}
+                # memória do formato antigo (título binarizado, sensível ao tamanho
+                # da janela) não dá para comparar: começa de novo
+                if dados["titulos"].dtype == np.float32:
+                    self.titulos = list(dados["titulos"])
+                    self.celulas = {tuple(int(v) for v in c) for c in dados["celulas"]}
         self.posicao = None  # (área, x, y em fração da altura), da última leitura
 
     def _modelo_na_escala(self, altura):
@@ -457,17 +465,34 @@ class LeitorMapa:
             return None
         return x + w // 2, y + h // 2, float(semelhanca[y, x])
 
-    def _area(self, quadro):
-        """Número da área pelo desenho do título (nova área se não parecer com nenhuma)."""
+    @classmethod
+    def _titulo(cls, quadro):
+        """Desenho do título no alto do mapa, normalizado para comparar."""
+        from PIL import Image, ImageFilter
+
         img = cinza(quadro)
         alt, larg = img.shape
-        y0, y1, meia = self.TITULO
-        desenho = img[int(y0 * alt) : int(y1 * alt), larg // 2 - int(meia * alt) : larg // 2 + int(meia * alt)] > 170
+        y0, y1, meia = cls.TITULO
+        corte = img[int(y0 * alt) : int(y1 * alt), larg // 2 - int(meia * alt) : larg // 2 + int(meia * alt)]
+        reduzido = Image.fromarray(corte).resize(cls.FORMA_TITULO[::-1], Image.Resampling.BOX)
+        d = np.asarray(reduzido.filter(ImageFilter.GaussianBlur(1)), np.float32)
+        d = d - d.mean()
+        return d / (np.linalg.norm(d) + 1e-6)
+
+    @classmethod
+    def _semelhanca(cls, a, b):
+        k = cls.DESLOCAMENTO
+        return max(
+            float((a * np.roll(b, (dy, dx), (0, 1))).sum())
+            for dy in range(-k, k + 1) for dx in range(-k, k + 1)
+        )
+
+    def _area(self, quadro):
+        """Número da área pelo desenho do título (nova área se não parecer com nenhuma)."""
+        desenho = self._titulo(quadro)
         for i, conhecido in enumerate(self.titulos):
-            if conhecido.shape == desenho.shape:
-                uniao = np.count_nonzero(conhecido | desenho)
-                if uniao and np.count_nonzero(conhecido & desenho) / uniao >= self.MESMA_AREA:
-                    return i
+            if self._semelhanca(conhecido, desenho) >= self.MESMA_AREA:
+                return i
         self.titulos.append(desenho)
         return len(self.titulos) - 1
 
@@ -489,7 +514,7 @@ class LeitorMapa:
 
     def salvar(self):
         temporario = self.arquivo.with_name(self.arquivo.stem + ".tmp.npz")
-        titulos = np.array(self.titulos) if self.titulos else np.zeros((0, 1, 1), bool)
+        titulos = np.array(self.titulos, np.float32).reshape(-1, *self.FORMA_TITULO)
         np.savez_compressed(temporario, titulos=titulos, celulas=np.array(sorted(self.celulas)).reshape(-1, 3))
         temporario.replace(self.arquivo)
 
