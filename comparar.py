@@ -100,8 +100,10 @@ def carregar():
             if tid is None:
                 nome = "sem treino"
             else:
-                metodo = (treinos.get(tid, {}).get("config") or {}).get("aprendizado", "imitação")
-                nome = f"#{tid} {metodo}"[:33]
+                config = treinos.get(tid, {}).get("config") or {}
+                cerebro = "conectoma" if config.get("arquitetura") == "conectoma" else "rede inventada"
+                metodo = "imitação + recompensa" if "recompensa" in config.get("aprendizado", "") else "imitação"
+                nome = f"#{tid} {cerebro}, {metodo}"[:33]
             versoes[tid] = Versao(tid, nome)
         versoes[tid].partidas.append(p)
     return versoes
