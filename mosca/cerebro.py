@@ -166,8 +166,10 @@ class CerebroDemo:
             livres, zonas = no_desenho.copy(), {a: [] for a in ACOES}
             for _ in range(self.GRUPOS_POR_ACAO):
                 for acao in ACOES:
-                    j = self._modelo.acoes.index(acao)
-                    candidatos = np.where(livres, leitura[:, j], -np.inf)
+                    if acao in self._modelo.acoes:
+                        candidatos = np.where(livres, leitura[:, self._modelo.acoes.index(acao)], -np.inf)
+                    else:  # tecla que o modelo não conhece (ex.: Mapa): grupos livres
+                        candidatos = np.where(livres, 0.0, -np.inf)
                     g = int(np.argmax(candidatos))
                     zonas[acao].append(g)
                     livres[g] = False

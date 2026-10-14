@@ -27,3 +27,7 @@ supabase/.temp/
 
 # Conectoma: anotações baixadas (31 MB) e dados gerados pelo preparar_conectoma.py
 dados_conectoma/
+
+# Exploração: memória de salas e imagens do mapa (geradas jogando)
+memoria_salas*.npz
+mapas/

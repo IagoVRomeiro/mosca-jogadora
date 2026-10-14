@@ -23,11 +23,13 @@ import shutil
 import subprocess
 import time
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 
 from mosca.config import ACOES, ARQUIVO_DESAFIANTE, ARQUIVO_MODELO, PASTA, PASTA_GRAVACOES, PASTA_GRAVACOES_MOSCA, QUADRO_MS, TOQUE_S
 from mosca.conectoma import RedeConectoma, carregar_conectoma
+from mosca.estimulos import ExploradorSalas, LeitorHUD
 from mosca.olho import ATRASO_OLHO, FOVEA, GRADE_FOVEA, GRADE_OLHO, OLHO, VERSAO_OLHO, entrada, retrato
 from registro import registrar_treino
 
@@ -48,6 +50,7 @@ ARQUIVO_INFO_MODELO = ARQUIVO_SAIDA.with_suffix(".json")  # qual treino gerou o 
 # Partidas da própria mosca: entram com menos peso que as suas (ela erra mais) e
 # só as mais recentes, para o treino não crescer sem fim
 PESO_MOSCA = 0.5
+RECOMPENSA_SALA = LeitorHUD.RECOMPENSA["sala_nova"]
 MAXIMO_QUADROS_MOSCA = 60_000  # ~33 min
 # Telas das partidas da mosca mais antigas que isto são apagadas (as teclas e
 # recompensas delas ficam no Supabase). As suas gravações nunca são apagadas.
@@ -115,7 +118,8 @@ def pastas_de_sessoes():
             with np.load(arquivo) as parte:
                 quadros += len(parte["teclas"])
         pastas[f"mosca_{p.name}"] = p
-    return pastas
+    # em ordem cronológica (a memória de salas depende da ordem em que foram vistas)
+    return dict(sorted(pastas.items(), key=lambda item: item[1].name))
 
 
 def limpar_partidas_antigas_da_mosca():
@@ -136,8 +140,11 @@ def carregar_sessoes(pastas):
     """Lista de (nome, retratos, teclas, pesos) por sessão, na ordem em que foram
     gravadas. O retrato é tudo o que o olho extrai de um quadro (ver jogar.retrato)."""
     sessoes = []
+    # Salas novas: as gravações antigas não marcam; o explorador passa por todas,
+    # em ordem, com uma memória só deste treino (não mexe na memória do painel)
+    explorador = ExploradorSalas(Path(os.devnull + ".npz"))
     for nome, pasta in pastas.items():
-        olhos, teclas, recompensas = [], [], []
+        olhos, teclas, recompensas, extra = [], [], [], []
         com_hud = True
         for arquivo in sorted(pasta.glob("parte_*.npz")):
             with np.load(arquivo) as parte:
@@ -147,14 +154,20 @@ def carregar_sessoes(pastas):
                     com_hud = False
                 acoes = [str(a) for a in parte["acoes"]]
                 colunas = [acoes.index(a) if a in acoes else None for a in ACOES]
+                ja_marcadas = "salas_novas" in parte.files  # gravada já com o explorador
                 anterior = None
                 for tela, apertadas in zip(parte["telas"], parte["teclas"]):
                     olhos.append(retrato(tela, anterior))
                     teclas.append([apertadas[c] if c is not None else False for c in colunas])
+                    nova = bool(explorador.passo(tela))
+                    extra.append(RECOMPENSA_SALA if nova and not ja_marcadas else 0.0)
                     anterior = tela
         if olhos:
+            extra = np.array(extra, dtype=np.float32)
             if com_hud and recompensas:
-                pesos = pesos_por_recompensa(np.concatenate(recompensas))
+                pesos = pesos_por_recompensa(np.concatenate(recompensas) + extra)
+            elif extra.any():  # sem HUD: só as salas novas
+                pesos = pesos_por_recompensa(extra)
             else:
                 pesos = np.ones(len(olhos), dtype=np.float32)
             if nome.startswith("mosca_"):

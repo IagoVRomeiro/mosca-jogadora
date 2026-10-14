@@ -4,8 +4,8 @@ import collections
 from pathlib import Path
 
 
-# Todos os controles de jogo do Hollow Knight, com as teclas configuradas no jogo. Mapa, inventário e
-# Esc ficam de fora: são menus, não movimentos.
+# Todos os controles de jogo do Hollow Knight, com as teclas configuradas no jogo, mais
+# o mapa rápido. Inventário e Esc ficam de fora: são menus que pausam o jogo.
 #   tecla: keysym do X11 · rotulo: o que aparece no painel · curto: nome no botão
 #   zona: (x, y, raio) da zona de comando no cérebro
 #   pata: pata que aperta a tecla · posicao: (linha, coluna) da tecla no teclado 3D
@@ -24,6 +24,9 @@ ACOES_JOGO = {
     "Super Investida": Acao("l", "L", "S. Investida", (-0.32, 0.38, 0.08), "lh", (-1, 2)),
     "Ferrão dos Sonhos": Acao("n", "N", "Ferrão", (0.32, 0.38, 0.08), "rh", (-1, -1)),
     "Magia Rápida": Acao("m", "M", "Magia Ráp.", (0.2, 0.18, 0.08), "rm", (0, -2)),
+    # Mapa rápido: segurado, mostra o mapa da área (com a Bússola Errante, onde o
+    # Cavaleiro está). A mosca também olha o mapa sozinha de tempos em tempos.
+    "Mapa": Acao("Tab", "Tab", "Mapa", (0.42, 0.22, 0.07), "rh", (-1, -2)),
 }
 
 
@@ -45,7 +48,7 @@ DURACAO_TOQUE_S = 0.07
 
 
 # O Foco só cura segurado por ~1 s: uma vez apertado, fica pelo menos isto
-SEGURAR_MINIMO_S = {"Foco": 1.5}
+SEGURAR_MINIMO_S = {"Foco": 1.5, "Mapa": 1.5}
 
 
 QUADRO_MS = 33  # ~30 quadros por segundo

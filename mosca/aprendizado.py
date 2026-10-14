@@ -94,16 +94,17 @@ class Gravador:
         self.total = 0
         self._parte = 0
         self._telas, self._teclas = [], []
-        self._recompensas, self._vidas = [], []
+        self._recompensas, self._vidas, self._salas = [], [], []
         self._salvando = []
 
-    def adicionar(self, reduzida, teclas, recompensa=0.0, vida=None):
+    def adicionar(self, reduzida, teclas, recompensa=0.0, vida=None, sala_nova=False):
         """`recompensa` e `vida` vêm do HUD; ficam guardadas para o aprendizado
         por reforço no futuro (o treino de imitação não usa)."""
         self._telas.append(cinza(reduzida))
         self._teclas.append(teclas)
         self._recompensas.append(recompensa)
         self._vidas.append(-1 if vida is None else vida)
+        self._salas.append(sala_nova)  # a recompensa já inclui; o treino não recalcula
         self.total += 1
         if len(self._telas) >= self.QUADROS_POR_PARTE:
             self._salvar()
@@ -115,14 +116,15 @@ class Gravador:
         telas, teclas = np.stack(self._telas), np.stack(self._teclas)
         recompensas = np.array(self._recompensas, dtype=np.float32)
         vidas = np.array(self._vidas, dtype=np.int8)
+        salas = np.array(self._salas, dtype=bool)
         self._telas, self._teclas = [], []
-        self._recompensas, self._vidas = [], []
+        self._recompensas, self._vidas, self._salas = [], [], []
         self._parte += 1
         t = threading.Thread(
             target=np.savez_compressed,
             args=(arquivo,),
             kwargs=dict(
-                telas=telas, teclas=teclas, recompensas=recompensas, vidas=vidas,
+                telas=telas, teclas=teclas, recompensas=recompensas, vidas=vidas, salas_novas=salas,
                 acoes=np.array(ACOES),
             ),
         )

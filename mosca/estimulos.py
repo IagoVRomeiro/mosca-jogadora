@@ -1,9 +1,12 @@
-"""Estímulos do jogo: o leitor do HUD (dano, morte, acerto, geo, cura) e a parada."""
+"""Estímulos do jogo: o leitor do HUD (dano, morte, acerto, geo, cura), a parada e
+as salas novas (exploração)."""
+
+from pathlib import Path
 
 import numpy as np
 
-from .config import QUADRO_MS
-from .olho import cinza
+from .config import PASTA, QUADRO_MS
+from .olho import cinza, ver
 
 
 class LeitorHUD:
@@ -28,6 +31,7 @@ class LeitorHUD:
     SUMIDO_MORTE = 30  # quadros sem HUD (~1 s) que, com 1 máscara, indicam morte
     RECOMPENSA = {
         "dano": -1.0, "morte": -3.0, "cura": 0.3, "acerto": 0.3, "geo": 0.5, "parada": -0.2,
+        "sala_nova": 1.0,
     }
 
     def __init__(self):
@@ -161,3 +165,74 @@ class DetectorParada:
         self.contador += 1
         passou = self.contador - self.espera
         return ["parada"] if passou >= 0 and passou % self.repete == 0 else []
+
+
+class ExploradorSalas:
+    """Reconhece salas pela "foto de entrada" e recompensa chegar numa sala nova.
+
+    No Hollow Knight, passar de uma sala para outra escurece a tela por ~0,8 s e
+    a sala nova aparece sempre do mesmo ponto de vista para a mesma porta. A
+    foto tirada logo depois do escurecimento é comparada com a memória de salas
+    (que fica salva e vale entre sessões): parecida com alguma (semelhança >=
+    LIMITE) é sala conhecida; senão, é sala nova e entra na memória.
+
+    Medido nas suas gravações: entradas repetidas dão semelhança >= 0,95 e salas
+    diferentes ficam entre 0,6 e 0,85. Olhar a tela o tempo todo, em vez da
+    entrada, não funciona: inimigos e a câmera mudam tudo dentro da mesma sala.
+    """
+
+    ESCURO = 4  # brilho médio (0-255) abaixo disto: tela escura
+    TRANSICAO = (3, 60)  # quadros escuros de uma passagem de sala (mais: morte, banco)
+    ESPERA = 20  # quadros depois de clarear para tirar a foto (~0,7 s)
+    LIMITE = 0.92
+    MAXIMO_SALAS = 5000
+
+    def __init__(self, arquivo=PASTA / "memoria_salas.npz"):
+        self.arquivo = Path(arquivo)
+        self.memoria = np.zeros((0, 576), np.float32)
+        if self.arquivo.exists():
+            with np.load(self.arquivo) as dados:
+                self.memoria = dados["salas"]
+        self._escuro, self._foto_em = 0, None
+        self.alterada = False
+
+    @property
+    def salas(self):
+        return len(self.memoria)
+
+    @staticmethod
+    def foto(reduzida):
+        """Assinatura da sala: brilho em 18 x 32 blocos, sem a média, normalizado."""
+        b = ver(reduzida)[:576]
+        b = b - b.mean()
+        return (b / (np.linalg.norm(b) + 1e-6)).astype(np.float32)
+
+    def passo(self, reduzida):
+        """Uma tela (em OLHO). Devolve ["sala_nova"] na entrada de uma sala nova."""
+        corpo = cinza(reduzida)[20:].mean()  # sem o HUD, no alto da tela
+        if corpo < self.ESCURO:
+            self._escuro += 1
+            self._foto_em = None
+            return []
+        if self.TRANSICAO[0] <= self._escuro <= self.TRANSICAO[1]:
+            self._foto_em = self.ESPERA  # passou de sala: foto daqui a pouco
+        self._escuro = 0
+        if self._foto_em is None:
+            return []
+        self._foto_em -= 1
+        if self._foto_em > 0:
+            return []
+        self._foto_em = None
+        assinatura = self.foto(reduzida)
+        if len(self.memoria) and float((self.memoria @ assinatura).max()) >= self.LIMITE:
+            return []  # sala conhecida
+        self.memoria = np.vstack([self.memoria, assinatura])[-self.MAXIMO_SALAS :]
+        self.alterada = True
+        return ["sala_nova"]
+
+    def salvar(self):
+        if self.alterada:
+            temporario = self.arquivo.with_name(self.arquivo.stem + ".tmp.npz")
+            np.savez_compressed(temporario, salas=self.memoria)
+            temporario.replace(self.arquivo)
+            self.alterada = False

@@ -95,6 +95,7 @@ class TesteRegistro(unittest.TestCase):
         enviadas = [json.loads(c) for m, p, _, c in ServidorFalso.pedidos if p == "/rest/v1/partidas_mosca"]
         self.assertEqual(len(enviadas), 2)  # tentou com mortes, repetiu sem
         self.assertNotIn("mortes", enviadas[1][0])
+        self.assertEqual(enviadas[1][0]["danos"], 2)  # o resto da partida foi junto
 
     def test_sem_env_nao_quebra(self):
         registro.Supabase.do_env = classmethod(lambda c: None)

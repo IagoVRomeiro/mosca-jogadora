@@ -14,7 +14,7 @@ from comparar import melhoria_percentual
 from registro import registrar_partida, marcar_torneio
 from .aprendizado import Gravador, Imitacao, Torneio
 from .config import ACOES, ARQUIVO_DESAFIANTE, PASTA, PASTA_GRAVACOES_MOSCA, QUADRO_MS, ROTULO_TECLA
-from .estimulos import DetectorParada, LeitorHUD
+from .estimulos import DetectorParada, ExploradorSalas, LeitorHUD
 from .interface import Painel
 
 
@@ -43,6 +43,10 @@ class Orquestrador(QtCore.QObject):
         self.gravador = None
         self.hud = LeitorHUD() if hasattr(jogo, "controlando") else None
         self.parada = DetectorParada()
+        self.explorador = ExploradorSalas() if self.hud is not None else None
+        self._desde_mapa = 0.0  # segundos de jogo da mosca desde a última olhada no mapa
+        self._foto_mapa_em = None
+        self._ultimo_dano = 0.0
         self._sorteio = np.random.default_rng()
         self._recompensas = collections.deque()  # (instante, valor) dos últimos 10 s
         self._ultimo_evento = (None, 0.0)
@@ -209,10 +213,40 @@ class Orquestrador(QtCore.QObject):
         p["teclas"] += teclas
         if self.gravador_mosca is not None:
             self.gravador_mosca.adicionar(
-                self.cerebro.reduzida, teclas, self._recompensa_quadro, self.hud.vida
+                self.cerebro.reduzida, teclas, self._recompensa_quadro, self.hud.vida,
+                "sala_nova" in self._eventos_quadro,
             )
+        self._habito_do_mapa()
         if self.torneio is not None:
             self._torneio_quadro()
+
+    # --- olhar o mapa: de tempos em tempos, num momento calmo, segura Tab ---
+
+    OLHAR_MAPA_S = 45  # de jogo da mosca entre uma olhada e outra
+    CALMA_S = 5  # sem tomar dano há tanto tempo
+    PASTA_MAPAS = PASTA / "mapas"
+    GUARDAR_MAPAS = 100
+
+    def _habito_do_mapa(self):
+        self._desde_mapa += QUADRO_MS / 1000
+        agora = time.monotonic()
+        if self._desde_mapa >= self.OLHAR_MAPA_S and agora - self._ultimo_dano > self.CALMA_S:
+            self._desde_mapa = 0.0
+            self.cerebro.pulsar_zona("Mapa")  # a zona do mapa acende e a pata aperta Tab
+            self._foto_mapa_em = agora + 1.0  # o mapa leva um instante para abrir
+            self._avisar("🗺 Olhando o mapa", 3)
+
+    def _fotografar_mapa(self, imagem):
+        """Guarda o mapa aberto (para calibrar a leitura da posição pela Bússola)."""
+        from PIL import Image
+
+        self._foto_mapa_em = None
+        self.PASTA_MAPAS.mkdir(exist_ok=True)
+        Image.fromarray(np.ascontiguousarray(imagem)).save(
+            self.PASTA_MAPAS / time.strftime("mapa_%Y-%m-%d_%H%M%S.png")
+        )
+        for velho in sorted(self.PASTA_MAPAS.glob("mapa_*.png"))[: -self.GUARDAR_MAPAS]:
+            velho.unlink()
 
     def _terminar_partida(self):
         p, self.partida = self.partida, None
@@ -238,6 +272,7 @@ class Orquestrador(QtCore.QObject):
             "curas": p["eventos"]["cura"],
             "paradas": p["eventos"]["parada"],
             "mortes": p["eventos"]["morte"],
+            "salas_novas": p["eventos"]["sala_nova"],
             "uso_teclas": {a: round(float(u), 4) for a, u in zip(ACOES, uso)},
         }))
 
@@ -320,7 +355,10 @@ class Orquestrador(QtCore.QObject):
         if self.jogo.aviso or not self.jogo.em_foco():
             return texto + " · pausado: clique no jogo", {a: 0.0 for a in ACOES}
         teclas = self.jogo.teclas_do_usuario()
-        g.adicionar(self.cerebro.reduzida, teclas, self._recompensa_quadro, self.hud.vida)
+        g.adicionar(
+            self.cerebro.reduzida, teclas, self._recompensa_quadro, self.hud.vida,
+            "sala_nova" in self._eventos_quadro,
+        )
         return texto, {a: float(t) for a, t in zip(ACOES, teclas)}
 
     def soltar_teclas(self):
@@ -334,6 +372,8 @@ class Orquestrador(QtCore.QObject):
             self.gravador.parar()  # salva o que falta
             self.gravador = None
         self._parar_gravacao_mosca()
+        if self.explorador is not None:
+            self.explorador.salvar()
         if self.treino is not None:
             # O modelo só é trocado no fim do treino, então parar no meio é seguro
             self.treino.finished.disconnect()
@@ -371,7 +411,7 @@ class Orquestrador(QtCore.QObject):
 
     NOMES_EVENTOS = {
         "dano": "tomou dano", "cura": "curou", "acerto": "acertou inimigo", "geo": "pegou geo",
-        "parada": "ficou parada", "morte": "morreu",
+        "parada": "ficou parada", "morte": "morreu", "sala_nova": "sala nova!",
     }
 
     # Reflexo de sair do lugar: moscas paradas demais fazem movimentos
@@ -391,6 +431,12 @@ class Orquestrador(QtCore.QObject):
         if self.hud is None or self.jogo.aviso:
             return
         valor, eventos = self.hud.passo(imagem)
+        if self.cerebro.reduzida is not None:
+            eventos += self.explorador.passo(self.cerebro.reduzida)
+            if "sala_nova" in eventos:
+                self.explorador.salvar()
+        if "dano" in eventos or "morte" in eventos:
+            self._ultimo_dano = time.monotonic()
         eventos += self.parada.passo(
             self.cerebro.movimento_medio, self.hud.visivel, self.hud.gastando_alma
         )
@@ -413,7 +459,10 @@ class Orquestrador(QtCore.QObject):
             sum(v for _, v in self._recompensas),
             self.hud.vida if self.hud.visivel else None,
             texto if agora - quando < 3 else None,
+            self.explorador.salas,
         )
+        if self._foto_mapa_em is not None and agora >= self._foto_mapa_em:
+            self._fotografar_mapa(imagem)
 
     def tick(self):
         imagem = self.jogo.quadro()
