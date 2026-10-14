@@ -71,7 +71,7 @@ class JuizDoJogo:
         while True:
             try:
                 dados = self.sock.recv(4096)
-            except (BlockingIOError, InterruptedError):
+            except OSError:  # nada mais na fila (ou fechado: painel saindo)
                 break
             try:
                 novo = json.loads(dados)
