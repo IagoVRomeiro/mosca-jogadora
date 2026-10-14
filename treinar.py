@@ -77,7 +77,10 @@ RECOMPENSA_LOOP = LeitorHUD.RECOMPENSA["loop"]
 RECOMPENSA_DANO = LeitorHUD.RECOMPENSA["dano"]
 # Gravações sem as marcas de dano/morte foram feitas com estes valores
 DANO_ANTIGO, MORTE_ANTIGA = -1.0, -3.0
-MAXIMO_QUADROS_MOSCA = 60_000  # ~33 min
+# Partidas recentes da mosca em cada treino: ~1,5 h (era ~33 min). Com o juiz de
+# dentro do jogo as recompensas delas são exatas e valem mais; cada quadro ocupa
+# ~4 KB no treino (1,5 h a mais ~ +0,4 GB, cabe com o jogo e o painel abertos)
+MAXIMO_QUADROS_MOSCA = 162_000
 # Telas das partidas da mosca mais antigas que isto são apagadas (as teclas e
 # recompensas delas ficam no Supabase). As suas gravações nunca são apagadas.
 GUARDAR_QUADROS_MOSCA = 2 * MAXIMO_QUADROS_MOSCA
