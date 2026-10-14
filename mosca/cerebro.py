@@ -12,7 +12,7 @@ import numpy as np
 
 from .conectoma import carregar_conectoma
 from .config import ACOES, DURACAO_PULSO_S, QUADRO_MS
-from .olho import ATRASO_OLHO, GRADE_OLHO, _N_PERIFERIA, entrada, reduzir, retrato
+from .olho import ATRASO_OLHO, GRADE_OLHO, _N_PERIFERIA, entrada, lembrar, reduzir, retrato
 
 
 class FormaReal:
@@ -150,6 +150,7 @@ class CerebroDemo:
         self.disparos = np.array([], dtype=int)
         self.reduzida = None  # última tela vista, em OLHO (o gravador reaproveita)
         self.retratos = collections.deque(maxlen=ATRASO_OLHO + 1)  # memória curta do olho
+        self.memoria = None  # memória dos últimos segundos (olho versão 3)
         self.movimento_medio = 0.0
         self.t = 0.0
 
@@ -207,6 +208,7 @@ class CerebroDemo:
         atual = retrato(reduzida, self.reduzida)
         self.reduzida = reduzida
         self.retratos.append(atual)
+        self.memoria = lembrar(self.memoria, atual)
         movimento = atual[_N_PERIFERIA // 2 : _N_PERIFERIA]  # movimento da periferia
         self.movimento_medio = float(movimento.mean())  # o detector de parada usa
 
@@ -215,7 +217,7 @@ class CerebroDemo:
         alvo[optico] += 150 * movimento[self.celula[optico]]
         if self.modelo is not None:
             # O modelo treinado decide quanto cada zona de comando recebe
-            x = entrada(self.modelo.versao_olho, atual, self.retratos[0])
+            x = entrada(self.modelo.versao_olho, atual, self.retratos[0], self.memoria)
             atividades = self.modelo.atividades(x)
             for nome, p in zip(self.modelo.acoes, atividades["prob"]):
                 if nome in self.zona:

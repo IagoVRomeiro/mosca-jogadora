@@ -1,4 +1,4 @@
-"""O olho da mosca: o que ela extrai de cada tela do jogo (versões 1 e 2)."""
+"""O olho da mosca: o que ela extrai de cada tela do jogo (versões 1, 2 e 3)."""
 
 import numpy as np
 
@@ -53,7 +53,10 @@ GRADE_FOVEA = (18, 24)  # blocos de 3 x 4 pixels
 ATRASO_OLHO = 5  # quadros (~170 ms)
 
 
-VERSAO_OLHO = 2  # a que o treinar.py usa agora; modelos antigos guardam a sua
+VERSAO_OLHO = 3  # a que o treinar.py usa agora; modelos antigos guardam a sua
+# Os retratos (o que vai para o cache do treino) não mudaram da versão 2 para a
+# 3: a memória é calculada a partir deles
+VERSAO_RETRATO = 2
 
 
 _N_PERIFERIA = 2 * GRADE_OLHO[0] * GRADE_OLHO[1]
@@ -82,17 +85,87 @@ def retrato(reduzida, anterior=None):
     return np.concatenate([periferia, brilho.ravel(), movimento.ravel()]).astype(np.float32)
 
 
-def entrada(versao, atual, passado):
+# --- memória (versão 3): o que ela viu nos últimos segundos ---
+#
+# Integradores lentos, como neurônios que somam a entrada e esquecem devagar:
+# para cada constante de tempo em MEMORIA_S, uma média que esquece com
+# exp(-dt/tau) do brilho da periferia (em blocos maiores, GRADE_MEMORIA) e do
+# movimento médio. Comparando a cena de agora com a lembrada, a rede pode
+# perceber que não está saindo do lugar (parada, presa, andando em círculos).
+# De propósito sem as teclas que ela apertou: lembrar das próprias ações faz a
+# imitação aprender só a repetir o que acabou de fazer.
+
+MEMORIA_S = (1.0, 4.0)
+GRADE_MEMORIA = (9, 16)
+QUADRO_S = 0.033  # mesmo passo das gravações e do painel (QUADRO_MS)
+_N_MEM_BRILHO = GRADE_MEMORIA[0] * GRADE_MEMORIA[1]
+N_MEMORIA = len(MEMORIA_S) * (_N_MEM_BRILHO + 1)  # estado guardado
+
+
+def _lembrado(atual):
+    """O que entra na memória de um retrato: brilho da periferia em blocos
+    grandes + movimento médio (aceita um quadro ou um lote)."""
+    gl, gc = GRADE_OLHO
+    ml, mc = GRADE_MEMORIA
+    brilho = atual[..., : gl * gc].reshape(*atual.shape[:-1], ml, gl // ml, mc, gc // mc).mean(axis=(-3, -1))
+    movimento = atual[..., gl * gc : 2 * gl * gc].mean(axis=-1, keepdims=True)
+    return np.concatenate([brilho.reshape(*atual.shape[:-1], -1), movimento], axis=-1)
+
+
+def _esquece(tau):
+    return float(np.exp(-QUADRO_S / tau))
+
+
+def lembrar(memoria, atual):
+    """Um quadro a mais na memória (no painel). `memoria` None: a primeira."""
+    x = _lembrado(atual).astype(np.float32)
+    if memoria is None:
+        return np.tile(x, len(MEMORIA_S))
+    n = len(x)
+    novo = memoria.copy()
+    for k, tau in enumerate(MEMORIA_S):
+        f = _esquece(tau)
+        novo[k * n : (k + 1) * n] = f * memoria[k * n : (k + 1) * n] + (1 - f) * x
+    return novo
+
+
+def memorias_da_sessao(retratos):
+    """A memória de cada quadro de uma sessão inteira (no treino), igual à que o
+    painel teria quadro a quadro com `lembrar`."""
+    from scipy.signal import lfilter
+
+    x = _lembrado(retratos.astype(np.float32))
+    partes = []
+    for tau in MEMORIA_S:
+        f = _esquece(tau)
+        # y[t] = f * y[t-1] + (1 - f) * x[t], começando com y[0] = x[0]
+        y, _ = lfilter([1 - f], [1, -f], x, axis=0, zi=(f * x[:1]))
+        partes.append(y)
+    return np.concatenate(partes, axis=-1).astype(np.float32)
+
+
+def entrada(versao, atual, passado, memoria=None):
     """Entrada da rede a partir de retratos (aceita um quadro ou um lote).
 
     versão 1: só a periferia do quadro atual (olho dos treinos #1 a #4).
     versão 2: retrato atual + brilho de ATRASO_OLHO quadros atrás.
+    versão 3: versão 2 + memória dos últimos segundos + o quanto a cena de agora
+              difere da lembrada (uma medida por constante de tempo).
     """
     if versao == 1:
         return atual[..., :_N_PERIFERIA]
-    return np.concatenate([atual, passado[..., BRILHO_RETRATO]], axis=-1)
+    v2 = np.concatenate([atual, passado[..., BRILHO_RETRATO]], axis=-1)
+    if versao == 2:
+        return v2
+    agora = _lembrado(atual)
+    n = agora.shape[-1]
+    diferencas = [
+        np.abs(agora[..., :-1] - memoria[..., k * n : (k + 1) * n - 1]).mean(axis=-1, keepdims=True)
+        for k in range(len(MEMORIA_S))
+    ]
+    return np.concatenate([v2, memoria, *diferencas], axis=-1)
 
 
 def tamanho_entrada(versao):
     vazio = np.zeros(_N_PERIFERIA + 2 * _N_FOVEA, dtype=np.float32)
-    return entrada(versao, vazio, vazio).shape[-1]
+    return entrada(versao, vazio, vazio, np.zeros(N_MEMORIA, np.float32)).shape[-1]

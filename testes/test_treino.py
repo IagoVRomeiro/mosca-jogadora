@@ -9,7 +9,9 @@ from mosca.aprendizado import Imitacao
 from mosca.conectoma import ARQUIVO_CONECTOMA
 from mosca.config import ACOES
 from mosca.jogo import JogoDemo
-from mosca.olho import ATRASO_OLHO, entrada, reduzir, retrato, tamanho_entrada
+from mosca.olho import (
+    ATRASO_OLHO, VERSAO_OLHO, entrada, lembrar, memorias_da_sessao, reduzir, retrato, tamanho_entrada,
+)
 
 
 def sessao(retratos, teclas, recompensa, nome="s", da_mosca=False):
@@ -132,7 +134,28 @@ class TesteOlho(unittest.TestCase):
         r = retrato(b, a)
         self.assertEqual(entrada(1, r, r).shape[0], tamanho_entrada(1))
         self.assertEqual(entrada(2, r, r).shape[0], tamanho_entrada(2))
+        self.assertEqual(entrada(3, r, r, lembrar(None, r)).shape[0], tamanho_entrada(3))
         self.assertEqual(entrada(2, np.stack([r, r]), np.stack([r, r])).shape, (2, tamanho_entrada(2)))
+
+    def test_memoria_igual_no_painel_e_no_treino(self):
+        """O treino calcula a memória da sessão inteira de uma vez; o painel,
+        quadro a quadro. Têm que dar o mesmo, senão a mosca joga com outra entrada."""
+        rng = np.random.default_rng(0)
+        retratos = rng.random((200, 2016)).astype(np.float32)
+        lote = memorias_da_sessao(retratos)
+        memoria = None
+        for i, r in enumerate(retratos):
+            memoria = lembrar(memoria, r)
+            np.testing.assert_allclose(memoria, lote[i], rtol=1e-4, atol=1e-5)
+
+    def test_memoria_esquece_devagar(self):
+        claro, escuro = np.ones(2016, np.float32), np.zeros(2016, np.float32)
+        lote = memorias_da_sessao(np.stack([claro] * 30 + [escuro] * 30))  # 1 s claro, 1 s escuro
+        rapida, lenta = lote[-1, 0], lote[-1, 145]  # brilho de um bloco nas duas memórias
+        self.assertAlmostEqual(float(rapida), np.exp(-1), delta=0.05)  # tau 1 s: lembra ~37%
+        self.assertGreater(lenta, rapida)  # tau 4 s: lembra mais
+        x = entrada(VERSAO_OLHO, escuro, escuro, lote[-1])
+        self.assertGreater(x[-1], 0.5)  # "a cena mudou" em relação ao que lembra
 
     def test_passado_nao_atravessa_sessoes(self):
         y = np.zeros((10, len(ACOES)), np.float32)
@@ -180,11 +203,12 @@ class TesteAprende(unittest.TestCase):
         idx_valid = dados.valid
         modelo = Imitacao({
             **rede.para_salvar(), **(extras or {}), "media": dados.media, "desvio": dados.desvio,
-            "acoes": np.array(ACOES), "n_quadros": 900, "versao_olho": 2, "arquitetura": arquitetura,
+            "acoes": np.array(ACOES), "n_quadros": 900, "versao_olho": VERSAO_OLHO, "arquitetura": arquitetura,
         })
         idx = dados.valid[:5]
         np.testing.assert_allclose(
-            modelo.prever(entrada(2, dados.retratos[idx], dados.retratos[dados.passado[idx]])),
+            modelo.prever(entrada(VERSAO_OLHO, dados.retratos[idx], dados.retratos[dados.passado[idx]],
+                                  dados.memoria[idx].astype(np.float32))),
             rede.prever(dados.entrada(idx)), rtol=1e-4, atol=1e-5,
         )
         return modelo

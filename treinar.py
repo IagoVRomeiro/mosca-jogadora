@@ -42,7 +42,10 @@ import numpy as np
 from mosca.config import ACOES, ARQUIVO_DESAFIANTE, ARQUIVO_MODELO, PASTA, PASTA_GRAVACOES, PASTA_GRAVACOES_MOSCA, QUADRO_MS, TOQUE_S
 from mosca.conectoma import RedeConectoma, carregar_conectoma
 from mosca.estimulos import DetectorLoop, DetectorPresa, ExploradorSalas, LeitorHUD
-from mosca.olho import ATRASO_OLHO, FOVEA, GRADE_FOVEA, GRADE_OLHO, OLHO, VERSAO_OLHO, entrada, retrato
+from mosca.olho import (
+    ATRASO_OLHO, FOVEA, GRADE_FOVEA, GRADE_OLHO, MEMORIA_S, OLHO, VERSAO_OLHO, VERSAO_RETRATO, entrada,
+    memorias_da_sessao, retrato,
+)
 from registro import registrar_treino
 
 INTERNEURONIOS = 64
@@ -166,7 +169,7 @@ def limpar_partidas_antigas_da_mosca():
 
 def _chave_da_sessao(pasta):
     """Muda se alguma parte da gravação, o olho ou as ações mudarem."""
-    h = hashlib.sha256(f"{VERSAO_CACHE}|{VERSAO_OLHO}|{','.join(ACOES)}".encode())
+    h = hashlib.sha256(f"{VERSAO_CACHE}|{VERSAO_RETRATO}|{','.join(ACOES)}".encode())
     for arquivo in sorted(pasta.glob("parte_*.npz")):
         info = arquivo.stat()
         h.update(f"{arquivo.name}|{info.st_size}|{info.st_mtime_ns}".encode())
@@ -405,11 +408,13 @@ def resumir_sessao(nome, pasta):
 
 class Dados:
     """Todos os quadros juntos. A entrada da rede (retrato atual + brilho de
-    ATRASO_OLHO quadros atrás) é montada por lote, não de uma vez: inteira ela
-    ocuparia alguns GB de memória."""
+    ATRASO_OLHO quadros atrás + memória dos últimos segundos) é montada por
+    lote, não de uma vez: inteira ela ocuparia alguns GB de memória."""
 
     def __init__(self, sessoes):
         self.retratos = np.concatenate([s["retratos"] for s in sessoes])
+        # a memória recomeça em cada sessão, como no painel ao abrir
+        self.memoria = np.concatenate([memorias_da_sessao(s["retratos"]) for s in sessoes]).astype(np.float16)
         self.teclas = np.concatenate([s["teclas"] for s in sessoes])
         self.retorno = np.concatenate([retornos(s["recompensa"]) for s in sessoes])
         self.fator = np.concatenate(
@@ -435,7 +440,7 @@ class Dados:
 
     def entrada(self, idx):
         x = entrada(VERSAO_OLHO, self.retratos[idx].astype(np.float32),
-                    self.retratos[self.passado[idx]].astype(np.float32))
+                    self.retratos[self.passado[idx]].astype(np.float32), self.memoria[idx].astype(np.float32))
         return x if self.media is None else (x - self.media) / self.desvio
 
     def normalizar(self, lote=4096):
@@ -688,7 +693,7 @@ def main():
             "taxa": TAXA, "lote": LOTE, "validacao": VALIDACAO, "peso_maximo": PESO_MAXIMO,
             "olho": list(OLHO), "grade_olho": list(GRADE_OLHO), "versao_olho": VERSAO_OLHO,
             "fovea": [FOVEA[0].start, FOVEA[0].stop, FOVEA[1].start, FOVEA[1].stop],
-            "grade_fovea": list(GRADE_FOVEA), "atraso_olho": ATRASO_OLHO,
+            "grade_fovea": list(GRADE_FOVEA), "atraso_olho": ATRASO_OLHO, "memoria_s": list(MEMORIA_S),
             "aprendizado": "imitação ponderada pela vantagem (AWR)",
             "desconto": DESCONTO, "forca_vantagem": FORCA_VANTAGEM,
             "peso_quadro": list(PESO_QUADRO), "subamostra": SUBAMOSTRA, "ruido": RUIDO,
