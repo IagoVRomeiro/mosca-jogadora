@@ -51,6 +51,7 @@ class LeitorHUD:
         "sala_nova": 0.3, "presa": -0.6, "mapa_novo": 1.0, "loop": -0.6,
         # só com o juiz de dentro do jogo (mosca/juiz.py): exatos, não dá para burlar
         "inimigo_morto": 1.0, "cena_nova": 1.0,
+        "lugar_novo": 0.2,  # um pedaço novo de uma sala (8x8 unidades do jogo)
     }
 
     def __init__(self):

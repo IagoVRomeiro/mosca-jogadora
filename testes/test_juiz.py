@@ -7,7 +7,7 @@ import time
 import unittest
 from pathlib import Path
 
-from mosca.juiz import JuizDoJogo, eventos_entre
+from mosca.juiz import DetectoresPelaPosicao, JuizDoJogo, eventos_entre
 
 
 def estado(**mudancas):
@@ -93,6 +93,58 @@ class TesteRede(unittest.TestCase):
     def test_no_menu_nao_esta_ativo(self):
         self.mandar(cena="Menu_Title")
         self.assertFalse(self.juiz.ativo)
+
+
+class TestePosicao(unittest.TestCase):
+    def setUp(self):
+        self.d = DetectoresPelaPosicao(Path(tempfile.mkdtemp()) / "lugares.json")
+
+    def rodar(self, segundos, x=lambda i: 10.0, y=lambda i: 5.0, vx=0.0, direita=False, bom=lambda i: False,
+              **outros):
+        eventos = []
+        for i in range(int(segundos * 30)):
+            e = estado(x=x(i), y=y(i), vx=vx, **outros)
+            eventos += self.d.passo(e, False, direita, bom(i))
+        return eventos
+
+    def test_parada_depois_de_3_s(self):
+        eventos = self.rodar(4)
+        self.assertEqual(eventos.count("parada"), 1)
+
+    def test_curando_nao_e_parada(self):
+        self.assertNotIn("parada", self.rodar(5, curando=True))
+
+    def test_presa_contra_a_parede(self):
+        eventos = self.rodar(7, direita=True, vx=0.0, x=lambda i: 10.0 + 0.01 * (i % 2))
+        self.assertIn("presa", eventos)
+        self.assertEqual(self.d.lado, "Direita")
+        self.assertTrue(self.d.encostada)  # o aviso veio antes
+
+    def test_escalando_nao_e_presa(self):
+        eventos = self.rodar(7, direita=True, vx=0.0, y=lambda i: 5.0 + i * 0.05)  # sobe 10 unidades
+        self.assertNotIn("presa", eventos)
+
+    def test_andando_nao_e_presa_nem_loop(self):
+        eventos = self.rodar(16, direita=True, vx=8.0, x=lambda i: 10.0 + i * 0.27)
+        self.assertNotIn("presa", eventos)
+        self.assertNotIn("loop", eventos)
+        self.assertGreater(eventos.count("lugar_novo"), 5)  # ~130 unidades: vários pedaços novos
+
+    def test_indo_e_voltando_e_loop(self):
+        import math
+        eventos = self.rodar(16, vx=8.0, x=lambda i: 10.0 + 6 * math.sin(i / 20))
+        self.assertIn("loop", eventos)
+
+    def test_lutando_indo_e_voltando_nao_e_loop(self):
+        import math
+        eventos = self.rodar(16, vx=8.0, x=lambda i: 10.0 + 6 * math.sin(i / 20), bom=lambda i: i % 90 == 0)
+        self.assertNotIn("loop", eventos)
+
+    def test_lugar_novo_uma_vez_e_fica_salvo(self):
+        self.assertEqual(self.rodar(1).count("lugar_novo"), 1)
+        self.assertEqual(self.rodar(1).count("lugar_novo"), 0)
+        de_novo = DetectoresPelaPosicao(self.d.arquivo_lugares)
+        self.assertEqual(len(de_novo.lugares), 1)
 
 
 if __name__ == "__main__":

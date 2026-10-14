@@ -66,5 +66,16 @@ class TesteGravacao(unittest.TestCase):
         self.assertAlmostEqual(float(np.abs(d["hud"]).sum()), 4.0, places=5)  # nada mais mudou
 
 
+    def test_presa_do_plugin_fica_e_a_da_tela_e_recalculada(self):
+        pasta = Path(tempfile.mkdtemp())
+        presa = LeitorHUD.RECOMPENSA["presa"]
+        sessao = gravar(pasta, [(0.0, [], estado())] * 5 + [(presa, ["presa"], estado())]  # pela posição
+                        + [(0.0, [], None)] * 5 + [(presa, ["presa"], None)])  # pela tela
+        with mock.patch.object(treinar, "PASTA_CACHE", Path(tempfile.mkdtemp())):
+            d = treinar.processar_sessao(sessao)
+        self.assertAlmostEqual(float(d["hud"][5]), presa, places=5)  # ficou
+        self.assertAlmostEqual(float(d["hud"][11]), 0.0, places=5)  # sai: o detector da tela decide
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -224,13 +224,15 @@ def processar_sessao(pasta):
                     hud[-1] += (RECOMPENSA_LOOP - gravado) * parte["loops"]
             marcadas.append(np.full(n, "salas_novas" in parte.files))
             anterior = None
-            for tela, apertadas, r_hud in zip(parte["telas"], parte["teclas"], hud[-1]):
+            # presa pela posição real (plugin) já está na recompensa; só sem ele pela tela
+            presa_pela_tela = ~quadros_com_plugin(parte) if "eventos" in parte.files else np.ones(n, bool)
+            for tela, apertadas, r_hud, pela_tela in zip(parte["telas"], parte["teclas"], hud[-1], presa_pela_tela):
                 olhos.append(retrato(tela, anterior).astype(np.float16))
                 t = [bool(apertadas[c]) if c is not None else False for c in colunas]
                 teclas.append(t)
                 ficou_presa = bool(presa.passo(tela, t[i_esq], t[i_dir], True))
                 em_loop = bool(loop.passo(tela, r_hud > 0, True))
-                presas.append((RECOMPENSA_PRESA if ficou_presa else 0.0)
+                presas.append((RECOMPENSA_PRESA if ficou_presa and pela_tela else 0.0)
                               + (RECOMPENSA_LOOP if em_loop and not loops_marcados else 0.0))
                 assinatura = salas.entrada_de_sala(tela)
                 if assinatura is not None:
@@ -254,14 +256,25 @@ def processar_sessao(pasta):
     return dados
 
 
+def quadros_com_plugin(parte):
+    """Quadros em que o plugin do jogo estava ativo (presa veio da posição real)."""
+    if "jogo_x" not in parte.files:
+        return np.zeros(len(parte["teclas"]), bool)
+    return ~np.isnan(parte["jogo_x"])
+
+
 def reponderar(r, parte):
     """Gravação com a contagem de eventos por quadro e os pesos da época: tira
-    de `r` o valor antigo de cada evento e põe o atual. A presa sai e não volta
-    aqui: é recalculada com o detector atual, como nas gravações antigas."""
+    de `r` o valor antigo de cada evento e põe o atual. A presa dos quadros sem
+    plugin sai e não volta aqui: é recalculada pelo detector atual da tela."""
     nomes = [str(n) for n in parte["eventos_nomes"]]
     gravados = parte["valores"].astype(np.float32)
-    atuais = np.array([0.0 if n == "presa" else LeitorHUD.RECOMPENSA.get(n, 0.0) for n in nomes], np.float32)
-    r += parte["eventos"].astype(np.float32) @ (atuais - gravados)
+    atuais = np.array([LeitorHUD.RECOMPENSA.get(n, 0.0) for n in nomes], np.float32)
+    contagens = parte["eventos"].astype(np.float32)
+    r += contagens @ (atuais - gravados)
+    if "presa" in nomes:
+        i = nomes.index("presa")
+        r -= contagens[:, i] * atuais[i] * ~quadros_com_plugin(parte)
 
 
 PISCADA_QUADROS = 30  # vida que muda e volta em menos de 1 s não foi dano nem cura

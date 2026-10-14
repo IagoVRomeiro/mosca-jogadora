@@ -14,7 +14,7 @@ from comparar import melhoria_percentual
 from registro import registrar_partida, marcar_torneio
 from .aprendizado import Gravador, Imitacao, Torneio
 from .correcao import Correcao
-from .juiz import JuizDoJogo
+from .juiz import DetectoresPelaPosicao, JuizDoJogo
 from .config import ACOES, ARQUIVO_DESAFIANTE, PASTA, PASTA_GRAVACOES_MOSCA, QUADRO_MS, ROTULO_TECLA
 from .estimulos import DetectorLoop, DetectorParada, DetectorPresa, ExploradorSalas, LeitorHUD, LeitorMapa
 from .interface import Painel
@@ -55,6 +55,7 @@ class Orquestrador(QtCore.QObject):
         self.leitor_mapa = LeitorMapa() if self.hud is not None else None
         self.juiz = None  # eventos de dentro do jogo (mod/MoscaEventos); sem ele, pela tela
         if self.hud is not None:
+            self.pela_posicao = DetectoresPelaPosicao()
             try:
                 self.juiz = JuizDoJogo()
             except OSError as e:  # porta ocupada (outro painel aberto?)
@@ -332,6 +333,7 @@ class Orquestrador(QtCore.QObject):
             "ajudas": p["eventos"]["ajuda"],
             "inimigos_mortos": p["eventos"]["inimigo_morto"],
             "cenas_novas": p["eventos"]["cena_nova"],
+            "lugares_novos": p["eventos"]["lugar_novo"],
             "fonte_eventos": "jogo" if p["do_jogo"] * 2 > p["quadros"] else "tela",
             "uso_teclas": {a: round(float(u), 4) for a, u in zip(ACOES, uso)},
         }))
@@ -545,7 +547,7 @@ class Orquestrador(QtCore.QObject):
         "dano": "tomou dano", "cura": "curou", "acerto": "acertou inimigo", "geo": "pegou geo",
         "parada": "ficou parada", "morte": "morreu", "sala_nova": "sala nova!",
         "presa": "ficou presa", "mapa_novo": "lugar novo no mapa!", "loop": "andando em círculos",
-        "inimigo_morto": "matou inimigo!", "cena_nova": "sala nova!",
+        "inimigo_morto": "matou inimigo!", "cena_nova": "sala nova!", "lugar_novo": "lugar novo",
     }
 
     # Reflexo de sair do lugar: moscas paradas demais fazem movimentos
@@ -570,7 +572,7 @@ class Orquestrador(QtCore.QObject):
 
     def _escapar(self):
         """Presa forçando para um lado: meia-volta (às vezes pulando junto)."""
-        outro = "Esquerda" if self.presa.lado == "Direita" else "Direita"
+        outro = "Esquerda" if self._lado_presa == "Direita" else "Direita"
         self.cerebro.pulsar_zona(outro)
         if self._sorteio.random() < 0.5:
             self.cerebro.pulsar_zona("Pular")
@@ -637,24 +639,29 @@ class Orquestrador(QtCore.QObject):
                 self.explorador.salvar()
         if "dano" in eventos or "morte" in eventos:
             self._ultimo_dano = time.monotonic()
-        eventos += self.parada.passo(
-            self.cerebro.movimento_medio, self.hud.visivel, self.hud.gastando_alma
-        )
-        if self.cerebro.reduzida is not None:
-            if self._mosca_joga:
-                apertadas = self.jogo.apertadas
-            elif self.gravador is not None or self.correcao.ativa:  # você jogando: as suas teclas
-                apertadas = {a for a, t in zip(ACOES, self.jogo.teclas_do_usuario()) if t}
-            else:
-                apertadas = set()
-            eventos += self.presa.passo(
-                self.cerebro.reduzida, "Esquerda" in apertadas, "Direita" in apertadas, self.hud.visivel
+        if self._mosca_joga:
+            apertadas = self.jogo.apertadas
+        elif self.gravador is not None or self.correcao.ativa:  # você jogando: as suas teclas
+            apertadas = {a for a, t in zip(ACOES, self.jogo.teclas_do_usuario()) if t}
+        else:
+            apertadas = set()
+        esquerda, direita = "Esquerda" in apertadas, "Direita" in apertadas
+        bom = any(LeitorHUD.RECOMPENSA[e] > 0 for e in eventos)
+        if self._juiz_ativo:
+            # posição real do Cavaleiro: parada, presa, loop e lugar novo exatos
+            detector = self.pela_posicao
+            eventos += detector.passo(self.juiz.estado, esquerda, direita, bom)
+        else:  # pela tela (movimento da câmera)
+            detector = self.presa
+            eventos += self.parada.passo(
+                self.cerebro.movimento_medio, self.hud.visivel, self.hud.gastando_alma
             )
-        if self.cerebro.reduzida is not None:
-            bom = any(LeitorHUD.RECOMPENSA[e] > 0 for e in eventos)
-            eventos += self.loop.passo(self.cerebro.reduzida, bom, self.hud.visivel)
+            if self.cerebro.reduzida is not None:
+                eventos += self.presa.passo(self.cerebro.reduzida, esquerda, direita, self.hud.visivel)
+                eventos += self.loop.passo(self.cerebro.reduzida, bom, self.hud.visivel)
         reflexo = None
-        encostada, self.presa.encostada = self.presa.encostada, False
+        encostada, detector.encostada = detector.encostada, False
+        self._lado_presa = detector.lado
         if "loop" in eventos and self._mosca_joga:
             reflexo = self._mudar_de_ideia()
         elif ("presa" in eventos or encostada) and self._mosca_joga:
@@ -666,7 +673,7 @@ class Orquestrador(QtCore.QObject):
             eventos += self.leitor_mapa.ler(imagem)
         valor = sum(LeitorHUD.RECOMPENSA[e] for e in eventos)
         self._eventos_quadro = eventos
-        for evento in set(eventos) - {"parada"}:  # parada é frequente e já foi conferida
+        for evento in set(eventos) - {"parada", "lugar_novo"}:  # frequentes: sem foto
             self._diagnostico(evento, imagem)
         agora = time.monotonic()
         if eventos:

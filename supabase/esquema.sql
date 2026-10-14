@@ -59,6 +59,7 @@ create table if not exists public.partidas_mosca (
     inimigos_mortos integer not null default 0,  -- só com o plugin do jogo (mod/MoscaEventos)
     cenas_novas integer not null default 0,      -- salas (cenas do jogo) nunca visitadas, idem
     fonte_eventos text not null default 'tela',  -- 'jogo' (plugin) ou 'tela' (leitura do HUD)
+    lugares_novos integer not null default 0,    -- pedaços novos (8x8) das salas, pelo plugin
     uso_teclas jsonb not null            -- fração dos quadros com cada tecla apertada
 );
 
@@ -72,6 +73,7 @@ alter table public.partidas_mosca add column if not exists ajudas integer not nu
 alter table public.partidas_mosca add column if not exists inimigos_mortos integer not null default 0;
 alter table public.partidas_mosca add column if not exists cenas_novas integer not null default 0;
 alter table public.partidas_mosca add column if not exists fonte_eventos text not null default 'tela';
+alter table public.partidas_mosca add column if not exists lugares_novos integer not null default 0;
 
 -- Buckets privados: modelos de cada treino e dados leves das sessões
 insert into storage.buckets (id, name, public)

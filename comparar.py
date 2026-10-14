@@ -35,6 +35,7 @@ METRICAS = [  # (campo, nome, maior é melhor?)
     ("ajudas", "ajudas/min", False),  # vezes que você precisou assumir (correção ao vivo)
     ("inimigos_mortos", "inimigos mortos/min", True),  # só com o plugin do jogo
     ("cenas_novas", "salas novas (jogo)/min", True),
+    ("lugares_novos", "lugares novos/min", True),
 ]
 
 
