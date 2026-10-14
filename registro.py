@@ -11,6 +11,7 @@ falha vira aviso: o treino nunca quebra por causa do banco.
 
 import io
 import json
+import re
 import threading
 import urllib.error
 import urllib.request
@@ -196,14 +197,19 @@ def registrar_partida(partida):
         if banco is None:
             return
         try:
-            try:
-                banco.inserir("partidas_mosca", [partida])
-            except RuntimeError as e:
-                if "ajudas" not in str(e):
-                    raise
-                # coluna nova ainda não criada no Supabase (supabase/esquema.sql)
-                banco.inserir("partidas_mosca", [{k: v for k, v in partida.items() if k != "ajudas"}])
-                print("⚠ falta a coluna 'ajudas' em partidas_mosca: rode o SQL do supabase/esquema.sql")
+            linha = dict(partida)
+            for _ in range(5):
+                try:
+                    banco.inserir("partidas_mosca", [linha])
+                    break
+                except RuntimeError as e:
+                    # coluna nova ainda não criada no Supabase (supabase/esquema.sql):
+                    # manda sem ela e avisa
+                    falta = re.search(r"Could not find the '(\w+)' column", str(e))
+                    if not falta or falta.group(1) not in linha:
+                        raise
+                    linha.pop(falta.group(1))
+                    print(f"⚠ falta a coluna '{falta.group(1)}' em partidas_mosca: rode o SQL do supabase/esquema.sql")
             print(f"partida da mosca registrada no Supabase ({partida['segundos']:.0f} s)")
         except Exception as e:
             print(f"⚠ não consegui registrar a partida no Supabase: {e}")

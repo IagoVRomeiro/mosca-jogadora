@@ -40,3 +40,4 @@ iniciar_mosca.log
 mod/**/bin/
 mod/**/obj/
 mod/user.reg.antes_do_bepinex
+memoria_cenas*.json

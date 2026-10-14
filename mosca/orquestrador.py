@@ -14,6 +14,7 @@ from comparar import melhoria_percentual
 from registro import registrar_partida, marcar_torneio
 from .aprendizado import Gravador, Imitacao, Torneio
 from .correcao import Correcao
+from .juiz import JuizDoJogo
 from .config import ACOES, ARQUIVO_DESAFIANTE, PASTA, PASTA_GRAVACOES_MOSCA, QUADRO_MS, ROTULO_TECLA
 from .estimulos import DetectorLoop, DetectorParada, DetectorPresa, ExploradorSalas, LeitorHUD, LeitorMapa
 from .interface import Painel
@@ -52,6 +53,12 @@ class Orquestrador(QtCore.QObject):
         self.loop = DetectorLoop()
         self.explorador = ExploradorSalas() if self.hud is not None else None
         self.leitor_mapa = LeitorMapa() if self.hud is not None else None
+        self.juiz = None  # eventos de dentro do jogo (mod/MoscaEventos); sem ele, pela tela
+        if self.hud is not None:
+            try:
+                self.juiz = JuizDoJogo()
+            except OSError as e:  # porta ocupada (outro painel aberto?)
+                print(f"⚠ juiz do jogo desligado ({e}): eventos pela tela")
         self._desde_mapa = 0.0  # segundos de jogo da mosca desde a última olhada no mapa
         self._foto_mapa_em = None
         self._ultimo_dano = 0.0
@@ -237,6 +244,7 @@ class Orquestrador(QtCore.QObject):
             "eventos": collections.Counter(),
             "recompensa": 0.0,
             "teclas": np.zeros(len(ACOES)),
+            "do_jogo": 0,  # quadros com os eventos vindos do plugin (não da tela)
         }
 
     def _contar_partida(self, eventos):
@@ -245,13 +253,14 @@ class Orquestrador(QtCore.QObject):
         if p is None or self.jogo.aviso or not self.jogo.em_foco():
             return
         p["quadros"] += 1
+        p["do_jogo"] += self._juiz_ativo
         p["eventos"].update(eventos)
         p["recompensa"] += self._recompensa_quadro
         teclas = np.array([a in self.jogo.apertadas for a in ACOES])
         p["teclas"] += teclas
         if self.gravador_mosca is not None:
             self.gravador_mosca.adicionar(
-                self.cerebro.reduzida, teclas, self._recompensa_quadro, self.hud.vida,
+                self.cerebro.reduzida, teclas, self._recompensa_quadro, self._vida,
                 self._eventos_quadro,
             )
         self._habito_do_mapa()
@@ -315,6 +324,9 @@ class Orquestrador(QtCore.QObject):
             "loops": p["eventos"]["loop"],
             "lugares_mapa": p["eventos"]["mapa_novo"],
             "ajudas": p["eventos"]["ajuda"],
+            "inimigos_mortos": p["eventos"]["inimigo_morto"],
+            "cenas_novas": p["eventos"]["cena_nova"],
+            "fonte_eventos": "jogo" if p["do_jogo"] * 2 > p["quadros"] else "tela",
             "uso_teclas": {a: round(float(u), 4) for a, u in zip(ACOES, uso)},
         }))
 
@@ -446,7 +458,7 @@ class Orquestrador(QtCore.QObject):
             return None
         if no_jogo:
             self.gravador_correcao.adicionar(
-                self.cerebro.reduzida, teclas, self._recompensa_quadro, self.hud.vida,
+                self.cerebro.reduzida, teclas, self._recompensa_quadro, self._vida,
                 self._eventos_quadro,
             )
         return {a: float(t) for a, t in zip(ACOES, teclas)}
@@ -486,7 +498,7 @@ class Orquestrador(QtCore.QObject):
             return texto + " · pausado: clique no jogo", {a: 0.0 for a in ACOES}
         teclas = self.jogo.teclas_do_usuario()
         g.adicionar(
-            self.cerebro.reduzida, teclas, self._recompensa_quadro, self.hud.vida,
+            self.cerebro.reduzida, teclas, self._recompensa_quadro, self._vida,
             self._eventos_quadro,
         )
         return texto, {a: float(t) for a, t in zip(ACOES, teclas)}
@@ -507,6 +519,8 @@ class Orquestrador(QtCore.QObject):
         self._parar_gravacao_mosca()
         if self.explorador is not None:
             self.explorador.salvar()
+        if self.juiz is not None:
+            self.juiz.fechar()
         if self.treino is not None:
             # O modelo só é trocado no fim do treino, então parar no meio é seguro
             self.treino.finished.disconnect()
@@ -525,6 +539,7 @@ class Orquestrador(QtCore.QObject):
         "dano": "tomou dano", "cura": "curou", "acerto": "acertou inimigo", "geo": "pegou geo",
         "parada": "ficou parada", "morte": "morreu", "sala_nova": "sala nova!",
         "presa": "ficou presa", "mapa_novo": "lugar novo no mapa!", "loop": "andando em círculos",
+        "inimigo_morto": "matou inimigo!", "cena_nova": "sala nova!",
     }
 
     # Reflexo de sair do lugar: moscas paradas demais fazem movimentos
@@ -585,6 +600,14 @@ class Orquestrador(QtCore.QObject):
         for velho in sorted(pasta.glob("*.jpg"))[: -self.GUARDAR_POR_EVENTO]:
             velho.unlink()
 
+    @property
+    def _juiz_ativo(self):
+        return self.juiz is not None and self.juiz.ativo
+
+    @property
+    def _vida(self):
+        return self.juiz.vida if self._juiz_ativo else self.hud.vida
+
     def _ler_hud(self, imagem):
         """Eventos do jogo -> dopamina no cérebro + painel de recompensa."""
         self._recompensa_quadro = 0.0
@@ -592,8 +615,13 @@ class Orquestrador(QtCore.QObject):
         if self.hud is None or self.jogo.aviso:
             return
         self._ultimas_telas.append(imagem)
+        # A tela é lida sempre (os detectores usam HUD visível e alma gastando);
+        # com o plugin mandando, os eventos de vida, geo, golpes e salas vêm dele
         valor, eventos = self.hud.passo(imagem)
-        if self.cerebro.reduzida is not None:
+        do_jogo = self.juiz.passo() if self.juiz is not None else []
+        if self._juiz_ativo:
+            eventos = do_jogo
+        elif self.cerebro.reduzida is not None:
             eventos += self.explorador.passo(self.cerebro.reduzida)
             if "sala_nova" in eventos:
                 self.explorador.salvar()
@@ -642,9 +670,9 @@ class Orquestrador(QtCore.QObject):
         texto, quando = self._ultimo_evento
         self.painel.cartao_mosca.atualizar_recompensa(
             sum(v for _, v in self._recompensas),
-            self.hud.vida if self.hud.visivel else None,
+            self._vida if self._juiz_ativo or self.hud.visivel else None,
             texto if agora - quando < 3 else None,
-            self.explorador.salas,
+            len(self.juiz.cenas) if self._juiz_ativo else self.explorador.salas,
             self.leitor_mapa.posicao,
         )
 
