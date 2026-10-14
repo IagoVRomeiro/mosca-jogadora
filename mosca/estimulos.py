@@ -33,7 +33,9 @@ class LeitorHUD:
     MAX_MASCARAS = 11
     MASCARA_CHEIA = 0.15  # fração clara da caixa que conta como máscara cheia
     ALMA = (0.187, 0.118, 0.040)  # centro x, centro y, raio
-    GEO = (0.286, 0.495, 0.137, 0.181)  # x0, x1, y0, y1
+    # x0, x1, y0, y1: só a linha do número (0,144-0,170); logo abaixo aparece o
+    # "+N" ao pegar geo, e ele sumindo contava como mudança do número
+    GEO = (0.286, 0.495, 0.137, 0.174)
     ESTAVEL = 3  # quadros iguais para aceitar uma leitura
     SUMIDO_MORTE = 45  # quadros sem HUD (~1,5 s) que, com 1 máscara, indicam morte
     # O HUD escurece em transições, com o mapa aberto e em menus: as máscaras
@@ -103,6 +105,9 @@ class LeitorHUD:
         eventos = []
         if not self.visivel:
             self._repeticoes = self._geo_rep = 0
+            # o geo que aparecer na volta é a nova referência: depois de morrer
+            # ele volta zerado, e isso não é "pegou geo"
+            self._geo = None
             self.alma = None  # ao voltar, a alma clareando não é "acerto"
             if presente:  # HUD aceso sem nenhuma máscara: morreu
                 self._zeradas += 1

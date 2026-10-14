@@ -25,6 +25,20 @@ def tela(mascaras, hud=True, brilho=1.0):
     return (img * brilho).astype(np.uint8)
 
 
+def com_geo(img, numero=None, mais=None):
+    """Desenha um "número" de geo (blocos, um por dígito) e o "+N" logo abaixo."""
+    img = img.copy()
+    h = ALTURA
+    x0, _, y0, y1 = LeitorHUD.GEO
+    if numero is not None:
+        for i, d in enumerate(str(numero)):
+            x = int(x0 * h) + 4 + i * 9
+            img[int(0.146 * h) : int(0.168 * h), x : x + 2 + int(d) % 5] = 230
+    if mais is not None:  # o "+N": mais escuro e abaixo da linha do número
+        img[int(0.177 * h) : int(0.192 * h), int(x0 * h) + 4 : int(x0 * h) + 6 + 3 * mais] = 160
+    return img
+
+
 def eventos(leitor, sequencia):
     """`sequencia`: lista de (tela, quadros). Devolve todos os eventos na ordem."""
     todos = []
@@ -78,6 +92,22 @@ class TesteHUD(unittest.TestCase):
     def test_piscada_nao_conta(self):
         # um quadro só com 4 máscaras no meio de 5: não é dano
         self.assertEqual(eventos(LeitorHUD(), [(tela(5), 5), (tela(4), 1), (tela(5), 5)]), [])
+
+    def test_pegou_geo(self):
+        lidos = eventos(LeitorHUD(), [(com_geo(tela(5), 9), 5), (com_geo(tela(5), 14), 5)])
+        self.assertEqual(lidos, ["geo"])
+
+    def test_mais_n_sumindo_nao_e_geo(self):
+        lidos = eventos(LeitorHUD(), [(com_geo(tela(5), 14, mais=5), 5), (com_geo(tela(5), 14), 5)])
+        self.assertEqual(lidos, [])
+
+    def test_geo_zerado_depois_de_morrer_nao_e_geo(self):
+        lidos = eventos(LeitorHUD(), [
+            (com_geo(tela(1), 47), 5),
+            (tela(0, hud=False), 60),  # morreu: o HUD some
+            (com_geo(tela(5), 0), 5),  # renasce com o geo zerado
+        ])
+        self.assertNotIn("geo", lidos)
 
     def test_recompensas(self):
         r = LeitorHUD.RECOMPENSA
