@@ -9,8 +9,9 @@ from mosca.estimulos import DetectorParada, LeitorHUD
 ALTURA, LARGURA = 523, 956  # o que a captura entrega com o jogo em 1920x1080
 
 
-def tela(mascaras, hud=True):
-    """Tela preta com o HUD: `mascaras` cheias e o contorno do vaso de alma."""
+def tela(mascaras, hud=True, brilho=1.0):
+    """Tela preta com o HUD: `mascaras` cheias e o contorno do vaso de alma.
+    `brilho` < 1: HUD escurecido (transição, mapa aberto, menu)."""
     img = np.zeros((ALTURA, LARGURA, 3), dtype=np.uint8)
     if not hud:
         return img
@@ -21,7 +22,7 @@ def tela(mascaras, hud=True):
         img[y - 4 : y + 5, x - 3 : x + 4] = 230
     cx, cy, r = LeitorHUD.ALMA
     img[int((cy - r * 0.9) * h) - 1 : int((cy - r * 0.9) * h) + 2, int(cx * h) - 2 : int(cx * h) + 3] = 200
-    return img
+    return (img * brilho).astype(np.uint8)
 
 
 def eventos(leitor, sequencia):
@@ -51,11 +52,27 @@ class TesteHUD(unittest.TestCase):
         self.assertEqual(e, ["morte"])
 
     def test_morte_quando_o_hud_some_com_uma_mascara(self):
-        e = eventos(LeitorHUD(), [(tela(1), 5), (tela(0, hud=False), 40), (tela(5), 10)])
+        e = eventos(LeitorHUD(), [(tela(1), 5), (tela(0, hud=False), 60), (tela(5), 10)])
         self.assertEqual(e, ["morte"])
 
     def test_menu_nao_e_morte_nem_dano(self):
         e = eventos(LeitorHUD(), [(tela(3), 5), (tela(0, hud=False), 90), (tela(3), 10)])
+        self.assertEqual(e, [])
+
+    def test_mapa_aberto_nao_e_morte_nem_dano(self):
+        # o mapa escurece o HUD: as máscaras ficam opacas, mas não é dano nem morte
+        e = eventos(LeitorHUD(), [(tela(4), 10), (tela(4, brilho=0.45), 90), (tela(4), 10)])
+        self.assertEqual(e, [])
+
+    def test_mapa_aberto_com_uma_mascara_nao_e_morte(self):
+        e = eventos(LeitorHUD(), [(tela(1), 10), (tela(1, brilho=0.45), 90), (tela(1), 10)])
+        self.assertEqual(e, [])
+
+    def test_escurecendo_aos_poucos_nao_e_dano(self):
+        # passagem de sala: o HUD apaga e acende aos poucos
+        fade = [(tela(5, brilho=b), 2) for b in np.linspace(1, 0, 15)]
+        volta = [(tela(5, brilho=b), 2) for b in np.linspace(0, 1, 15)]
+        e = eventos(LeitorHUD(), [(tela(5), 10), *fade, (tela(0, hud=False), 24), *volta, (tela(5), 10)])
         self.assertEqual(e, [])
 
     def test_piscada_nao_conta(self):

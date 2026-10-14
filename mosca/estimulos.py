@@ -28,7 +28,12 @@ class LeitorHUD:
     ALMA = (0.187, 0.118, 0.040)  # centro x, centro y, raio
     GEO = (0.286, 0.495, 0.137, 0.181)  # x0, x1, y0, y1
     ESTAVEL = 3  # quadros iguais para aceitar uma leitura
-    SUMIDO_MORTE = 30  # quadros sem HUD (~1 s) que, com 1 máscara, indicam morte
+    SUMIDO_MORTE = 45  # quadros sem HUD (~1,5 s) que, com 1 máscara, indicam morte
+    # O HUD escurece em transições, com o mapa aberto e em menus: as máscaras
+    # ficam opacas e pareceriam vazias. Só lê o HUD aceso (contorno do vaso de
+    # alma a pelo menos ACESO do brilho normal); escurecido conta como fora da tela.
+    ACESO = 0.85
+    PRETO = 40  # contorno abaixo disto: tela preta (morte, passagem de sala), não só escurecida
     RECOMPENSA = {
         "dano": -1.0, "morte": -3.0, "cura": 0.3, "acerto": 0.3, "geo": 0.5, "parada": -0.2,
         "sala_nova": 1.0, "presa": -0.3,
@@ -45,6 +50,7 @@ class LeitorHUD:
         self._candidato, self._repeticoes = None, 0
         self._geo_cand, self._geo_rep = None, 0
         self._zeradas = self._sumido = 0
+        self._brilho_normal = 0.0  # brilho do contorno do vaso com o HUD aceso
         self.visivel = False
 
     def _caixa(self, cinza, cx, cy, r):
@@ -53,7 +59,8 @@ class LeitorHUD:
         return cinza[max(0, y - r) : y + r + 1, max(0, x - r) : x + r + 1]
 
     def ler(self, quadro):
-        """Leitura crua de um quadro: (hud na tela?, máscaras cheias, alma 0..1, assinatura do geo)."""
+        """Leitura crua de um quadro: (brilho do contorno do vaso, máscaras cheias,
+        alma 0..1, assinatura do geo)."""
         cinza = quadro.astype(np.float32).mean(axis=2)
         h = cinza.shape[0]
         cheias = 0
@@ -65,27 +72,31 @@ class LeitorHUD:
                 break
         cx, cy, r = self.ALMA
         vaso = self._caixa(cinza, cx, cy, r)
-        # O contorno do vaso é sempre claro; sem ele, o HUD não está na tela
+        # O contorno do vaso é sempre claro com o HUD na tela
         borda = self._caixa(cinza, cx, cy - r * 0.9, 0.006)
-        presente = bool(borda.size and borda.max() > 120)
+        brilho = float(borda.max()) if borda.size else 0.0
         alma = float((vaso > 150).mean()) if vaso.size else 0.0
         x0, x1, y0, y1 = self.GEO
         geo = cinza[int(y0 * h) : int(y1 * h), int(x0 * h) : int(x1 * h)] > 150
-        return presente, cheias, alma, geo
+        return brilho, cheias, alma, geo
 
     def passo(self, quadro):
         """Devolve (recompensa deste quadro, lista de eventos)."""
-        presente, cheias, alma, geo = self.ler(quadro)
+        brilho, cheias, alma, geo = self.ler(quadro)
+        if brilho > 120:  # referência do HUD aceso: o maior brilho recente
+            self._brilho_normal = max(self._brilho_normal * 0.9995, brilho)
+        presente = brilho > 120 and brilho >= self.ACESO * self._brilho_normal
         self.visivel = presente and cheias > 0
         eventos = []
         if not self.visivel:
             self._repeticoes = self._geo_rep = 0
-            if presente:  # HUD na tela sem nenhuma máscara: morreu
+            self.alma = None  # ao voltar, a alma clareando não é "acerto"
+            if presente:  # HUD aceso sem nenhuma máscara: morreu
                 self._zeradas += 1
                 if self._zeradas == self.ESTAVEL and self.vida is not None:
                     eventos.append("morte")
                     self.vida = None  # a vida de volta ao renascer não é cura
-            else:
+            elif brilho < self.PRETO:  # tela preta (escurecido pelo mapa/menu não conta)
                 self._sumido += 1
             return sum(self.RECOMPENSA[e] for e in eventos), eventos
 
