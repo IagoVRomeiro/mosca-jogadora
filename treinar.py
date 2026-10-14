@@ -76,7 +76,7 @@ REGULARIZACAO_VALOR = 0.05  # do estimador de retorno (por quadro de treino)
 SUBAMOSTRA = 2  # usa 1 a cada 2 quadros: vizinhos são quase iguais (menos decoreba)
 RUIDO = 0.1  # ruído nas entradas (já normalizadas) durante o treino
 PASTA_CACHE = PASTA / "cache_olho"
-VERSAO_CACHE = 9  # mude se o que vai no cache mudar
+VERSAO_CACHE = 10  # mude se o que vai no cache mudar
 ARQUIVO_SAIDA = ARQUIVO_DESAFIANTE  # todo treino gera uma desafiante (ver jogar.Torneio)
 ARQUIVO_INFO_MODELO = ARQUIVO_SAIDA.with_suffix(".json")  # qual treino gerou o modelo
 # Partidas da própria mosca: entram com menos peso que as suas (ela erra mais) e
@@ -122,6 +122,46 @@ def commit_do_codigo():
         return commit + ("+mudancas" if sujo else "")
     except (OSError, subprocess.CalledProcessError):
         return None
+
+
+# Salas do Salão dos Deuses que não são arenas de chefe
+SALAO_SEM_CHEFE = {"GG_Atrium", "GG_Atrium_Roof", "GG_Workshop", "GG_Spa", "GG_Engine", "GG_Engine_Prime",
+                   "GG_Engine_Root", "GG_Unlock", "GG_Boss_Door_Entrance", "GG_End_Sequence", "GG_Blue_Room",
+                   "GG_Wyrm", "GG_Unn", "GG_Waterways", "GG_Pipeway", "GG_Door_5_Finale", "GG_Land_of_Storms",
+                   "GG_Entrance_Cutscene"}
+
+
+def cenas_e_mortes_sem_chefe(parte, n):
+    """Sala e inimigos mortos por quadro de uma parte gravada pelo plugin que não
+    contou chefes (plugin anterior ao 'chefes_derrotados': a coluna não existe ou
+    veio toda zerada). Nas outras: vazio."""
+    if "eventos" not in parte.files or "jogo_cena" not in parte.files:
+        return [""] * n, np.zeros(n, np.int8)
+    nomes = [str(x) for x in parte["eventos_nomes"]]
+    if "inimigo_morto" not in nomes or ("chefe_derrotado" in nomes
+                                        and parte["eventos"][:, nomes.index("chefe_derrotado")].any()):
+        return [""] * n, np.zeros(n, np.int8)
+    salas = [str(c) for c in parte["jogo_cenas"]]
+    return ([salas[i] if i >= 0 else "" for i in parte["jogo_cena"]],
+            parte["eventos"][:, nomes.index("inimigo_morto")].astype(np.int8))
+
+
+def chefes_do_salao(r, cenas, mortes):
+    """Chefe vencido nas gravações sem a contagem: em cada passagem por uma
+    arena do Salão dos Deuses (GG_*), a última morte é a do chefe (os ajudantes
+    que ele invoca, como as vingamoscas, morrem antes)."""
+    valor = LeitorHUD.RECOMPENSA.get("chefe_derrotado", 0.0)
+    i = 0
+    while i < len(cenas):
+        j = i
+        while j < len(cenas) and cenas[j] == cenas[i]:
+            j += 1
+        if cenas[i].startswith("GG_") and cenas[i] not in SALAO_SEM_CHEFE:
+            mortos = np.flatnonzero(mortes[i:j])
+            if len(mortos):
+                r[i + mortos[-1]] += valor
+        i = j
+    return r
 
 
 MAGIA_QUADROS = 11  # K apertado menos que isto (~0,35 s) foi magia; mais, foco (cura)
@@ -223,6 +263,7 @@ def processar_sessao(pasta):
             if str(dados["chave"]) == chave:
                 return {k: dados[k] for k in dados.files}
     olhos, teclas, hud, presas, marcadas, pelo_jogo = [], [], [], [], [], []
+    cenas_quadro, mortes_quadro = [], []  # para achar chefes em gravações sem a contagem deles
     entradas_idx, entradas_sig = [], []
     com_hud = True
     presa = DetectorPresa()  # recalculada nas gravações antigas, que não marcam
@@ -264,6 +305,9 @@ def processar_sessao(pasta):
                     hud[-1] += (RECOMPENSA_LOOP - gravado) * parte["loops"]
             marcadas.append(np.full(n, "salas_novas" in parte.files))
             pelo_jogo.append(quadros_com_plugin(parte) if "eventos" in parte.files else np.zeros(n, bool))
+            cenas, mortes = cenas_e_mortes_sem_chefe(parte, n)
+            cenas_quadro += cenas
+            mortes_quadro.append(mortes)
             anterior = None
             # presa pela posição real (plugin) já está na recompensa; só sem ele pela tela
             presa_pela_tela = ~quadros_com_plugin(parte) if "eventos" in parte.files else np.ones(n, bool)
@@ -284,7 +328,8 @@ def processar_sessao(pasta):
         "chave": np.array(chave),
         "retratos": np.stack(olhos) if olhos else np.zeros((0, 2016), np.float16),
         "teclas": fases_de_toque(separar_magia(np.array(teclas, dtype=np.float32).reshape(-1, len(ACOES)))),
-        "hud": np.concatenate(hud).astype(np.float32) if hud else np.zeros(0, np.float32),
+        "hud": chefes_do_salao(np.concatenate(hud).astype(np.float32), cenas_quadro, np.concatenate(mortes_quadro))
+        if hud else np.zeros(0, np.float32),
         "com_hud": np.array(com_hud and bool(hud)),
         "presa": np.array(presas, dtype=np.float32),
         "pelo_jogo": np.concatenate(pelo_jogo) if pelo_jogo else np.zeros(0, bool),

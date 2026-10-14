@@ -84,6 +84,14 @@ class TestePesos(unittest.TestCase):
         np.testing.assert_array_equal(y[20:60, f], 1)
         np.testing.assert_array_equal(y[20:60, m], 0)
 
+    def test_chefe_do_salao_e_a_ultima_morte_da_arena(self):
+        cenas = ["GG_Atrium"] * 3 + ["GG_Vengefly"] * 6 + ["GG_Atrium"] * 2 + ["GG_Hornet_1"] * 3
+        mortes = np.array([1, 0, 0] + [1, 0, 1, 0, 1, 0] + [0, 0] + [0, 1, 0], np.int8)
+        r = treinar.chefes_do_salao(np.zeros(len(cenas), np.float32), cenas, mortes)
+        chefe = treinar.LeitorHUD.RECOMPENSA["chefe_derrotado"]
+        self.assertEqual(list(np.flatnonzero(r)), [7, 12])  # o rei (depois das vingamoscas) e a Hornet
+        self.assertAlmostEqual(float(r.sum()), 2 * chefe)
+
     def test_fases_de_ataque(self):
         y = np.zeros((40, len(ACOES)), np.float32)
         j = ACOES.index("Atacar")
