@@ -163,14 +163,21 @@ class CartaoCerebro(QtWidgets.QFrame):
         self.camada_disparo = pg.ScatterPlotItem(size=3.5, pen=None, brush=pg.mkBrush(*COR_DISPARO))
         self.camada_pam = pg.ScatterPlotItem(size=4.5, pen=None, brush=pg.mkBrush(*COR_RECOMPENSA))
         self.camada_ppl1 = pg.ScatterPlotItem(size=4.5, pen=None, brush=pg.mkBrush(*COR_PUNICAO))
+        caneta_zona = pg.mkPen(255, 255, 255, 220, width=1.2)
+        self.camada_zona = pg.ScatterPlotItem(size=7, pen=caneta_zona, brush=pg.mkBrush(255, 255, 255, 60))
+        self.rotulo_zona = pg.TextItem("", color=(235, 238, 250), anchor=(0.5, 0.5))
+        self.rotulo_zona.setPos(0, 0.72)  # no alto: os neurônios da zona ficam espalhados
+        self.rotulo_zona.hide()
         for item in (
             self.base, self.camada_estimulo, self.brilho, self.camada_disparo,
-            self.camada_pam, self.camada_ppl1,
+            self.camada_pam, self.camada_ppl1, self.camada_zona, self.rotulo_zona,
         ):
             self.vista.addItem(item)
-        # Rótulos no centro dos neurônios de cada zona (mudam se o cérebro trocar)
+        # Rótulos da dopamina. As zonas das ações não têm rótulo fixo: na conectoma
+        # ficam todas no centro (neurônios descendentes) e as letras se amontoavam.
+        # Passar o mouse num botão de ação mostra a zona dela (camada_zona).
         self.rotulos = {}
-        for nome, texto in [("PAM", "+"), ("PPL1", "−"), *ROTULO_TECLA.items()]:
+        for nome, texto in [("PAM", "+"), ("PPL1", "−")]:
             txt = pg.TextItem(texto, color=(200, 205, 225, 170), anchor=(0.5, 0.5))
             self.vista.addItem(txt)
             self.rotulos[nome] = txt
@@ -237,10 +244,13 @@ class CartaoCerebro(QtWidgets.QFrame):
         layout.addWidget(rotulo("AÇÕES", "secao"))
         acoes = QtWidgets.QGridLayout()
         acoes.setSpacing(6)
+        self._botao_acao = {}
         for i, (nome, acao) in enumerate(ACOES_JOGO.items()):
             bt = QtWidgets.QPushButton(f"{acao.rotulo}  {acao.curto}")
-            bt.setToolTip(f"{nome} (tecla {acao.rotulo})")
+            bt.setToolTip(f"{nome} (tecla {acao.rotulo}): o mouse aqui mostra a zona no cérebro")
             bt.clicked.connect(lambda _, n=nome: cerebro.pulsar_zona(n))
+            bt.installEventFilter(self)
+            self._botao_acao[bt] = nome
             acoes.addWidget(bt, i // 6, i % 6)
         layout.addLayout(acoes)
 
@@ -248,6 +258,26 @@ class CartaoCerebro(QtWidgets.QFrame):
         self.vista.fim_pincelada.connect(self.fim_pincelada)
         self.vista.cursor.connect(self.mover_circulo)
         self.atualizar_selecao()
+
+    def eventFilter(self, objeto, evento):
+        """Mouse sobre um botão de ação: destaca os neurônios da zona dela."""
+        nome = self._botao_acao.get(objeto)
+        if nome is not None:
+            if evento.type() == QtCore.QEvent.Type.Enter:
+                self.mostrar_zona(nome)
+            elif evento.type() == QtCore.QEvent.Type.Leave:
+                self.mostrar_zona(None)
+        return super().eventFilter(objeto, evento)
+
+    def mostrar_zona(self, nome):
+        indices = self.cerebro.zona.get(nome, []) if nome else []
+        if not len(indices):
+            self.camada_zona.setData(pos=np.zeros((0, 2)))
+            self.rotulo_zona.hide()
+            return
+        self.camada_zona.setData(pos=self.cerebro.posicoes[indices])
+        self.rotulo_zona.setText(f"○ zona de {nome} (tecla {ROTULO_TECLA[nome]}): {len(indices)} neurônios")
+        self.rotulo_zona.show()
 
     def _raio(self):
         return self.tamanho.value() / 2 * self.vista.viewPixelSize()[0]
