@@ -20,7 +20,10 @@ ACOES_JOGO = {
     "Pular": Acao("space", "Space", "Pulo", "lm", (0, 1)),
     "Atacar": Acao("h", "H", "Ataque", "rm", (0, -1)),
     "Esquiva": Acao("j", "J", "Esquiva", "lh", (-1, 1)),
-    "Foco": Acao("k", "K", "Foco/Magia", "lm", (0, 2)),
+    # A mesma tecla K faz duas coisas no jogo: segurada cura (Foco), tocada solta
+    # a magia. Para a mosca são duas ações, que nunca vão juntas (OPOSTAS)
+    "Foco": Acao("k", "K", "Foco", "lm", (0, 2)),
+    "Magia": Acao("k", "K", "Magia", "lm", (0, 2)),
     "Super Investida": Acao("l", "L", "S. Investida", "lh", (-1, 2)),
     "Ferrão dos Sonhos": Acao("n", "N", "Ferrão", "rh", (-1, -1)),
     "Magia Rápida": Acao("m", "M", "Magia Ráp.", "rm", (0, -2)),
@@ -33,12 +36,12 @@ ACOES = list(ACOES_JOGO)
 ROTULO_TECLA = {nome: a.rotulo for nome, a in ACOES_JOGO.items()}
 
 
-OPOSTAS = [("Esquerda", "Direita"), ("Cima", "Baixo")]  # nunca apertadas juntas
+OPOSTAS = [("Esquerda", "Direita"), ("Cima", "Baixo"), ("Foco", "Magia")]  # nunca apertadas juntas
 
 
 # No Hollow Knight cada golpe precisa de um novo aperto: segurar a tecla dá um
 # golpe só. Enquanto a mosca quer uma destas, a tecla é tocada a cada N segundos.
-TOQUE_S = {"Atacar": 0.3, "Esquiva": 0.6, "Magia Rápida": 0.6}
+TOQUE_S = {"Atacar": 0.3, "Esquiva": 0.6, "Magia": 0.6, "Magia Rápida": 0.6}
 
 
 DURACAO_TOQUE_S = 0.07

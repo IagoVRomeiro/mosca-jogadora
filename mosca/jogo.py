@@ -85,6 +85,7 @@ class CapturaJanela:
         self._ativas = set()  # ações que a mosca quer (podem estar entre dois toques)
         self._desde, self._apertou_em = {}, {}
         self._soltou_em = {}  # quando a mosca soltou cada tecla (ver da_mosca)
+        self._fisicas = set()  # códigos de tecla apertados de verdade (Foco e Magia dividem o K)
         self.janelas_proprias = set()  # o painel: pode devolver o foco ao jogo
         self.aviso_controle = None
         self._ultimo_foco = 0.0
@@ -105,17 +106,25 @@ class CapturaJanela:
         return self.janela is not None and self._foco() == self.janela.id
 
     def teclas_do_usuario(self):
-        """Teclas de ação que estão apertadas agora (na ordem de ACOES)."""
+        """Teclas de ação que estão apertadas agora (na ordem de ACOES). Uma tecla
+        de duas ações (K: Foco e Magia) conta só na primeira; o treino separa
+        toque (Magia) de segurado (Foco) pela duração."""
         mapa = self.display.query_keymap()
-        return np.array(
-            [bool(mapa[c // 8] & (1 << (c % 8))) for c in (self._codigos[a] for a in ACOES)]
-        )
+        vistos, saida = set(), []
+        for a in ACOES:
+            c = self._codigos[a]
+            saida.append(bool(mapa[c // 8] & (1 << (c % 8))) and c not in vistos)
+            vistos.add(c)
+        return np.array(saida)
 
     def da_mosca(self, folga=0.25):
         """Teclas da mosca: as apertadas e as soltas há menos de `folga` s (o jogo
         e o plugin ainda podem vê-las acionadas por um instante)."""
         agora = time.monotonic()
-        return set(self.apertadas) | {a for a, t in self._soltou_em.items() if agora - t < folga}
+        mosca = set(self.apertadas) | {a for a, t in self._soltou_em.items() if agora - t < folga}
+        # o jogo vê a tecla, não a ação: a Magia da mosca aparece como Foco
+        codigos = {self._codigos[a] for a in mosca}
+        return mosca | {a for a in self.TECLAS if self._codigos[a] in codigos}
 
     def focar(self):
         """Pede ao gerenciador de janelas para trazer o jogo para o foco."""
@@ -132,19 +141,34 @@ class CapturaJanela:
         self.display.flush()
 
     def _tecla(self, acao, apertar):
+        """Aperta ou solta de verdade a tecla de `acao`."""
         tipo = self._X.KeyPress if apertar else self._X.KeyRelease
         self._xtest.fake_input(self.display, tipo, self._codigos[acao])
-        if apertar:
-            self.apertadas.add(acao)
-        else:
-            self.apertadas.discard(acao)
+
+    def _sincronizar(self):
+        """Teclas físicas = as das ações apertadas. Duas ações na mesma tecla (K)
+        não brigam: ela fica apertada se qualquer uma quiser."""
+        querem = {}
+        for acao in self.apertadas:
+            querem.setdefault(self._codigos[acao], acao)
+        for codigo, acao in querem.items():
+            if codigo not in self._fisicas:
+                self._tecla(acao, True)
+                self._fisicas.add(codigo)
+        for codigo in list(self._fisicas - set(querem)):
+            acao = next(a for a in self.TECLAS if self._codigos[a] == codigo)
+            self._tecla(acao, False)
+            self._fisicas.discard(codigo)
 
     def soltar_tudo(self):
         try:
             agora = time.monotonic()
             for acao in list(self.apertadas):
-                self._tecla(acao, False)  # soltar é seguro com qualquer foco
                 self._soltou_em[acao] = agora
+            for codigo in list(self._fisicas):  # soltar é seguro com qualquer foco
+                acao = next(a for a in self.TECLAS if self._codigos[a] == codigo)
+                self._tecla(acao, False)
+            self._fisicas.clear()
             self.display.flush()
         except Exception:
             pass
@@ -177,11 +201,12 @@ class CapturaJanela:
             for acao in self.TECLAS:
                 apertar = self._decidir(acao, desejadas[acao], agora)
                 if apertar != (acao in self.apertadas):
-                    self._tecla(acao, apertar)
+                    (self.apertadas.add if apertar else self.apertadas.discard)(acao)
                     if apertar:
                         self._apertou_em[acao] = agora
                     else:
                         self._soltou_em[acao] = agora
+            self._sincronizar()
             self.display.flush()
         except Exception:
             self.soltar_tudo()

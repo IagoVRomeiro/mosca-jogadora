@@ -73,6 +73,17 @@ class TestePesos(unittest.TestCase):
         idx = np.sort(dados.treino)
         self.assertAlmostEqual(float(dados.pesos[idx][dados.sessao[idx] == 1].mean()), treinar.PESO_MOSCA, places=4)
 
+    def test_toque_curto_no_k_e_magia(self):
+        y = np.zeros((60, len(ACOES)), np.float32)
+        f, m = ACOES.index("Foco"), ACOES.index("Magia")
+        y[5:8, f] = 1  # 0,1 s: magia
+        y[20:70, f] = 1  # 1,3 s: foco
+        treinar.separar_magia(y)
+        np.testing.assert_array_equal(y[5:8, m], 1)
+        np.testing.assert_array_equal(y[5:8, f], 0)
+        np.testing.assert_array_equal(y[20:60, f], 1)
+        np.testing.assert_array_equal(y[20:60, m], 0)
+
     def test_fases_de_ataque(self):
         y = np.zeros((40, len(ACOES)), np.float32)
         j = ACOES.index("Atacar")

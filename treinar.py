@@ -124,6 +124,21 @@ def commit_do_codigo():
         return None
 
 
+MAGIA_QUADROS = 11  # K apertado menos que isto (~0,35 s) foi magia; mais, foco (cura)
+
+
+def separar_magia(teclas):
+    """O K faz duas coisas: tocado, magia; segurado, foco. Nas gravações ele vem
+    todo como "Foco": os toques curtos passam para "Magia"."""
+    f, m = ACOES.index("Foco"), ACOES.index("Magia")
+    k = np.r_[0, (teclas[:, f] > 0.5).astype(int), 0]
+    d = np.diff(k)
+    for ini, fim in zip(np.flatnonzero(d == 1), np.flatnonzero(d == -1)):
+        if fim - ini < MAGIA_QUADROS:
+            teclas[ini:fim, f], teclas[ini:fim, m] = 0, 1
+    return teclas
+
+
 def fases_de_toque(teclas):
     """Ataque, esquiva e magia são toques de poucos quadros: marca como "fase"
     os TOQUE_S seguintes a cada toque. A rede aprende QUANDO atacar (e o painel
@@ -268,7 +283,7 @@ def processar_sessao(pasta):
     dados = {
         "chave": np.array(chave),
         "retratos": np.stack(olhos) if olhos else np.zeros((0, 2016), np.float16),
-        "teclas": fases_de_toque(np.array(teclas, dtype=np.float32).reshape(-1, len(ACOES))),
+        "teclas": fases_de_toque(separar_magia(np.array(teclas, dtype=np.float32).reshape(-1, len(ACOES)))),
         "hud": np.concatenate(hud).astype(np.float32) if hud else np.zeros(0, np.float32),
         "com_hud": np.array(com_hud and bool(hud)),
         "presa": np.array(presas, dtype=np.float32),

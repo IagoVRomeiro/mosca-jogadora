@@ -5,7 +5,7 @@ Não usa o X11: a CapturaJanela é montada sem conectar e as teclas são anotada
 
 import unittest
 
-from mosca.config import ACOES
+from mosca.config import ACOES, ACOES_JOGO
 from mosca.jogo import CapturaJanela
 
 QUADRO_S = 1 / 30
@@ -14,7 +14,8 @@ QUADRO_S = 1 / 30
 def captura_falsa(foco_no_jogo=True):
     c = CapturaJanela.__new__(CapturaJanela)
     c.apertadas, c._ativas, c._desde, c._apertou_em = set(), set(), {}, {}
-    c._soltou_em = {}
+    c._soltou_em, c._fisicas = {}, set()
+    c._codigos = {a: ACOES_JOGO[a].tecla for a in ACOES}  # Foco e Magia: as duas no "k"
     c.controlando, c.aviso, c.aviso_controle = True, None, None
     c.janela = type("Janela", (), {"id": 42})()
     c.janelas_proprias = set()
@@ -25,7 +26,6 @@ def captura_falsa(foco_no_jogo=True):
 
     def tecla(acao, apertar):
         c.enviadas.append((acao, apertar))
-        (c.apertadas.add if apertar else c.apertadas.discard)(acao)
 
     c._tecla = tecla
     return c
@@ -89,6 +89,23 @@ class TesteTeclas(unittest.TestCase):
         self.assertIn("focar", c.enviadas)
         self.assertEqual(c.apertadas, set())  # só aperta depois que o jogo estiver em foco
 
+    def test_foco_e_magia_dividem_o_k(self):
+        """Trocar de Foco para Magia no mesmo quadro não solta o K no meio."""
+        c = captura_falsa()
+        acoes = {a: 0.0 for a in ACOES}
+        acoes["Foco"] = 1.0
+        c.passo(acoes)
+        self.assertEqual(c._fisicas, {"k"})
+        self.assertEqual(c.enviadas.count(("Foco", True)), 1)
+        self.assertEqual(c.da_mosca() & {"Foco", "Magia"}, {"Foco", "Magia"})  # o jogo só vê o K
+
+    def test_nunca_foco_e_magia_juntos(self):
+        c = captura_falsa()
+        acoes = {a: 0.0 for a in ACOES}
+        acoes.update(Foco=0.9, Magia=0.8)
+        c.passo(acoes)
+        self.assertNotIn("Magia", c.apertadas)
+
     def test_desligar_solta_tudo(self):
         c = captura_falsa()
         acoes = {a: 0.0 for a in ACOES}
@@ -97,6 +114,7 @@ class TesteTeclas(unittest.TestCase):
         c.controlando = False
         c.passo(acoes)
         self.assertEqual(c.apertadas, set())
+        self.assertEqual(c._fisicas, set())
 
 
 if __name__ == "__main__":
