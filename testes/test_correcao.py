@@ -87,7 +87,7 @@ class TesteNoPainel(unittest.TestCase):
     def orq(self):
         jogo = types.SimpleNamespace(controlando=True, aviso=None, apertadas={"Direita"}, soltas=0,
                                      usuario=set())
-        jogo.em_foco = lambda: True
+        jogo.em_foco = jogo.recebe_teclas = lambda: True
         jogo.teclas_do_usuario = lambda: np.array([a in jogo.usuario | jogo.apertadas for a in ACOES])
         jogo.da_mosca = lambda: set(jogo.apertadas)
 
@@ -184,3 +184,28 @@ class TesteNoPainel(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TesteTeclasPeloPlugin(unittest.TestCase):
+    """As teclas só vão pelo plugin enquanto ele confirma que está lendo."""
+
+    def passo(self, o, entrada, agora):
+        o._estado_jogo = None if entrada is None else {"entrada": entrada}
+        with mock.patch.object(orquestrador.time, "monotonic", return_value=agora):
+            Orquestrador._teclas_pelo_plugin(o)
+        return o.jogo.pelo_plugin
+
+    def test_plugin_lendo_e_depois_surdo(self):
+        o = types.SimpleNamespace(jogo=types.SimpleNamespace(pelo_plugin=False),
+                                  PLUGIN_SURDO_S=Orquestrador.PLUGIN_SURDO_S)
+        self.assertTrue(self.passo(o, 10, 0.0))
+        self.assertTrue(self.passo(o, 12, 0.5))
+        self.assertTrue(self.passo(o, 12, 1.4))  # parou há 0,9 s: ainda vale
+        self.assertFalse(self.passo(o, 12, 1.6))  # parou de ler: volta ao XTest
+        self.assertTrue(self.passo(o, 13, 1.7))  # voltou a ler
+
+    def test_plugin_antigo_ou_fora(self):
+        o = types.SimpleNamespace(jogo=types.SimpleNamespace(pelo_plugin=True),
+                                  PLUGIN_SURDO_S=Orquestrador.PLUGIN_SURDO_S)
+        self.assertFalse(self.passo(o, True, 0.0))  # a versão anterior mandava true
+        self.assertFalse(self.passo(o, None, 0.0))

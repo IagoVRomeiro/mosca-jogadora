@@ -1,6 +1,7 @@
 """De onde vem o jogo: o jogo de demonstração e a captura da janela do Hollow Knight
 (que também manda as teclas da mosca para ele)."""
 
+import socket
 import time
 
 import numpy as np
@@ -56,9 +57,14 @@ class CapturaJanela:
     """Captura uma janela X11 pelo nome exato (ex.: o Hollow Knight no Proton).
 
     Lê direto da janela, então funciona mesmo com outras janelas por cima. Só não
-    funciona com ela minimizada: aí o jogo não desenha nada. As teclas, ao
-    contrário, só chegam com o jogo em foco (ver `_foco`).
+    funciona com ela minimizada: aí o jogo não desenha nada. As teclas pelo XTest
+    só chegam com o jogo em foco (ver `_foco`); com o plugin aceitando teclas
+    (`pelo_plugin`), elas vão por dentro do jogo e o foco não importa.
     """
+
+    PORTA_PLUGIN = 47124  # mod/MoscaEventos: ações que a mosca está segurando
+    pelo_plugin = False  # ligado pelo painel quando o plugin diz que aceita teclas
+    _sock_plugin = None
 
     # Teclas padrão do Hollow Knight
     TECLAS = {nome: a.tecla for nome, a in ACOES_JOGO.items()}
@@ -106,6 +112,20 @@ class CapturaJanela:
     def em_foco(self):
         return self.janela is not None and self._foco() == self.janela.id
 
+    def recebe_teclas(self):
+        """As teclas da mosca chegam ao jogo: pelo plugin, ou pelo XTest com foco."""
+        return self.janela is not None and (self.pelo_plugin or self.em_foco())
+
+    def _mandar_ao_plugin(self, acoes):
+        """As ações que a mosca segura agora. O plugin solta tudo se elas pararem de
+        chegar, então vai a cada quadro, mesmo sem mudança."""
+        if self._sock_plugin is None:
+            self._sock_plugin = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            self._sock_plugin.sendto(",".join(sorted(acoes)).encode(), ("127.0.0.1", self.PORTA_PLUGIN))
+        except OSError:
+            pass
+
     def teclas_do_usuario(self):
         """Teclas de ação que estão apertadas agora (na ordem de ACOES). Uma tecla
         de duas ações (K: Foco e Magia) conta só na primeira; o treino separa
@@ -148,9 +168,13 @@ class CapturaJanela:
 
     def _sincronizar(self):
         """Teclas físicas = as das ações apertadas. Duas ações na mesma tecla (K)
-        não brigam: ela fica apertada se qualquer uma quiser."""
+        não brigam: ela fica apertada se qualquer uma quiser. Pelo plugin, nenhuma
+        tecla física: as ações vão direto para ele."""
+        # sempre manda (vazio pelo XTest): o plugin conta o que lê, e é assim que o
+        # painel sabe que pode passar as teclas por ele
+        self._mandar_ao_plugin(self.apertadas if self.pelo_plugin else ())
         querem = {}
-        for acao in self.apertadas:
+        for acao in () if self.pelo_plugin else self.apertadas:
             querem.setdefault(self._codigos[acao], acao)
         for codigo, acao in querem.items():
             if codigo not in self._fisicas:
@@ -171,6 +195,7 @@ class CapturaJanela:
                 self._tecla(acao, False)
             self._fisicas.clear()
             self.display.flush()
+            self._mandar_ao_plugin(())
         except Exception:
             pass
         self.apertadas.clear()
@@ -190,7 +215,7 @@ class CapturaJanela:
             desejadas[a if forca_a < forca_b else b] = 0.0
         try:
             foco = self._foco()
-            if foco != self.janela.id:
+            if foco != self.janela.id and not self.pelo_plugin:
                 self.soltar_tudo()  # nunca deixa tecla segurada fora do jogo
                 if any(desejadas[a] > self.APERTAR for a in self.TECLAS):
                     if foco in self.janelas_proprias:

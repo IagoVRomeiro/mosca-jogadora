@@ -8,6 +8,11 @@
 // "acoes": as ações do jogo acionadas agora, como o próprio jogo as lê, venham
 // do teclado ou do controle. Assim você pode ajudar a mosca pelo controle: ela
 // aprende "Pular", não "botão A" nem "Space".
+//
+// Teclas da mosca: o painel manda para 127.0.0.1:47124 as ações que ela segura
+// ("Esquerda,Pular"; vazio = nada) ~30x/s, e o plugin as aciona por dentro, como
+// mais uma tecla. Assim ela joga mesmo com o jogo fora de foco (o XTest só digita
+// na janela em foco). Sem pacote por SOLTAR_S, solta tudo (painel fechou ou travou).
 using System.Globalization;
 using System.Net.Sockets;
 using System.Text;
@@ -30,14 +35,23 @@ public class Plugin : BaseUnityPlugin
     internal static readonly System.Collections.Generic.Dictionary<HealthManager, int> vidaInicial =
         new System.Collections.Generic.Dictionary<HealthManager, int>();
     internal const int VIDA_DE_CHEFE = 200;
-    const int PORTA = 47123;
-    UdpClient udp;
-    float proximo;
+    const int PORTA = 47123, PORTA_TECLAS = 47124;
+    const float SOLTAR_S = 0.25f;
+    UdpClient udp, teclas;
+    float proximo, teclasEm = float.NegativeInfinity;
+    int pacotesDeTeclas;  // lidos até agora: o painel vê que as teclas estão chegando
+    // ações do jogo que a mosca está segurando agora (lidas por AcionarDaMosca)
+    internal static readonly System.Collections.Generic.HashSet<InControl.PlayerAction> daMosca =
+        new System.Collections.Generic.HashSet<InControl.PlayerAction>();
 
     void Awake()
     {
         udp = new UdpClient();
         udp.Connect("127.0.0.1", PORTA);
+        teclas = new UdpClient(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, PORTA_TECLAS));
+        teclas.Client.Blocking = false;
+        // o jogo continua rodando e lendo as teclas fora de foco
+        Application.runInBackground = true;
         new Harmony("mosca.jogadora.eventos").PatchAll(typeof(Plugin).Assembly);
         Logger.LogInfo($"Mosca jogadora: mandando eventos para a porta {PORTA}");
     }
@@ -50,6 +64,42 @@ public class Plugin : BaseUnityPlugin
         ("Foco", a => a.focus), ("Foco", a => a.cast), ("Super Investida", a => a.superDash),
         ("Ferrão dos Sonhos", a => a.dreamNail), ("Magia Rápida", a => a.quickCast), ("Mapa", a => a.quickMap),
     };
+
+    // Teclas da mosca: o K é Foco e Magia ao mesmo tempo (segurar cura, tocar solta
+    // magia), como no teclado; a Magia não está em ACOES porque o jogo a vê como Foco
+    static System.Collections.Generic.IEnumerable<InControl.PlayerAction> AcoesDe(string nome, HeroActions a)
+    {
+        if (nome == "Magia") nome = "Foco";
+        foreach (var (n, acao) in ACOES)
+            if (n == nome) yield return acao(a);
+    }
+
+    void LerTeclasDaMosca()
+    {
+        // Lê a fila até esvaziar (fica o último). Não usa teclas.Available: no Wine ela
+        // é sempre 0 e nada era lido; sem pacote, o socket não bloqueante dá exceção
+        string ultimo = null;
+        var buf = new byte[1024];
+        while (true)
+        {
+            try
+            {
+                System.Net.EndPoint de = new System.Net.IPEndPoint(System.Net.IPAddress.Any, 0);
+                ultimo = Encoding.UTF8.GetString(buf, 0, teclas.Client.ReceiveFrom(buf, ref de));
+                pacotesDeTeclas++;
+            }
+            catch (SocketException) { break; }
+        }
+        var ih = InputHandler.Instance;
+        if (ultimo != null && ih != null && ih.inputActions != null)
+        {
+            teclasEm = Time.unscaledTime;
+            daMosca.Clear();
+            foreach (var nome in ultimo.Split(','))
+                foreach (var acao in AcoesDe(nome, ih.inputActions)) daMosca.Add(acao);
+        }
+        else if (Time.unscaledTime - teclasEm > SOLTAR_S) daMosca.Clear();
+    }
 
     static string Acoes()
     {
@@ -66,6 +116,9 @@ public class Plugin : BaseUnityPlugin
 
     void Update()
     {
+        // a InControl para de ler as teclas fora de foco se isto estiver ligado
+        InControl.InputManager.SuspendInBackground = false;
+        LerTeclasDaMosca();
         if (Time.unscaledTime < proximo) return;
         proximo = Time.unscaledTime + 1f / 30f;
         var pd = PlayerData.instance;
@@ -100,6 +153,7 @@ public class Plugin : BaseUnityPlugin
             .Append(",\"na_parede\":").Append(s != null && s.wallSliding ? "true" : "false")
             .Append(",\"curando\":").Append(s != null && s.focusing ? "true" : "false")
             .Append(",\"acoes\":[").Append(Acoes()).Append(']')
+            .Append(",\"entrada\":").Append(pacotesDeTeclas)  // pacotes de teclas da mosca lidos
             // ponto de retorno (o último banco em que descansou) e cair em espinhos/ácido
             .Append(",\"banco\":\"").Append(((pd.respawnScene ?? "") + "|" + (pd.respawnMarkerName ?? "")).Replace("\"", "")).Append('"')
             .Append(",\"perigo\":").Append(s != null && (s.hazardDeath || s.hazardRespawning) ? "true" : "false")
@@ -110,6 +164,17 @@ public class Plugin : BaseUnityPlugin
             udp.Send(dados, dados.Length);
         }
         catch (SocketException) { }  // painel fechado: tudo bem
+    }
+}
+
+// A mosca segurando uma ação: entra como mais uma tecla, junto das de verdade
+// (a InControl fica com a mais forte de todas no quadro)
+[HarmonyPatch(typeof(InControl.PlayerAction), "UpdateBindings")]
+static class AcionarDaMosca
+{
+    static void Prefix(InControl.PlayerAction __instance, ulong updateTick, float deltaTime)
+    {
+        if (Plugin.daMosca.Contains(__instance)) __instance.UpdateWithValue(1f, updateTick, deltaTime);
     }
 }
 

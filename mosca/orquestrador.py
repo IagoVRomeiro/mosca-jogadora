@@ -116,7 +116,8 @@ class Orquestrador(QtCore.QObject):
         self.jogo.controlando = ligado
         if ligado:
             self.jogo.janelas_proprias.add(int(self.painel.winId()))
-            self.jogo.focar()
+            if not getattr(self.jogo, "pelo_plugin", False):  # pelo plugin ela joga sem foco
+                self.jogo.focar()
             if self.torneio is not None:
                 self._usar(self.torneio.quem_joga())
                 self.gravador_mosca = Gravador(PASTA_GRAVACOES_MOSCA)
@@ -254,7 +255,7 @@ class Orquestrador(QtCore.QObject):
     def _contar_partida(self, eventos):
         """Conta um quadro só se a mosca estava de fato no controle do jogo."""
         p = self.partida
-        if p is None or self.jogo.aviso or not self.jogo.em_foco():
+        if p is None or self.jogo.aviso or not self.jogo.recebe_teclas():
             return
         p["quadros"] += 1
         p["do_jogo"] += self._juiz_ativo
@@ -469,7 +470,7 @@ class Orquestrador(QtCore.QObject):
             return None
         agora = time.monotonic()
         teclas = np.zeros(len(ACOES), bool)
-        no_jogo = self.jogo.controlando and not self.jogo.aviso and self.jogo.em_foco()
+        no_jogo = self.jogo.controlando and not self.jogo.aviso and self.jogo.recebe_teclas()
         if no_jogo:
             teclas = self._suas_teclas()
         voce = bool(teclas.any())
@@ -676,6 +677,21 @@ class Orquestrador(QtCore.QObject):
     def _vida(self):
         return self.juiz.vida if self._juiz_ativo else self.hud.vida
 
+    PLUGIN_SURDO_S = 1.0  # sem o plugin contar teclas lidas por isto: volta ao XTest
+
+    def _teclas_pelo_plugin(self):
+        """Plugin novo: as teclas da mosca vão por dentro do jogo, com ou sem foco.
+        Só enquanto ele confirma que está lendo (a contagem "entrada" sobe); se ela
+        parar, as teclas voltam ao XTest (que precisa do jogo em foco)."""
+        estado, agora = self._estado_jogo, time.monotonic()
+        lidos = estado.get("entrada") if estado else None
+        if isinstance(lidos, bool) or not isinstance(lidos, int):  # plugin antigo ou fora
+            self.jogo.pelo_plugin = False
+            return
+        if lidos != getattr(self, "_teclas_lidas", None):
+            self._teclas_lidas, self._teclas_lidas_em = lidos, agora
+        self.jogo.pelo_plugin = agora - self._teclas_lidas_em < self.PLUGIN_SURDO_S
+
     def _ler_hud(self, imagem):
         """Eventos do jogo -> dopamina no cérebro + painel de recompensa."""
         self._recompensa_quadro = 0.0
@@ -687,6 +703,7 @@ class Orquestrador(QtCore.QObject):
         # com o plugin mandando, os eventos de vida, geo, golpes e salas vêm dele
         valor, eventos = self.hud.passo(imagem)
         do_jogo = self.juiz.passo() if self.juiz is not None else []
+        self._teclas_pelo_plugin()
         if self._juiz_ativo:
             eventos = do_jogo
         elif self.cerebro.reduzida is not None:

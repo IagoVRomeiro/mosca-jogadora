@@ -23,6 +23,7 @@ def captura_falsa(foco_no_jogo=True):
     c._foco = lambda: 42 if foco_no_jogo else 7
     c.focar = lambda: c.enviadas.append("focar")
     c.display = type("Display", (), {"flush": lambda self: None})()
+    c._mandar_ao_plugin = lambda acoes: None  # nada de UDP de verdade nos testes
 
     def tecla(acao, apertar):
         c.enviadas.append((acao, apertar))
@@ -91,6 +92,31 @@ class TesteTeclas(unittest.TestCase):
         self.assertEqual(c.apertadas, set())
         self.assertNotIn(("Direita", True), c.enviadas)
         self.assertIsNotNone(c.aviso_controle)
+
+    def test_pelo_plugin_joga_sem_foco_e_sem_xtest(self):
+        c = captura_falsa(foco_no_jogo=False)
+        c.pelo_plugin, mandadas = True, []
+        c._mandar_ao_plugin = lambda acoes: mandadas.append(set(acoes))
+        acoes = {a: 0.0 for a in ACOES}
+        acoes["Direita"] = acoes["Foco"] = 1.0
+        c.passo(acoes)
+        self.assertEqual(mandadas[-1], {"Direita", "Foco"})
+        self.assertEqual(c.enviadas, [])  # nenhuma tecla de verdade, nem pedido de foco
+        self.assertIsNone(c.aviso_controle)
+        c.soltar_tudo()
+        self.assertEqual(mandadas[-1], set())
+
+    def test_trocar_para_o_plugin_solta_as_teclas_de_verdade(self):
+        c = captura_falsa()
+        c._mandar_ao_plugin = lambda acoes: None
+        acoes = {a: 0.0 for a in ACOES}
+        acoes["Direita"] = 1.0
+        c.passo(acoes)
+        self.assertEqual(c._fisicas, {"d"})
+        c.pelo_plugin = True
+        c.passo(acoes)
+        self.assertEqual(c._fisicas, set())
+        self.assertIn(("Direita", False), c.enviadas)
 
     def test_com_foco_no_painel_devolve_o_foco_ao_jogo(self):
         c = captura_falsa(foco_no_jogo=False)
