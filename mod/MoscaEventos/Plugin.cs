@@ -19,6 +19,12 @@ using UnityEngine;
 public class Plugin : BaseUnityPlugin
 {
     internal static int golpes, inimigosMortos, chefesDerrotados;
+    // Vida tirada de chefes, em milésimos de um chefe inteiro (cresce, como golpes)
+    internal static int danoChefe;
+    // Os últimos inimigos mortos (número do abate, nome do objeto): o nome na cena
+    // é fixo, então dá para saber que é o mesmo inimigo renascido
+    internal static readonly System.Collections.Generic.List<(int, string)> mortos =
+        new System.Collections.Generic.List<(int, string)>();
     // Vida de cada inimigo no primeiro golpe que levou: chefe fora do Salão dos
     // Deuses é quem começou a luta com pelo menos VIDA_DE_CHEFE
     internal static readonly System.Collections.Generic.Dictionary<HealthManager, int> vidaInicial =
@@ -84,6 +90,11 @@ public class Plugin : BaseUnityPlugin
             .Append(",\"golpes\":").Append(golpes)
             .Append(",\"inimigos_mortos\":").Append(inimigosMortos)
             .Append(",\"chefes_derrotados\":").Append(chefesDerrotados)
+            .Append(",\"dano_chefe\":").Append(danoChefe)
+            .Append(",\"mortos\":[").Append(string.Join(",", mortos.ConvertAll(m => $"[{m.Item1},\"{m.Item2.Replace("\"", "")}\"]"))).Append(']')
+            // sombra esperando no mapa (morreu e não foi buscar) e o geo que ela guarda
+            .Append(",\"sombra\":").Append(pd.soulLimited ? "true" : "false")
+            .Append(",\"geo_sombra\":").Append(pd.geoPool)
             .Append(",\"morta\":").Append(s != null && s.dead ? "true" : "false")
             .Append(",\"no_chao\":").Append(s != null && s.onGround ? "true" : "false")
             .Append(",\"na_parede\":").Append(s != null && s.wallSliding ? "true" : "false")
@@ -106,12 +117,19 @@ public class Plugin : BaseUnityPlugin
 [HarmonyPatch(typeof(HealthManager), "TakeDamage")]
 static class AoAcertar
 {
-    static void Prefix(HealthManager __instance)
+    static void Prefix(HealthManager __instance, out int __state)
     {
         if (!Plugin.vidaInicial.ContainsKey(__instance)) Plugin.vidaInicial[__instance] = __instance.hp;
+        __state = __instance.hp;
     }
 
-    static void Postfix() => Plugin.golpes++;
+    static void Postfix(HealthManager __instance, int __state)
+    {
+        Plugin.golpes++;
+        // dano no chefe aos poucos: a fração da vida inicial dele que este golpe tirou
+        if (AoMatar.EhChefe(__instance) && Plugin.vidaInicial.TryGetValue(__instance, out var vida) && vida > 0)
+            Plugin.danoChefe += System.Math.Max(0, System.Math.Min(__state, vida) - System.Math.Max(0, __instance.hp)) * 1000 / vida;
+    }
 }
 
 // Inimigo morto (uma vez só por inimigo)
@@ -123,11 +141,13 @@ static class AoMatar
     {
         if (__state || !__instance.isDead) return;
         Plugin.inimigosMortos++;
+        Plugin.mortos.Add((Plugin.inimigosMortos, __instance.gameObject.name));
+        if (Plugin.mortos.Count > 8) Plugin.mortos.RemoveAt(0);
         if (EhChefe(__instance)) Plugin.chefesDerrotados++;
         Plugin.vidaInicial.Remove(__instance);
     }
 
-    static bool EhChefe(HealthManager inimigo)
+    internal static bool EhChefe(HealthManager inimigo)
     {
         // No Salão dos Deuses o jogo sabe quais são os chefes da luta
         var luta = BossSceneController.Instance;

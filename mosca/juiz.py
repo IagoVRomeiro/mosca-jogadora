@@ -7,6 +7,12 @@ tirava da tela, só que exatos, e mais dois que a tela não via:
 - "inimigo_morto";
 - "cena_nova": uma sala (cena do jogo) onde a mosca nunca tinha estado.
 
+Com o plugin novo, também:
+- "dano_chefe": cada 1% da vida de um chefe tirado;
+- "sombra_recuperada": matou a sombra (o geo da última morte voltou);
+- "inimigo_repetido": no lugar de "inimigo_morto" quando é o mesmo inimigo (cena
+  e nome do objeto) que ela já tinha matado e renasceu.
+
 A mosca continua vendo só a tela: isto só decide o que foi bom ou ruim. Sem
 pacotes há ATIVO_S segundos (jogo fechado, plugin fora), `ativo` é False e o
 painel volta para a leitura pela tela.
@@ -29,7 +35,8 @@ MAX_GOLPES_QUADRO = 3
 # Vai e volta pela mesma passagem: em PASSAGEM_S, PASSAGEM_VEZES trocas entre as
 # mesmas duas salas (A->B->A->B->A) sem nada de bom no meio
 PASSAGEM_S, PASSAGEM_VEZES = 90.0, 4
-BONS = {"inimigo_morto", "chefe_derrotado", "cena_nova", "banco_novo", "geo", "acerto", "cura"}  # um pacote atrasado não vira uma chuva de acertos
+MAX_DANO_CHEFE = 20  # % de chefe por pacote (um golpe forte tira uns 10%)
+BONS = {"inimigo_morto", "chefe_derrotado", "dano_chefe", "sombra_recuperada", "cena_nova", "banco_novo", "geo", "acerto", "cura"}  # um pacote atrasado não vira uma chuva de acertos
 
 
 def eventos_entre(antes, agora, curou_ha_s):
@@ -56,6 +63,11 @@ def eventos_entre(antes, agora, curou_ha_s):
     eventos += ["inimigo_morto"] * min(MAX_GOLPES_QUADRO, max(0, agora["inimigos_mortos"] - antes["inimigos_mortos"]))
     chefes = agora.get("chefes_derrotados", 0) - antes.get("chefes_derrotados", 0)
     eventos += ["chefe_derrotado"] * min(MAX_GOLPES_QUADRO, max(0, chefes))
+    # em milésimos de chefe: um evento a cada 10 (1%), sem perder o resto entre pacotes
+    pct = agora.get("dano_chefe", 0) // 10 - antes.get("dano_chefe", 0) // 10
+    eventos += ["dano_chefe"] * min(MAX_DANO_CHEFE, max(0, pct))
+    if antes.get("sombra") and agora.get("sombra") is False and not agora["morta"]:
+        eventos.append("sombra_recuperada")
     return eventos
 
 
@@ -75,6 +87,9 @@ class JuizDoJogo:
         self.vx_ao_entrar = 0.0  # direção em que entrou na sala atual (reflexo de seguir em frente)
         self.arquivo_bancos = self.arquivo_cenas.with_name("memoria_bancos.json")
         self.bancos = set(json.loads(self.arquivo_bancos.read_text())) if self.arquivo_bancos.exists() else set()
+        self.arquivo_inimigos = self.arquivo_cenas.with_name("memoria_inimigos.json")
+        self.inimigos = set(json.loads(self.arquivo_inimigos.read_text())) if self.arquivo_inimigos.exists() else set()
+        self._ultimo_abate = None  # número do último abate já visto (o plugin numera)
 
     @property
     def ativo(self):
@@ -97,7 +112,7 @@ class JuizDoJogo:
             antes = self.estado if agora - self._recebido_em < ATIVO_S else None  # voltou: só referência
             if novo["curando"]:
                 self._curando_em = agora
-            novos = eventos_entre(antes, novo, agora - self._curando_em)
+            novos = self._repetidos(antes, novo, eventos_entre(antes, novo, agora - self._curando_em))
             eventos += novos
             if BONS.intersection(novos):
                 self._bom_em = agora
@@ -128,6 +143,31 @@ class JuizDoJogo:
                 self.bancos.add(banco)
                 self._salvar(self.arquivo_bancos, self.bancos)
             self.estado, self._recebido_em = novo, agora
+        return eventos
+
+    def _repetidos(self, antes, novo, eventos):
+        """Troca "inimigo_morto" por "inimigo_repetido" nos inimigos que ela já
+        tinha matado (cena + nome do objeto, que o plugin manda nos últimos abates)."""
+        abates = novo.get("mortos")
+        if abates is None:  # plugin antigo
+            return eventos
+        if self._ultimo_abate is None or (abates and abates[-1][0] < self._ultimo_abate):
+            self._ultimo_abate = 0  # primeiro pacote ou o jogo reabriu: a contagem recomeça
+        if antes is None:  # só referência
+            self._ultimo_abate = abates[-1][0] if abates else 0
+            return eventos
+        novos = [nome for n, nome in abates if n > self._ultimo_abate]
+        if abates:
+            self._ultimo_abate = abates[-1][0]
+        if not novos:
+            return eventos
+        eventos = list(eventos)
+        for nome in novos[-eventos.count("inimigo_morto"):] if "inimigo_morto" in eventos else []:
+            chave = f"{novo['cena']}|{nome}"
+            if chave in self.inimigos:
+                eventos[eventos.index("inimigo_morto")] = "inimigo_repetido"
+            self.inimigos.add(chave)
+        self._salvar(self.arquivo_inimigos, self.inimigos)
         return eventos
 
     def _vai_e_volta(self, agora, de, para):

@@ -59,6 +59,13 @@ class LeitorHUD:
         # chefe vencido (Salão dos Deuses ou 200+ de vida): uma luta longa ganha precisa
         # valer mais que o dano tomado nela
         "chefe_derrotado": 5.0,
+        # a cada 1% da vida de um chefe tirado (3 no chefe inteiro): o +5 do fim de
+        # uma luta longa fica longe demais dos golpes que levaram até ele
+        "dano_chefe": 0.03,
+        "sombra_recuperada": 2.0,  # voltou onde morreu e pegou o geo de volta
+        # o mesmo inimigo (cena e nome) morto de novo depois de renascer: farmar
+        # saindo da sala ou descansando no banco quase não vale
+        "inimigo_repetido": 0.1,
     }
 
     def __init__(self):

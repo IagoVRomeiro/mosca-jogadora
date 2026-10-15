@@ -57,6 +57,18 @@ class TesteEventos(unittest.TestCase):
                          ["inimigo_morto", "chefe_derrotado"])
         self.assertEqual(eventos_entre(estado(), estado(inimigos_mortos=1), LONGE), ["inimigo_morto"])
 
+    def test_dano_no_chefe_a_cada_1_porcento(self):
+        self.assertEqual(eventos_entre(estado(dano_chefe=5), estado(dano_chefe=31), LONGE), ["dano_chefe"] * 3)
+        self.assertEqual(eventos_entre(estado(dano_chefe=31), estado(dano_chefe=39), LONGE), [])  # resto: 0,8%
+        self.assertEqual(eventos_entre(estado(dano_chefe=39), estado(dano_chefe=40), LONGE), ["dano_chefe"])
+
+    def test_sombra_recuperada(self):
+        self.assertEqual(eventos_entre(estado(sombra=True, geo=0), estado(sombra=False, geo=300), LONGE),
+                         ["geo", "sombra_recuperada"])
+        # morrer de novo cria outra sombra; plugin antigo (sem o campo) não conta
+        self.assertEqual(eventos_entre(estado(sombra=True), estado(sombra=True, vida=0, morta=True), LONGE), ["morte"])
+        self.assertEqual(eventos_entre(estado(sombra=True), estado(), LONGE), [])
+
     def test_carregar_o_save_nao_gera_eventos(self):
         menu = estado(cena="Menu_Title", geo=0, vida=5)
         self.assertEqual(eventos_entre(menu, estado(geo=900, vida=3), LONGE), [])
@@ -108,6 +120,25 @@ class TesteRede(unittest.TestCase):
         de_novo = JuizDoJogo(self.pasta / "cenas.json", porta=0)
         self.assertEqual(de_novo.bancos, {"Town|Bench", "Crossroads_47|RestBench"})
         de_novo.fechar()
+
+    def test_inimigo_renascido_vale_pouco(self):
+        self.mandar(mortos=[])
+        self.assertEqual(self.mandar(inimigos_mortos=1, mortos=[[1, "Crawler 1"]]), ["inimigo_morto"])
+        self.assertEqual(self.mandar(inimigos_mortos=2, mortos=[[1, "Crawler 1"], [2, "Climber 2"]]), ["inimigo_morto"])
+        # saiu e voltou: o mesmo Crawler renasceu e morreu de novo
+        self.assertEqual(self.mandar(inimigos_mortos=3, mortos=[[1, "Crawler 1"], [2, "Climber 2"], [3, "Crawler 1"]]),
+                         ["inimigo_repetido"])
+        # mesmo nome em outra sala é outro inimigo; vale entre sessões
+        self.assertEqual(self.mandar(cena="Fungus2_13", inimigos_mortos=4, mortos=[[3, "Crawler 1"], [4, "Crawler 1"]]),
+                         ["inimigo_morto", "cena_nova"])
+        de_novo = JuizDoJogo(self.pasta / "cenas.json", porta=0)
+        self.assertIn("Crossroads_01|Crawler 1", de_novo.inimigos)
+        de_novo.fechar()
+
+    def test_jogo_reaberto_recomeca_a_contagem_de_abates(self):
+        self.mandar(inimigos_mortos=50, mortos=[[50, "Crawler 1"]])
+        self.assertEqual(self.mandar(inimigos_mortos=1, mortos=[[1, "Climber 2"]]), [])  # contadores voltaram: só referência
+        self.assertEqual(self.mandar(inimigos_mortos=2, mortos=[[1, "Climber 2"], [2, "Climber 2"]]), ["inimigo_morto"])
 
     def vai_e_volta(self, salas, **no_meio):
         eventos = []

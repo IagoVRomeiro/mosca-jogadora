@@ -111,7 +111,7 @@ class Gravador:
     # Estado do jogo pelo plugin (mod/MoscaEventos), quadro a quadro: com ele dá
     # para recalcular recompensas novas depois (NaN = sem plugin naquele quadro)
     CAMPOS_JOGO = ("vida", "vida_azul", "geo", "alma", "golpes", "inimigos_mortos", "x", "y", "vx", "vy",
-                   "morta", "curando", "no_chao", "na_parede")
+                   "morta", "curando", "no_chao", "na_parede", "dano_chefe", "sombra", "geo_sombra")
 
     def adicionar(self, reduzida, teclas, recompensa=0.0, vida=None, eventos=(), jogo=None):
         """`recompensa`, `vida` e `eventos` vêm do HUD (ou do plugin) e dos
@@ -169,7 +169,7 @@ class Gravador:
             if e is None:
                 indice.append(-1)
                 continue
-            valores[i] = [float(e[c]) for c in cls.CAMPOS_JOGO]
+            valores[i] = [float(e.get(c, np.nan)) for c in cls.CAMPOS_JOGO]  # plugin antigo: sem os novos
             if e["cena"] not in cenas:
                 cenas.append(e["cena"])
             indice.append(cenas.index(e["cena"]))
