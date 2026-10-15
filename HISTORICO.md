@@ -4,26 +4,35 @@ Uma mosca-das-frutas (*Drosophila*) aprendendo a jogar Hollow Knight. O corpo é
 o NeuroMechFly (FlyGym), o cérebro pode ser a fiação real do conectoma FlyWire,
 e ela joga só vendo a tela e apertando teclas.
 
-Tudo aconteceu em dois dias, 13 e 14/10/2026: 73 commits, 43 versões
-treinadas, 488 partidas da mosca (~8,8 h de jogo) registradas no Supabase.
+Tudo aconteceu em dois dias, 13 e 14/10/2026: 79 commits, 46 versões
+treinadas, 589 partidas da mosca (~10,6 h de jogo) registradas no Supabase.
 
 Os horários vêm dos commits do git (a partir de 13/10 18:27) e dos treinos
 registrados no Supabase. O que veio antes do primeiro commit está marcado como
 **"antes das 18:27"**.
 
-## Onde estamos (14/10, 20:30)
+## Onde estamos (14/10, 23:45)
 
-- **Campeã:** #40 (conectoma, o cérebro com a fiação real, **com memória**),
-  desde 14/10 ~19:50: venceu a #35 por −7,1 × −18,7 por minuto (+62%).
-- **Em disputa:** #43 (rede inventada, com memória).
+- **Campeã:** #45 (rede inventada, com memória), desde 14/10 ~23:10: venceu a
+  #40 por −4,6 × −13,4 por minuto (+66%).
+- **Em disputa:** #46 (conectoma).
 - **Onde ela treina:** além do save sem progressão, o **Salão dos Deuses** (save
-  completo), lutando contra chefes; chefe vencido vale +5.
+  completo), lutando contra chefes. Desde 23:40, ferir o chefe vale aos poucos
+  (+3 no chefe inteiro), além dos +5 de vencê-lo.
 - **Juiz:** desde 14/10 03:16, um plugin dentro do jogo conta exatamente o que
-  aconteceu (dano, cura, morte, geo, golpes, inimigos mortos, sala, posição).
-  A leitura pela tela fica de reserva.
+  aconteceu (dano, cura, morte, geo, golpes, inimigos mortos, sala, posição,
+  dano no chefe, sombra). A leitura pela tela fica de reserva.
+- **Teclas:** desde 14/10 23:40 a mosca aperta as ações por dentro do jogo
+  (plugin), então joga mesmo com o foco em outra janela. Sem o plugin, volta
+  ao XTest, que precisa do jogo em foco.
 - **Ajuda pelo controle:** desde 14/10 12:34 você pode gravar e corrigir pelo
   controle; a mosca aprende as ações e continua jogando pelo teclado.
-- **Dados:** 115 gravações suas (89 delas correções ao vivo).
+- **Onde treinar:** no PC do jogo (automático, depois de cada gravação) ou, desde
+  23:45, em outro computador: `notebook.py enviar` aqui, `./notebook.sh` lá e
+  `notebook.py trazer` aqui de volta.
+- **Dados:** 169 gravações suas (142 delas correções ao vivo).
+- **Resolução:** 1280×720 em janela, desde 14/10 ~23:15 (a área do jogo fica
+  16:9 exata e a captura custa metade do tempo de 1920×1080).
 
 ---
 
@@ -67,6 +76,10 @@ Cada solução que foi trocada por outra melhor, com o período em que esteve em
 | Chefe vencido | Igual a um inimigo comum (+1) | 14/10 03:16 → 18:30 | +5 (Salão dos Deuses ou 200+ de vida) |
 | Peso das teclas raras no treino | Até 3× para todas | 13/10 19:57 → 14/10 20:13 | Até 15× para habilidades (magia, super investida, ferrão) |
 | Gravações | Recompensa já somada por quadro | antes das 18:27 → 14/10 02:21 | Marcas de evento (02:21) → contagem de cada evento + pesos + estado do jogo (03:31) |
+| Apertar as teclas da mosca | XTest, só com o jogo em foco | antes das 18:27 → 14/10 23:40 | Por dentro do jogo, pelo plugin (XTest de reserva) |
+| Inimigo morto | +1 sempre, mesmo renascido | 14/10 03:16 → 23:40 | +1 na primeira vez; +0,1 para o mesmo inimigo renascido |
+| Ferir o chefe | Só os +5 de vencê-lo, no fim | 14/10 18:30 → 23:40 | +0,03 a cada 1% da vida dele, além dos +5 |
+| Resolução do jogo | 1920×1080 (área real ~1912×1046 por causa da barra do Wine) | antes das 18:27 → 14/10 ~23:15 | 1280×720 em janela |
 
 ---
 
@@ -138,7 +151,7 @@ sozinha sem nunca piorar quem está jogando.
 que neurônios e ligações são os da mosca real e só a força de cada grupo é
 aprendida. O primeiro conectoma foi o treino #12, às 21:15.
 
-## 3. As disputas (13/10 22:32 → 14/10 20:25)
+## 3. As disputas (13/10 22:32 → 14/10 23:10)
 
 | Versão | Treinada em | Cérebro | Resultado | Recompensa/min (desafiante × campeã) |
 |---|---|---|---|---|
@@ -171,10 +184,14 @@ aprendida. O primeiro conectoma foi o treino #12, às 21:15.
 | **#40** | 14/10 19:47 | **conectoma**, partindo da #38 | **🏆 venceu a #35** (no Salão dos Deuses) | −7,1 × −18,7 (**+62%**) |
 | #41 | 14/10 20:12 | mlp | substituída por um treino seguinte antes de disputar | — |
 | #42 | 14/10 20:21 | conectoma | interrompida no começo | — |
-| #43 | 14/10 20:25 | mlp | em disputa | — |
+| #43 | 14/10 20:25 | mlp | na frente sem certeza por 30 min → perdeu | −6,8 × −8,0 |
+| #44 | 14/10 21:54 | conectoma | perdeu | −8,6 × −6,9 |
+| **#45** | 14/10 22:50 | **mlp** | **🏆 venceu a #40** | −4,6 × −13,4 (**+66%**) |
+| #46 | 14/10 23:10 | conectoma | em disputa | — |
 
 A #15 foi a **primeira vitória do cérebro real**, e a #21 o venceu de novo. Depois
-vieram duas campeãs mlp com memória (#29 e #35) e de novo o cérebro real (#40).
+vieram duas campeãs mlp com memória (#29 e #35), de novo o cérebro real (#40) e
+de novo a mlp (#45).
 Entre as vitórias, muitos **empates**: por isso, às 18:22, o torneio passou a dar
 mais tempo a quem está na frente e o treino passou a aproveitar quem empatou.
 
@@ -298,6 +315,28 @@ luta pelo controle, solta, e ela assume. Em cada arena, a última morte é a do
 chefe (os ajudantes que ele invoca morrem antes), e o plugin reconhece os chefes
 pela lista da própria luta. A #40 venceu a disputa jogando lá.
 
+## 9. Combate em pedaços, jogar sem foco e treinar fora (14/10, 20:55 → 23:45)
+
+| Data e hora | O que entrou | Por quê |
+|---|---|---|
+| 14/10 20:55 | Desafiante substituída antes do veredito fica registrada como **"substituída"** | a #41 aparecia sem resultado no Supabase |
+| 14/10 23:40 | **Dano no chefe (+0,03 por 1%)**, **sombra recuperada (+2)** e **inimigo renascido (+0,1 em vez de +1)** | o +5 no fim de uma luta de minutos quase não chegava aos golpes (o horizonte é de ~3 s); voltar à sombra é progresso; matar o mesmo inimigo de novo dava para farmar |
+| 14/10 23:40 | **Teclas pelo plugin**: a mosca joga com o jogo fora de foco | clicar em outra janela parava a mosca |
+| 14/10 23:45 | **Treinar em outro computador** (`notebook.py` e `notebook.sh`) | os dados vão por uma release privada do GitHub, um arquivo por sessão; a versão treinada volta pelo Supabase |
+
+**O Wine e a porta das teclas.** A primeira versão das teclas pelo plugin não
+funcionou: o painel mandava, o plugin nunca lia (212 KB parados na fila). No
+Wine, `UdpClient.Available` é sempre 0. A leitura passou a ser sem bloquear, e
+o plugin agora conta o que leu: se a contagem para, o painel volta sozinho ao
+XTest em vez de deixar a mosca "apertando" sem efeito.
+
+**Supabase conferido (23:30).** 242 sessões, 46 treinos e 589 partidas. Todas as
+referências batem: cada treino tem o modelo no bucket, cada sessão tem os dados,
+nenhum arquivo órfão, e os quadros de cada uma das 180 sessões que existem nos
+dois lados são iguais. As 62 sessões só no Supabase são partidas antigas da
+mosca, cujas telas o treino apaga de propósito; as 6 só locais são as mais
+recentes, registradas no próximo treino.
+
 ---
 
 ## O que se aprendeu no caminho
@@ -314,6 +353,9 @@ pela lista da própria luta. A #40 venceu a disputa jogando lá.
   placar oscila muito (uma morte vale −8), e melhoras pequenas não apareciam.
   Dar mais tempo a quem está na frente e partir da melhor candidata, mesmo sem
   vitória, fez o progresso pequeno se acumular.
+- **O que funciona nos testes pode não funcionar no Wine.** A porta das teclas
+  passava em todos os testes e não lia nada dentro do jogo. Por isso o caminho
+  novo agora confirma que funciona (a contagem de lidos) e tem volta automática.
 - **Dados limpos antes de cérebro maior.** A memória só entrou depois que o
   juiz ficou exato: com recompensas erradas, um cérebro melhor só aprenderia o
   erro mais rápido.
@@ -326,6 +368,8 @@ pela lista da própria luta. A #40 venceu a disputa jogando lá.
 2. **Correção ao vivo pelo controle** sempre que qualquer versão errar.
 3. **Conferir** se o Falso Cavaleiro e os Mestres do Ferrão contam como chefe, o
    equilíbrio das recompensas e o detector de parada.
-4. **Se a esquiva continuar fraca:** um prêmio por desviar de golpes com um
+4. **Conferir no jogo** os estímulos novos (ferir o chefe, sombra, inimigo
+   renascido) e a mosca jogando com o foco em outra janela.
+5. **Se a esquiva continuar fraca:** um prêmio por desviar de golpes com um
    inimigo perto. **Se a magia continuar rara:** um reflexo de magia com a alma
    cheia em combate.
