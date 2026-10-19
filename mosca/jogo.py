@@ -84,6 +84,7 @@ class CapturaJanela:
             acao: self.display.keysym_to_keycode(XK.string_to_keysym(tecla))
             for acao, tecla in self.TECLAS.items()
         }
+        self._codigo_esc = self.display.keysym_to_keycode(XK.string_to_keysym("Escape"))
         self.janela = None
         self.aviso = None
         self.controlando = False  # só manda teclas quando ligado no painel
@@ -137,6 +138,14 @@ class CapturaJanela:
             saida.append(bool(mapa[c // 8] & (1 << (c % 8))) and c not in vistos)
             vistos.add(c)
         return np.array(saida)
+
+    def esc_apertado(self):
+        """Esc apertado agora, em qualquer janela (a mosca nunca aperta Esc)."""
+        codigo = getattr(self, "_codigo_esc", None)
+        if not codigo:
+            return False
+        mapa = self.display.query_keymap()
+        return bool(mapa[codigo // 8] & (1 << (codigo % 8)))
 
     def da_mosca(self, folga=0.25):
         """Teclas da mosca: as apertadas e as soltas há menos de `folga` s (o jogo

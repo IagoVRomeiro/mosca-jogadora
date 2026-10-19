@@ -108,6 +108,18 @@ class Orquestrador(QtCore.QObject):
         else:
             self._notificar("🎮 A mosca está jogando" if botao.isChecked() else "🎮 Controlar jogo desligado")
 
+    def _parar_com_esc(self):
+        """Esc no teclado (ou o pause do controle, pelo plugin): a mosca para de
+        jogar, como desligar o Controlar jogo. Senão, no menu de pausa, ela
+        sairia apertando as opções."""
+        estado = self._estado_jogo
+        apertou = bool(getattr(self.jogo, "esc_apertado", lambda: False)()
+                       or (estado and "Pausar" in estado.get("acoes", ())))
+        antes, self._esc_antes = getattr(self, "_esc_antes", False), apertou
+        if apertou and not antes and getattr(self.jogo, "controlando", False):
+            self.painel.cartao_mosca.bt_controlar.setChecked(False)  # solta as teclas dela
+            self._notificar("⏸ Esc: a mosca parou de jogar (Ctrl+Alt+C liga de novo)")
+
     @staticmethod
     def _notificar(texto):
         QtCore.QProcess.startDetached("notify-send", ["-a", "Mosca jogadora", "-t", "3000", "Mosca jogadora", texto])
@@ -769,6 +781,7 @@ class Orquestrador(QtCore.QObject):
         imagem = self.jogo.quadro()
         _, acoes = self.cerebro.passo(imagem)
         self._ler_hud(imagem)  # depois do cérebro: usa o movimento que o olho viu
+        self._parar_com_esc()
         gravacao = None
         suas = self._vigiar_correcao()
         if suas is None:

@@ -186,6 +186,39 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class TesteEsc(unittest.TestCase):
+    """Esc (teclado ou pause do controle) tira a mosca do jogo, uma vez por aperto."""
+
+    def orq(self, estado=None):
+        botao = types.SimpleNamespace(desligou=0)
+        botao.setChecked = lambda v: setattr(botao, "desligou", botao.desligou + (not v))
+        jogo = types.SimpleNamespace(controlando=True, esc=False)
+        jogo.esc_apertado = lambda: jogo.esc
+        o = types.SimpleNamespace(jogo=jogo, _estado_jogo=estado,
+                                  painel=types.SimpleNamespace(cartao_mosca=types.SimpleNamespace(bt_controlar=botao)),
+                                  _notificar=lambda texto: None)
+        return o, botao
+
+    def test_esc_desliga_uma_vez(self):
+        o, botao = self.orq()
+        Orquestrador._parar_com_esc(o)
+        o.jogo.esc = True
+        Orquestrador._parar_com_esc(o)
+        Orquestrador._parar_com_esc(o)  # ainda segurando: não conta de novo
+        self.assertEqual(botao.desligou, 1)
+
+    def test_pause_do_controle_pelo_plugin(self):
+        o, botao = self.orq({"acoes": ["Pausar"]})
+        Orquestrador._parar_com_esc(o)
+        self.assertEqual(botao.desligou, 1)
+
+    def test_com_a_mosca_desligada_nao_faz_nada(self):
+        o, botao = self.orq()
+        o.jogo.controlando, o.jogo.esc = False, True
+        Orquestrador._parar_com_esc(o)
+        self.assertEqual(botao.desligou, 0)
+
+
 class TesteTeclasPeloPlugin(unittest.TestCase):
     """As teclas só vão pelo plugin enquanto ele confirma que está lendo."""
 

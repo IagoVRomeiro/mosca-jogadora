@@ -63,6 +63,7 @@ public class Plugin : BaseUnityPlugin
         ("Pular", a => a.jump), ("Atacar", a => a.attack), ("Esquiva", a => a.dash),
         ("Foco", a => a.focus), ("Foco", a => a.cast), ("Super Investida", a => a.superDash),
         ("Ferrão dos Sonhos", a => a.dreamNail), ("Magia Rápida", a => a.quickCast), ("Mapa", a => a.quickMap),
+        ("Pausar", a => a.pause),  // Esc ou Start do controle: o painel tira a mosca do jogo
     };
 
     // Teclas da mosca: o K é Foco e Magia ao mesmo tempo (segurar cura, tocar solta
