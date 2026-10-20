@@ -183,11 +183,11 @@ class TestePosicao(unittest.TestCase):
         self.d = DetectoresPelaPosicao(Path(tempfile.mkdtemp()) / "lugares.json")
 
     def rodar(self, segundos, x=lambda i: 10.0, y=lambda i: 5.0, vx=0.0, direita=False, bom=lambda i: False,
-              **outros):
+              jogo=lambda i: (), **outros):
         eventos = []
         for i in range(int(segundos * 30)):
             e = estado(x=x(i), y=y(i), vx=vx, **outros)
-            eventos += self.d.passo(e, False, direita, bom(i))
+            eventos += self.d.passo(e, False, direita, bom(i), jogo(i))
         return eventos
 
     def test_parada_depois_de_3_s(self):
@@ -222,6 +222,22 @@ class TestePosicao(unittest.TestCase):
         import math
         eventos = self.rodar(16, vx=8.0, x=lambda i: 10.0 + 6 * math.sin(i / 20), bom=lambda i: i % 90 == 0)
         self.assertNotIn("loop", eventos)
+
+    def test_sem_novidade_depois_de_1_min_e_a_cada_15_s(self):
+        eventos = self.rodar(59)
+        self.assertNotIn("sem_novidade", eventos)
+        self.assertEqual(self.rodar(32).count("sem_novidade"), 3)  # 60 s, 75 s e 90 s
+
+    def test_lutando_ou_no_salao_dos_deuses_nao_e_sem_novidade(self):
+        self.assertNotIn("sem_novidade", self.rodar(90, jogo=lambda i: ("acerto",) if i % 150 == 0 else ()))
+        self.assertNotIn("sem_novidade", self.rodar(90, cena="GG_Workshop"))
+
+    def test_sala_conhecida_nao_e_novidade_mas_sala_nova_e(self):
+        self.rodar(40)
+        self.rodar(1, cena="Crossroads_02")  # outra sala: o pedaço dela é novo
+        self.assertNotIn("sem_novidade", self.rodar(55, cena="Crossroads_02"))
+        self.rodar(1)  # de volta à conhecida: nada novo, e o tempo não volta a zero
+        self.assertIn("sem_novidade", self.rodar(5))
 
     def test_lugar_novo_uma_vez_e_fica_salvo(self):
         self.assertEqual(self.rodar(1).count("lugar_novo"), 1)

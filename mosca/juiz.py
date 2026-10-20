@@ -211,12 +211,18 @@ class DetectoresPelaPosicao:
     - loop: em LOOP_S andou > ANDOU na horizontal mas o saldo é < SALDO, sem
       nada de bom no meio
     - lugar_novo: um pedaço (LUGAR x LUGAR) de uma sala onde nunca esteve
+    - sem_novidade: SEM_NOVIDADE_S sem lugar, sala ou banco novo, e sem lutar há
+      COMBATE_S; repete a cada SEM_NOVIDADE_REPETE_S. Não conta no Salão dos
+      Deuses (cenas GG_*), onde ela luta sem explorar
     """
 
     PARADA_VEL, PARADA_S, PARADA_REPETE_S = 0.3, 3.0, 2.0
     PRESA_S, AVISO_S, PRESA_REPETE_S, PRESA_X, SUBIU = 6.0, 4.0, 3.0, 0.5, 2.0
     LOOP_S, LOOP_REPETE_S, ANDOU, SALDO = 15.0, 5.0, 20.0, 4.0
     LUGAR = 8.0
+    SEM_NOVIDADE_S, SEM_NOVIDADE_REPETE_S, COMBATE_S = 60.0, 15.0, 10.0
+    NOVIDADES = {"lugar_novo", "cena_nova", "banco_novo", "sala_nova", "sombra_recuperada", "chefe_derrotado"}
+    COMBATE = {"acerto", "dano", "inimigo_morto", "dano_chefe", "chefe_derrotado"}
 
     def __init__(self, arquivo_lugares=PASTA / "memoria_lugares.json", dt=1 / 30):
         self.dt = dt
@@ -224,6 +230,8 @@ class DetectoresPelaPosicao:
         self.lugares = set()
         if self.arquivo_lugares.exists():
             self.lugares = {tuple(l) for l in json.loads(self.arquivo_lugares.read_text())}
+        # não recomeçam com a sala nem com a morte: entrar numa sala conhecida não é novidade
+        self._sem_novidade = self._sem_luta = self._espera_novidade = 0
         self.reiniciar()
 
     def reiniciar(self):
@@ -237,7 +245,8 @@ class DetectoresPelaPosicao:
     def _janela(self, segundos):
         return self._hist[-int(segundos / self.dt):]
 
-    def passo(self, estado, esquerda, direita, algo_bom):
+    def passo(self, estado, esquerda, direita, algo_bom, eventos_jogo=()):
+        """`eventos_jogo`: os eventos do juiz neste quadro (novidade e luta)."""
         if estado is None or estado["morta"]:
             self.reiniciar()
             return []
@@ -256,6 +265,7 @@ class DetectoresPelaPosicao:
             self.lugares.add(lugar)
             self._salvar_lugares()
             eventos.append("lugar_novo")
+        eventos += self._sem_novidade_passo(estado, set(eventos_jogo) | set(eventos))
 
         parada = abs(estado["vx"]) < self.PARADA_VEL and abs(estado["vy"]) < self.PARADA_VEL
         self._parada = self._parada + 1 if parada and not estado["curando"] else 0
@@ -285,6 +295,19 @@ class DetectoresPelaPosicao:
                 eventos.append("loop")
                 self._espera["loop"] = int(self.LOOP_REPETE_S / self.dt)
         return eventos
+
+    def _sem_novidade_passo(self, estado, eventos):
+        if self.NOVIDADES & eventos or estado["cena"].startswith("GG_"):
+            self._sem_novidade = 0
+        else:
+            self._sem_novidade += 1
+        self._sem_luta = 0 if self.COMBATE & eventos else self._sem_luta + 1
+        self._espera_novidade = max(0, self._espera_novidade - 1)
+        if (self._sem_novidade * self.dt >= self.SEM_NOVIDADE_S and self._sem_luta * self.dt >= self.COMBATE_S
+                and not self._espera_novidade):
+            self._espera_novidade = int(self.SEM_NOVIDADE_REPETE_S / self.dt)
+            return ["sem_novidade"]
+        return []
 
     def _salvar_lugares(self):
         temporario = self.arquivo_lugares.with_suffix(".tmp")

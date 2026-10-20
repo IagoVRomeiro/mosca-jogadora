@@ -585,6 +585,7 @@ class Orquestrador(QtCore.QObject):
         "vai_e_volta": "indo e voltando pela mesma passagem", "chefe_derrotado": "🏆 venceu o chefe!",
         "dano_chefe": "feriu o chefe", "sombra_recuperada": "recuperou a sombra!",
         "inimigo_repetido": "matou inimigo de novo",
+        "parede": "forçando a parede", "sem_novidade": "nada de novo há 1 min",
     }
 
     # Reflexo de sair do lugar: moscas paradas demais fazem movimentos
@@ -735,7 +736,7 @@ class Orquestrador(QtCore.QObject):
         if self._juiz_ativo:
             # posição real do Cavaleiro: parada, presa, loop e lugar novo exatos
             detector = self.pela_posicao
-            eventos += detector.passo(self.juiz.estado, esquerda, direita, bom)
+            eventos += detector.passo(self.juiz.estado, esquerda, direita, bom, eventos)
         else:  # pela tela (movimento da câmera)
             detector = self.presa
             eventos += self.parada.passo(
@@ -748,6 +749,8 @@ class Orquestrador(QtCore.QObject):
         self._pular_na_escalada()
         encostada, detector.encostada = detector.encostada, False
         self._lado_presa = detector.lado
+        if encostada:
+            eventos.append("parede")
         if "vai_e_volta" in eventos and self._mosca_joga:
             reflexo = self._seguir_em_frente()
         elif "loop" in eventos and self._mosca_joga:

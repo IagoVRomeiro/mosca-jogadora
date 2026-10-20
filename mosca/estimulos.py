@@ -47,8 +47,16 @@ class LeitorHUD:
         # dano e morte pesam mais que parada e loop juntos (medido em 59 min da
         # mosca: com -1 e -3, ficar parada e andar em círculos puniam mais que morrer)
         "dano": -2.0, "morte": -8.0, "cura": 0.3, "acerto": 0.3, "geo": 0.5, "parada": -0.2,
-        # sala nova pela tela vale pouco (dá para burlar entrando e saindo)
-        "sala_nova": 0.3, "presa": -0.6, "loop": -0.6,
+        # sala nova pela tela vale pouco (dá para burlar entrando e saindo).
+        # Presa e loop: -0,6 até 20/10. Mais punitivos porque eram o vício dela
+        # (loop ~4,4 por minuto, em 227 min) e quase não pesavam no treino
+        "sala_nova": 0.3, "presa": -1.5, "loop": -1.2,
+        # forçando a parede por 4 s (quando entra o reflexo de escapar): sem isto a
+        # punição de presa (6 s) quase nunca chegava, o reflexo a salvava antes
+        "parede": -0.5,
+        # só com o plugin: 1 min sem pedaço, sala ou banco novo e sem lutar
+        # (fora do Salão dos Deuses); repete a cada 15 s
+        "sem_novidade": -0.5,
         # só com o juiz de dentro do jogo (mosca/juiz.py): exatos, não dá para burlar
         "inimigo_morto": 1.0, "cena_nova": 1.0,
         "lugar_novo": 0.2,  # um pedaço novo de uma sala (8x8 unidades do jogo)
