@@ -15,9 +15,9 @@
 // na janela em foco). Sem pacote por SOLTAR_S, solta tudo (painel fechou ou travou).
 // O pacote começa com "1|" se a mosca está no controle ("0|" desligada).
 //
-// Salão dos Deuses: se a mosca perde uma luta escolhida numa estátua e volta
-// para a frente dela, o plugin abre o desafio (Cima) e entra de novo no mesmo
-// nível, sem você precisar colocá-la. Só com a mosca no controle.
+// Salão dos Deuses: quando a mosca volta de uma luta escolhida numa estátua
+// (perdendo ou vencendo), o plugin abre o desafio (Cima) e entra de novo no
+// mesmo nível, sem você precisar colocá-la. Só com a mosca no controle.
 using System.Globalization;
 using System.Net.Sockets;
 using System.Text;
@@ -55,7 +55,7 @@ public class Plugin : BaseUnityPlugin
     internal static bool morreuNaLuta, repetindo;
     // perder no Salão dos Deuses não é "dead": o Cavaleiro acorda do sonho. Perdeu =
     // entrou na luta e voltou à sala das estátuas sem a luta terminar (EndBossScene)
-    internal static bool lutaEmCurso, entrouNaLuta;
+    internal static bool lutaEmCurso, entrouNaLuta, venceuLuta;
     internal static int derrotas;  // lutas perdidas no Salão (o painel conta como morte)
     float voltouEm = -1f, repetirAte, cimaAte;
     const float ESPERA_VOLTA_S = 2.5f, CIMA_S = 0.3f, DESISTE_S = 5f;
@@ -133,8 +133,8 @@ public class Plugin : BaseUnityPlugin
         if (lutaEmCurso && entrouNaLuta && !BossSceneController.IsBossScene && gm.sceneName == "GG_Workshop")
         {
             lutaEmCurso = entrouNaLuta = false;
-            morreuNaLuta = true;
-            derrotas++;
+            morreuNaLuta = true;  // perdendo ou vencendo, volta para a luta
+            if (!venceuLuta) derrotas++;
         }
         if (repetindo && agora > repetirAte) repetindo = false;  // a tela não abriu: desiste
         if (!morreuNaLuta || gm.sceneName != "GG_Workshop" || hc.cState.dead || !hc.acceptingInput)
@@ -244,7 +244,7 @@ static class AoEscolherLuta
         var e = estatua(__instance);
         Plugin.nivelEscolhido = level;
         Plugin.estatuaEscolhida = e != null ? e.gameObject.name : null;
-        Plugin.morreuNaLuta = Plugin.entrouNaLuta = false;
+        Plugin.morreuNaLuta = Plugin.entrouNaLuta = Plugin.venceuLuta = false;
         Plugin.lutaEmCurso = true;
     }
 }
@@ -253,7 +253,7 @@ static class AoEscolherLuta
 [HarmonyPatch(typeof(BossSceneController), "EndBossScene")]
 static class AoVencerLuta
 {
-    static void Prefix() => Plugin.lutaEmCurso = Plugin.entrouNaLuta = false;
+    static void Prefix() => Plugin.venceuLuta = true;
 }
 
 // O desafio abriu depois de a mosca perder: entra de novo no mesmo nível
