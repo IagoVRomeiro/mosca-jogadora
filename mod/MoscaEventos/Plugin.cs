@@ -63,8 +63,10 @@ public class Plugin : BaseUnityPlugin
     float voltouEm = -1f, proximoCima, segurandoAte;
     static float cimaAte;  // o Cima do próprio plugin (não aparece como seu em "acoes")
     int tentativas;
-    const float ESPERA_VOLTA_S = 2.5f, CIMA_S = 0.3f, ENTRE_CIMAS_S = 1.2f, SEGURAR_MAX_S = 15f;
-    const int TENTATIVAS = 4;
+    // o Cavaleiro volta deitado e só levanta com um botão: o primeiro Cima o levanta,
+    // um dos seguintes abre o desafio
+    const float ESPERA_VOLTA_S = 1.5f, CIMA_S = 0.3f, ENTRE_CIMAS_S = 1.2f, SEGURAR_MAX_S = 15f;
+    const int TENTATIVAS = 8;
 
     void Awake()
     {
@@ -153,9 +155,9 @@ public class Plugin : BaseUnityPlugin
         {
             if (!segurando) segurandoAte = agora + SEGURAR_MAX_S;
             segurando = true;  // desde já: acordando, ela não sai andando
-            if (hc.cState.dead || !hc.acceptingInput) { voltouEm = -1f; return; }
+            if (hc.cState.dead) { voltouEm = -1f; return; }
             if (voltouEm < 0) voltouEm = agora;
-            if (agora - voltouEm < ESPERA_VOLTA_S) return;  // acordando na frente da estátua
+            if (agora - voltouEm < ESPERA_VOLTA_S) return;  // a sala terminando de aparecer
             morreuNaLuta = false;
             voltouEm = -1f;
             repetindo = true;
