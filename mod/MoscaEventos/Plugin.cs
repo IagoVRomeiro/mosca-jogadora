@@ -57,8 +57,14 @@ public class Plugin : BaseUnityPlugin
     // entrou na luta e voltou à sala das estátuas sem a luta terminar (EndBossScene)
     internal static bool lutaEmCurso, entrouNaLuta, venceuLuta;
     internal static int derrotas;  // lutas perdidas no Salão (o painel conta como morte)
-    float voltouEm = -1f, repetirAte, cimaAte;
-    const float ESPERA_VOLTA_S = 2.5f, CIMA_S = 0.3f, DESISTE_S = 5f;
+    // segurando: da volta até entrar na luta, as teclas dela não passam (andando, ela
+    // saía de perto da estátua e o Cima não abria o desafio; no desafio, apertaria opções)
+    internal static bool segurando;
+    float voltouEm = -1f, proximoCima, segurandoAte;
+    static float cimaAte;  // o Cima do próprio plugin (não aparece como seu em "acoes")
+    int tentativas;
+    const float ESPERA_VOLTA_S = 2.5f, CIMA_S = 0.3f, ENTRE_CIMAS_S = 1.2f, SEGURAR_MAX_S = 15f;
+    const int TENTATIVAS = 4;
 
     void Awake()
     {
@@ -122,6 +128,7 @@ public class Plugin : BaseUnityPlugin
             daMosca.Clear();
             moscaNoControle = false;
         }
+        if (segurando) daMosca.Clear();
         if (ih != null && ih.inputActions != null && Time.unscaledTime < cimaAte) daMosca.Add(ih.inputActions.up);
     }
 
@@ -130,27 +137,44 @@ public class Plugin : BaseUnityPlugin
         if (gm == null || hc == null) return;
         var agora = Time.unscaledTime;
         if (lutaEmCurso && BossSceneController.IsBossScene) entrouNaLuta = true;
+        if (segurando && (BossSceneController.IsBossScene || agora > segurandoAte)) segurando = repetindo = false;
         if (lutaEmCurso && entrouNaLuta && !BossSceneController.IsBossScene && gm.sceneName == "GG_Workshop")
         {
             lutaEmCurso = entrouNaLuta = false;
             morreuNaLuta = true;  // perdendo ou vencendo, volta para a luta
             if (!venceuLuta) derrotas++;
         }
-        if (repetindo && agora > repetirAte) repetindo = false;  // a tela não abriu: desiste
-        if (!morreuNaLuta || gm.sceneName != "GG_Workshop" || hc.cState.dead || !hc.acceptingInput)
+        if (!moscaNoControle)  // você desligou a mosca: fica onde está, com você
         {
-            voltouEm = -1f;
+            morreuNaLuta = repetindo = segurando = false;
             return;
         }
-        if (voltouEm < 0) voltouEm = agora;
-        if (agora - voltouEm < ESPERA_VOLTA_S) return;  // acordando na frente da estátua
-        morreuNaLuta = false;
-        voltouEm = -1f;
-        if (!moscaNoControle) return;  // você desligou a mosca: fica onde está
-        repetindo = true;
-        repetirAte = agora + DESISTE_S;
-        cimaAte = agora + CIMA_S;
-        Logger.LogInfo($"Mosca jogadora: de volta à luta de {estatuaEscolhida} (nível {nivelEscolhido + 1})");
+        if (morreuNaLuta && gm.sceneName == "GG_Workshop")
+        {
+            if (!segurando) segurandoAte = agora + SEGURAR_MAX_S;
+            segurando = true;  // desde já: acordando, ela não sai andando
+            if (hc.cState.dead || !hc.acceptingInput) { voltouEm = -1f; return; }
+            if (voltouEm < 0) voltouEm = agora;
+            if (agora - voltouEm < ESPERA_VOLTA_S) return;  // acordando na frente da estátua
+            morreuNaLuta = false;
+            voltouEm = -1f;
+            repetindo = true;
+            tentativas = 0;
+            proximoCima = agora;
+            Logger.LogInfo($"Mosca jogadora: de volta à luta de {estatuaEscolhida} (nível {nivelEscolhido + 1})");
+        }
+        if (repetindo && agora >= proximoCima)  // Cima até o desafio abrir (AoAbrirDesafio)
+        {
+            if (tentativas >= TENTATIVAS)
+            {
+                repetindo = segurando = false;
+                Logger.LogInfo("Mosca jogadora: o desafio não abriu; ela segue sozinha");
+                return;
+            }
+            tentativas++;
+            cimaAte = agora + CIMA_S;
+            proximoCima = agora + ENTRE_CIMAS_S;
+        }
     }
 
     static string Acoes()
@@ -161,6 +185,7 @@ public class Plugin : BaseUnityPlugin
         foreach (var (nome, acao) in ACOES)
         {
             var a = acao(ih.inputActions);
+            if (nome == "Cima" && Time.unscaledTime < cimaAte + 0.3f) continue;  // o do plugin, não o seu
             if (a != null && a.IsPressed && !nomes.Contains(nome)) nomes.Add(nome);
         }
         return string.Join(",", nomes.ConvertAll(n => "\"" + n + "\""));
@@ -263,8 +288,12 @@ static class AoAbrirDesafio
     static void Postfix(BossChallengeUI __instance, BossStatue bossStatue)
     {
         if (!Plugin.repetindo || bossStatue == null || bossStatue.hasNoTiers) return;
-        Plugin.repetindo = false;
-        if (bossStatue.gameObject.name != Plugin.estatuaEscolhida || Plugin.nivelEscolhido < 0) return;
+        Plugin.repetindo = false;  // abriu: para de apertar Cima (segue segurando até a luta)
+        if (bossStatue.gameObject.name != Plugin.estatuaEscolhida || Plugin.nivelEscolhido < 0)
+        {
+            Plugin.segurando = false;
+            return;
+        }
         __instance.StartCoroutine(Entrar(__instance, Plugin.nivelEscolhido));
     }
 
