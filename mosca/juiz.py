@@ -47,6 +47,8 @@ def eventos_entre(antes, agora, curou_ha_s):
     eventos = []
     if agora["morta"] and not antes["morta"]:
         return ["morte"]
+    if agora.get("derrotas", 0) > antes.get("derrotas", 0):  # perdeu no Salão dos Deuses
+        return ["morte"]
     if not agora["morta"] and not antes["morta"]:
         perdeu = (antes["vida"] + antes["vida_azul"]) - (agora["vida"] + agora["vida_azul"])
         if perdeu > 0:

@@ -69,6 +69,10 @@ class TesteEventos(unittest.TestCase):
         self.assertEqual(eventos_entre(estado(sombra=True), estado(sombra=True, vida=0, morta=True), LONGE), ["morte"])
         self.assertEqual(eventos_entre(estado(sombra=True), estado(), LONGE), [])
 
+    def test_perder_no_salao_dos_deuses_e_morte(self):
+        self.assertEqual(eventos_entre(estado(derrotas=2), estado(derrotas=3), LONGE), ["morte"])
+        self.assertEqual(eventos_entre(estado(derrotas=3), estado(derrotas=3), LONGE), [])
+
     def test_carregar_o_save_nao_gera_eventos(self):
         menu = estado(cena="Menu_Title", geo=0, vida=5)
         self.assertEqual(eventos_entre(menu, estado(geo=900, vida=3), LONGE), [])

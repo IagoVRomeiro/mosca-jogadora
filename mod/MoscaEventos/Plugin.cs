@@ -53,6 +53,10 @@ public class Plugin : BaseUnityPlugin
     internal static int nivelEscolhido = -1;
     internal static string estatuaEscolhida;
     internal static bool morreuNaLuta, repetindo;
+    // perder no Salão dos Deuses não é "dead": o Cavaleiro acorda do sonho. Perdeu =
+    // entrou na luta e voltou à sala das estátuas sem a luta terminar (EndBossScene)
+    internal static bool lutaEmCurso, entrouNaLuta;
+    internal static int derrotas;  // lutas perdidas no Salão (o painel conta como morte)
     float voltouEm = -1f, repetirAte, cimaAte;
     const float ESPERA_VOLTA_S = 2.5f, CIMA_S = 0.3f, DESISTE_S = 5f;
 
@@ -125,7 +129,13 @@ public class Plugin : BaseUnityPlugin
     {
         if (gm == null || hc == null) return;
         var agora = Time.unscaledTime;
-        if (BossSceneController.IsBossScene && hc.cState.dead && nivelEscolhido >= 0) morreuNaLuta = true;
+        if (lutaEmCurso && BossSceneController.IsBossScene) entrouNaLuta = true;
+        if (lutaEmCurso && entrouNaLuta && !BossSceneController.IsBossScene && gm.sceneName == "GG_Workshop")
+        {
+            lutaEmCurso = entrouNaLuta = false;
+            morreuNaLuta = true;
+            derrotas++;
+        }
         if (repetindo && agora > repetirAte) repetindo = false;  // a tela não abriu: desiste
         if (!morreuNaLuta || gm.sceneName != "GG_Workshop" || hc.cState.dead || !hc.acceptingInput)
         {
@@ -186,6 +196,7 @@ public class Plugin : BaseUnityPlugin
             .Append(",\"golpes\":").Append(golpes)
             .Append(",\"inimigos_mortos\":").Append(inimigosMortos)
             .Append(",\"chefes_derrotados\":").Append(chefesDerrotados)
+            .Append(",\"derrotas\":").Append(derrotas)
             .Append(",\"dano_chefe\":").Append(danoChefe)
             .Append(",\"mortos\":[").Append(string.Join(",", mortos.ConvertAll(m => $"[{m.Item1},\"{m.Item2.Replace("\"", "")}\"]"))).Append(']')
             // sombra esperando no mapa (morreu e não foi buscar) e o geo que ela guarda
@@ -233,8 +244,16 @@ static class AoEscolherLuta
         var e = estatua(__instance);
         Plugin.nivelEscolhido = level;
         Plugin.estatuaEscolhida = e != null ? e.gameObject.name : null;
-        Plugin.morreuNaLuta = false;
+        Plugin.morreuNaLuta = Plugin.entrouNaLuta = false;
+        Plugin.lutaEmCurso = true;
     }
+}
+
+// Venceu a luta (todos os chefes mortos): a volta para as estátuas não é derrota
+[HarmonyPatch(typeof(BossSceneController), "EndBossScene")]
+static class AoVencerLuta
+{
+    static void Prefix() => Plugin.lutaEmCurso = Plugin.entrouNaLuta = false;
 }
 
 // O desafio abriu depois de a mosca perder: entra de novo no mesmo nível
