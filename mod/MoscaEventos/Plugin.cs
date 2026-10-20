@@ -13,6 +13,11 @@
 // ("Esquerda,Pular"; vazio = nada) ~30x/s, e o plugin as aciona por dentro, como
 // mais uma tecla. Assim ela joga mesmo com o jogo fora de foco (o XTest só digita
 // na janela em foco). Sem pacote por SOLTAR_S, solta tudo (painel fechou ou travou).
+// O pacote começa com "1|" se a mosca está no controle ("0|" desligada).
+//
+// Salão dos Deuses: se a mosca perde uma luta escolhida numa estátua e volta
+// para a frente dela, o plugin abre o desafio (Cima) e entra de novo no mesmo
+// nível, sem você precisar colocá-la. Só com a mosca no controle.
 using System.Globalization;
 using System.Net.Sockets;
 using System.Text;
@@ -43,6 +48,13 @@ public class Plugin : BaseUnityPlugin
     // ações do jogo que a mosca está segurando agora (lidas por AcionarDaMosca)
     internal static readonly System.Collections.Generic.HashSet<InControl.PlayerAction> daMosca =
         new System.Collections.Generic.HashSet<InControl.PlayerAction>();
+    internal static bool moscaNoControle;
+    // a última luta escolhida numa estátua (BossChallengeUI.LoadBoss) e a volta depois de perder
+    internal static int nivelEscolhido = -1;
+    internal static string estatuaEscolhida;
+    internal static bool morreuNaLuta, repetindo;
+    float voltouEm = -1f, repetirAte, cimaAte;
+    const float ESPERA_VOLTA_S = 2.5f, CIMA_S = 0.3f, DESISTE_S = 5f;
 
     void Awake()
     {
@@ -96,10 +108,39 @@ public class Plugin : BaseUnityPlugin
         {
             teclasEm = Time.unscaledTime;
             daMosca.Clear();
-            foreach (var nome in ultimo.Split(','))
+            var barra = ultimo.IndexOf('|');  // painel antigo: só as ações
+            moscaNoControle = barra < 0 || ultimo.Substring(0, barra) == "1";
+            foreach (var nome in ultimo.Substring(barra + 1).Split(','))
                 foreach (var acao in AcoesDe(nome, ih.inputActions)) daMosca.Add(acao);
         }
-        else if (Time.unscaledTime - teclasEm > SOLTAR_S) daMosca.Clear();
+        else if (Time.unscaledTime - teclasEm > SOLTAR_S)
+        {
+            daMosca.Clear();
+            moscaNoControle = false;
+        }
+        if (ih != null && ih.inputActions != null && Time.unscaledTime < cimaAte) daMosca.Add(ih.inputActions.up);
+    }
+
+    void VoltarParaALuta(GameManager gm, HeroController hc)
+    {
+        if (gm == null || hc == null) return;
+        var agora = Time.unscaledTime;
+        if (BossSceneController.IsBossScene && hc.cState.dead && nivelEscolhido >= 0) morreuNaLuta = true;
+        if (repetindo && agora > repetirAte) repetindo = false;  // a tela não abriu: desiste
+        if (!morreuNaLuta || gm.sceneName != "GG_Workshop" || hc.cState.dead || !hc.acceptingInput)
+        {
+            voltouEm = -1f;
+            return;
+        }
+        if (voltouEm < 0) voltouEm = agora;
+        if (agora - voltouEm < ESPERA_VOLTA_S) return;  // acordando na frente da estátua
+        morreuNaLuta = false;
+        voltouEm = -1f;
+        if (!moscaNoControle) return;  // você desligou a mosca: fica onde está
+        repetindo = true;
+        repetirAte = agora + DESISTE_S;
+        cimaAte = agora + CIMA_S;
+        Logger.LogInfo($"Mosca jogadora: de volta à luta de {estatuaEscolhida} (nível {nivelEscolhido + 1})");
     }
 
     static string Acoes()
@@ -120,6 +161,7 @@ public class Plugin : BaseUnityPlugin
         // a InControl para de ler as teclas fora de foco se isto estiver ligado
         InControl.InputManager.SuspendInBackground = false;
         LerTeclasDaMosca();
+        VoltarParaALuta(GameManager.instance, HeroController.instance);
         if (Time.unscaledTime < proximo) return;
         proximo = Time.unscaledTime + 1f / 30f;
         var pd = PlayerData.instance;
@@ -176,6 +218,41 @@ static class AcionarDaMosca
     static void Prefix(InControl.PlayerAction __instance, ulong updateTick, float deltaTime)
     {
         if (Plugin.daMosca.Contains(__instance)) __instance.UpdateWithValue(1f, updateTick, deltaTime);
+    }
+}
+
+// A luta escolhida numa estátua do Salão dos Deuses: qual estátua e qual nível
+[HarmonyPatch(typeof(BossChallengeUI), "LoadBoss", typeof(int), typeof(bool))]
+static class AoEscolherLuta
+{
+    internal static readonly AccessTools.FieldRef<BossChallengeUI, BossStatue> estatua =
+        AccessTools.FieldRefAccess<BossChallengeUI, BossStatue>("bossStatue");
+
+    static void Prefix(BossChallengeUI __instance, int level)
+    {
+        var e = estatua(__instance);
+        Plugin.nivelEscolhido = level;
+        Plugin.estatuaEscolhida = e != null ? e.gameObject.name : null;
+        Plugin.morreuNaLuta = false;
+    }
+}
+
+// O desafio abriu depois de a mosca perder: entra de novo no mesmo nível
+[HarmonyPatch(typeof(BossChallengeUI), "Setup")]
+static class AoAbrirDesafio
+{
+    static void Postfix(BossChallengeUI __instance, BossStatue bossStatue)
+    {
+        if (!Plugin.repetindo || bossStatue == null || bossStatue.hasNoTiers) return;
+        Plugin.repetindo = false;
+        if (bossStatue.gameObject.name != Plugin.estatuaEscolhida || Plugin.nivelEscolhido < 0) return;
+        __instance.StartCoroutine(Entrar(__instance, Plugin.nivelEscolhido));
+    }
+
+    static System.Collections.IEnumerator Entrar(BossChallengeUI ui, int nivel)
+    {
+        yield return new WaitForSeconds(0.6f);  // a tela termina de abrir
+        if (ui != null && ui.gameObject.activeInHierarchy) ui.LoadBoss(nivel);
     }
 }
 

@@ -122,8 +122,10 @@ class CapturaJanela:
         chegar, então vai a cada quadro, mesmo sem mudança."""
         if self._sock_plugin is None:
             self._sock_plugin = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # "1|" com a mosca no controle: o plugin só a leva de volta à luta assim
+        pacote = f"{1 if self.controlando else 0}|" + ",".join(sorted(acoes))
         try:
-            self._sock_plugin.sendto(",".join(sorted(acoes)).encode(), ("127.0.0.1", self.PORTA_PLUGIN))
+            self._sock_plugin.sendto(pacote.encode(), ("127.0.0.1", self.PORTA_PLUGIN))
         except OSError:
             pass
 
