@@ -62,7 +62,9 @@ class LeitorHUD:
         "lugar_novo": 0.2,  # um pedaço novo de uma sala (8x8 unidades do jogo)
         "banco_novo": 1.0,  # descansou num banco nunca usado: progresso real
         "cura_critica": 0.3,  # a mais na cura com 1-2 máscaras (curar quando importa)
-        "perigo": -1.0,  # a mais no dano ao cair em espinhos ou ácido (erro evitável)
+        # a mais no dano ao cair em espinhos ou ácido (erro evitável). -1 até 20/10:
+        # na arena dos Mantis Lords ela caía 11,7 vezes por minuto (você, 0,21)
+        "perigo": -2.0,
         "vai_e_volta": -1.0,  # entrando e saindo pela mesma passagem sem ganhar nada
         # chefe vencido (Salão dos Deuses ou 200+ de vida): uma luta longa ganha precisa
         # valer mais que o dano tomado nela

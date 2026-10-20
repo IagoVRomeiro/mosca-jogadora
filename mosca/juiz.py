@@ -18,6 +18,7 @@ pacotes há ATIVO_S segundos (jogo fechado, plugin fora), `ativo` é False e o
 painel volta para a leitura pela tela.
 """
 
+import collections
 import json
 import socket
 import time
@@ -199,6 +200,71 @@ class JuizDoJogo:
         self.sock.close()
 
 
+def eh_arena(cena):
+    """Arena de luta do Salão dos Deuses (as salas de passagem dele não contam)."""
+    return cena.startswith("GG_") and cena not in ("GG_Workshop", "GG_Atrium", "GG_Atrium_Roof")
+
+
+class MemoriaDePerigos:
+    """Onde ela já caiu em espinhos ou ácido: a borda (o último ponto em chão
+    firme antes da queda) e o lado para onde ia. Fica salva e vale entre sessões.
+
+    Perto de uma borda conhecida (até MARGEM antes dela, na mesma altura), andar
+    ou esquivar para o lado dela é vetado: o reflexo de uma mosca na beira de um
+    abismo. As gravações guardam as teclas que de fato foram ao jogo, então o
+    treino aprende com ela parando na borda.
+    """
+
+    MARGEM, ALEM, ALTURA = 2.0, 0.5, 2.5  # unidades do jogo (ela anda ~8 por segundo)
+    JUNTAR = 1.0  # quedas pela mesma borda: uma só
+    HISTORICO_S = 2.0
+    MAXIMO = 1000
+
+    def __init__(self, arquivo=PASTA / "memoria_perigos.json", dt=1 / 30):
+        self.arquivo = Path(arquivo)
+        self.bordas = json.loads(self.arquivo.read_text()) if self.arquivo.exists() else []
+        self._hist = collections.deque(maxlen=int(self.HISTORICO_S / dt))
+
+    def passo(self, estado, eventos):
+        """Um quadro do juiz: guarda por onde ela anda e, se caiu, a borda."""
+        if estado is None:
+            return
+        if "perigo" in eventos:
+            self._lembrar(estado)
+        self._hist.append((estado["cena"], estado["x"], estado["y"], estado["no_chao"]))
+
+    def _lembrar(self, estado):
+        firmes = [h for h in self._hist if h[0] == estado["cena"] and h[3]]
+        if not firmes:
+            return
+        cena, x, y, _ = firmes[-1]
+        if abs(estado["x"] - x) < 0.3:  # caiu de cima, sem andar para uma borda
+            return
+        lado = 1 if estado["x"] > x else -1
+        for borda in self.bordas:
+            if borda[0] == cena and borda[3] == lado and abs(borda[1] - x) < self.JUNTAR and abs(borda[2] - y) < self.JUNTAR:
+                borda[1] = round(min(borda[1], x) if lado > 0 else max(borda[1], x), 2)  # a mais cautelosa
+                break
+        else:
+            self.bordas.append([cena, round(x, 2), round(y, 2), lado])
+            self.bordas = self.bordas[-self.MAXIMO:]
+        temporario = self.arquivo.with_suffix(".tmp")
+        temporario.write_text(json.dumps(self.bordas))
+        temporario.replace(self.arquivo)
+
+    def vetar(self, estado):
+        """Ações a não apertar agora (vazio longe das bordas conhecidas)."""
+        if estado is None or estado["morta"]:
+            return set()
+        vetadas = set()
+        for cena, x, y, lado in self.bordas:
+            if cena != estado["cena"] or abs(estado["y"] - y) > self.ALTURA:
+                continue
+            if -self.ALEM < (x - estado["x"]) * lado < self.MARGEM:
+                vetadas |= {"Direita" if lado > 0 else "Esquerda", "Esquiva"}
+        return vetadas
+
+
 class DetectoresPelaPosicao:
     """Parada, presa, andando em círculos e lugar novo pela posição real do
     Cavaleiro (unidades do jogo; ele anda ~8/s), no lugar das estimativas pela
@@ -214,6 +280,8 @@ class DetectoresPelaPosicao:
     - sem_novidade: SEM_NOVIDADE_S sem lugar, sala ou banco novo, e sem lutar há
       COMBATE_S; repete a cada SEM_NOVIDADE_REPETE_S. Não conta no Salão dos
       Deuses (cenas GG_*), onde ela luta sem explorar
+    - loop também não conta nas arenas do Salão dos Deuses: lá ir e voltar no
+      mesmo chão é lutar, e a punição a empurrava para os espinhos das bordas
     """
 
     PARADA_VEL, PARADA_S, PARADA_REPETE_S = 0.3, 3.0, 2.0
@@ -288,7 +356,8 @@ class DetectoresPelaPosicao:
                     eventos.append("presa")
 
         janela = self._janela(self.LOOP_S)
-        if len(janela) >= int(self.LOOP_S / self.dt) and not self._espera["loop"]:
+        if (len(janela) >= int(self.LOOP_S / self.dt) and not self._espera["loop"]
+                and not eh_arena(estado["cena"])):
             xs = np.array([j[0] for j in janela])
             if (np.abs(np.diff(xs)).sum() > self.ANDOU and abs(xs[-1] - xs[0]) < self.SALDO
                     and not any(j[3] for j in janela)):

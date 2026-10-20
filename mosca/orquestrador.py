@@ -14,7 +14,7 @@ from comparar import melhoria_percentual
 from registro import registrar_partida, marcar_torneio
 from .aprendizado import Gravador, Imitacao, Torneio
 from .correcao import Correcao
-from .juiz import DetectoresPelaPosicao, JuizDoJogo
+from .juiz import DetectoresPelaPosicao, JuizDoJogo, MemoriaDePerigos
 from .config import ACOES, ARQUIVO_DESAFIANTE, PASTA, PASTA_GRAVACOES_MOSCA, QUADRO_MS, ROTULO_TECLA
 from .estimulos import DetectorLoop, DetectorParada, DetectorPresa, ExploradorSalas, LeitorHUD
 from .interface import Painel
@@ -55,6 +55,7 @@ class Orquestrador(QtCore.QObject):
         self.juiz = None  # eventos de dentro do jogo (mod/MoscaEventos); sem ele, pela tela
         if self.hud is not None:
             self.pela_posicao = DetectoresPelaPosicao()
+            self.perigos = MemoriaDePerigos()
             try:
                 self.juiz = JuizDoJogo()
             except OSError as e:  # porta ocupada (outro painel aberto?)
@@ -640,6 +641,16 @@ class Orquestrador(QtCore.QObject):
             return f"reflexo: meia-volta ({ROTULO_TECLA[outro]}) pulando"
         return f"reflexo: meia-volta ({ROTULO_TECLA[outro]})"
 
+    def _longe_dos_espinhos(self, acoes):
+        """Na beira de onde ela já caiu em espinhos ou ácido, não anda nem esquiva
+        para lá (juiz.MemoriaDePerigos)."""
+        if not (self._mosca_joga and self._juiz_ativo):
+            return acoes
+        vetadas = self.perigos.vetar(self.juiz.estado)
+        if vetadas & {a for a, v in acoes.items() if v > 0.5}:
+            self._ultimo_evento = ("reflexo: parou na beira dos espinhos", time.monotonic())
+        return {a: (0.0 if a in vetadas else v) for a, v in acoes.items()}
+
     def _pular_na_escalada(self):
         """Os pulos da tentativa de escalar: curtos e separados (soltar e apertar
         de novo é o que faz subir agarrada na parede)."""
@@ -737,6 +748,7 @@ class Orquestrador(QtCore.QObject):
             # posição real do Cavaleiro: parada, presa, loop e lugar novo exatos
             detector = self.pela_posicao
             eventos += detector.passo(self.juiz.estado, esquerda, direita, bom, eventos)
+            self.perigos.passo(self.juiz.estado, eventos)
         else:  # pela tela (movimento da câmera)
             detector = self.presa
             eventos += self.parada.passo(
@@ -785,6 +797,7 @@ class Orquestrador(QtCore.QObject):
         _, acoes = self.cerebro.passo(imagem)
         self._ler_hud(imagem)  # depois do cérebro: usa o movimento que o olho viu
         self._parar_com_esc()
+        acoes = self._longe_dos_espinhos(acoes)
         gravacao = None
         suas = self._vigiar_correcao()
         if suas is None:

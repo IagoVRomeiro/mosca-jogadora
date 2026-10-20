@@ -7,7 +7,7 @@ import time
 import unittest
 from pathlib import Path
 
-from mosca.juiz import DetectoresPelaPosicao, JuizDoJogo, eventos_entre
+from mosca.juiz import DetectoresPelaPosicao, JuizDoJogo, MemoriaDePerigos, eventos_entre
 
 
 def estado(**mudancas):
@@ -239,11 +239,51 @@ class TestePosicao(unittest.TestCase):
         self.rodar(1)  # de volta à conhecida: nada novo, e o tempo não volta a zero
         self.assertIn("sem_novidade", self.rodar(5))
 
+    def test_na_arena_ir_e_voltar_nao_e_loop(self):
+        import math
+        eventos = self.rodar(16, vx=8.0, x=lambda i: 10.0 + 6 * math.sin(i / 20), cena="GG_Mantis_Lords_V")
+        self.assertNotIn("loop", eventos)
+
     def test_lugar_novo_uma_vez_e_fica_salvo(self):
         self.assertEqual(self.rodar(1).count("lugar_novo"), 1)
         self.assertEqual(self.rodar(1).count("lugar_novo"), 0)
         de_novo = DetectoresPelaPosicao(self.d.arquivo_lugares)
         self.assertEqual(len(de_novo.lugares), 1)
+
+
+class TestePerigos(unittest.TestCase):
+    def setUp(self):
+        self.m = MemoriaDePerigos(Path(tempfile.mkdtemp()) / "perigos.json")
+
+    def cair(self, x0=30.0, x1=40.0, y=7.4, lado=1, cena="GG_Mantis_Lords_V"):
+        """Anda no chão de x0 até x1 e cai além da borda."""
+        for i in range(30):
+            self.m.passo(estado(cena=cena, x=x0 + (x1 - x0) * i / 29, y=y, no_chao=True), [])
+        self.m.passo(estado(cena=cena, x=x1 + lado * 2, y=y - 0.5, no_chao=False), ["perigo"])
+
+    def test_lembra_a_borda_e_veta_so_o_lado_dela(self):
+        self.cair()
+        perto = estado(cena="GG_Mantis_Lords_V", x=38.8, y=7.4)
+        self.assertEqual(self.m.vetar(perto), {"Direita", "Esquiva"})
+        self.assertEqual(self.m.vetar(estado(cena="GG_Mantis_Lords_V", x=30.0, y=7.4)), set())  # longe
+        self.assertEqual(self.m.vetar(estado(cena="GG_Mantis_Lords_V", x=38.8, y=15.0)), set())  # outra altura
+        self.assertEqual(self.m.vetar(estado(cena="Crossroads_01", x=38.8, y=7.4)), set())  # outra sala
+
+    def test_a_mesma_borda_vira_uma_so_e_fica_salva(self):
+        self.cair()
+        self.cair(x1=40.4)
+        self.assertEqual(len(self.m.bordas), 1)
+        self.assertEqual(self.m.bordas[0][1], 40.0)  # fica a mais cautelosa
+        self.cair(x0=30.0, x1=21.0, lado=-1)  # a borda do outro lado
+        de_novo = MemoriaDePerigos(self.m.arquivo)
+        self.assertEqual(len(de_novo.bordas), 2)
+        self.assertEqual(de_novo.vetar(estado(cena="GG_Mantis_Lords_V", x=22.0, y=7.4)), {"Esquerda", "Esquiva"})
+
+    def test_cair_de_cima_nao_marca_borda(self):
+        for _ in range(30):
+            self.m.passo(estado(cena="GG_Mantis_Lords_V", x=30.0, y=7.4, no_chao=True), [])
+        self.m.passo(estado(cena="GG_Mantis_Lords_V", x=30.1, y=6.9, no_chao=False), ["perigo"])
+        self.assertEqual(self.m.bordas, [])
 
 
 if __name__ == "__main__":
