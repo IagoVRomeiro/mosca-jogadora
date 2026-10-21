@@ -2,6 +2,7 @@
 torneio, treino automático e registro das partidas."""
 
 import collections
+import json
 import re
 import sys
 import time
@@ -86,12 +87,16 @@ class Orquestrador(QtCore.QObject):
         self._info_treino, self._info_ate = None, 0.0
         if self.hud is None:
             cartao_mosca.m_recompensa.hide()  # o jogo demo não tem HUD
+        self.prender_no_salao = self._preferencias().get("prender_no_salao", self.PRENDER_NO_SALAO)
         if hasattr(jogo, "controlando"):
             cartao_mosca.bt_controlar.toggled.connect(self.alternar_controle)
             cartao_mosca.bt_gravar.toggled.connect(self.alternar_gravacao)
+            cartao_mosca.bt_salao.setChecked(self.prender_no_salao)
+            cartao_mosca.bt_salao.toggled.connect(self.alternar_salao)
         else:  # o jogo demo já é controlado sempre e não dá para jogar nele
             cartao_mosca.bt_controlar.hide()
             cartao_mosca.bt_gravar.hide()
+            cartao_mosca.bt_salao.hide()
 
         geo = QtGui.QGuiApplication.primaryScreen().availableGeometry()
         largura, altura = min(geo.width() - 40, 1400), min(geo.height() - 80, 780)
@@ -731,8 +736,25 @@ class Orquestrador(QtCore.QObject):
             return f"reflexo: meia-volta ({ROTULO_TECLA[outro]}) pulando"
         return f"reflexo: meia-volta ({ROTULO_TECLA[outro]})"
 
-    # Por enquanto ela não sai da sala das estátuas: as lutas são lá (juiz.SaidasDoSalao)
+    # Ela não sai da sala das estátuas (juiz.SaidasDoSalao): o padrão. O botão
+    # "Só no salão" do painel liga e desliga, e a escolha fica em preferencias.json
     PRENDER_NO_SALAO = True
+    ARQUIVO_PREFERENCIAS = PASTA / "preferencias.json"
+
+    @classmethod
+    def _preferencias(cls):
+        try:
+            return json.loads(cls.ARQUIVO_PREFERENCIAS.read_text())
+        except (OSError, ValueError):
+            return {}
+
+    def alternar_salao(self, ligado):
+        self.prender_no_salao = ligado
+        preferencias = self._preferencias()
+        preferencias["prender_no_salao"] = ligado
+        self.ARQUIVO_PREFERENCIAS.write_text(json.dumps(preferencias))
+        self._avisar("🏛 Só no salão: ela não sai da sala das estátuas" if ligado
+                     else "🏛 Só no salão desligado: ela pode sair da sala das estátuas", 6)
 
     def _longe_dos_espinhos(self, acoes):
         """Na beira de onde ela já caiu em espinhos ou ácido, não anda nem esquiva
@@ -743,7 +765,7 @@ class Orquestrador(QtCore.QObject):
         vetadas = self.perigos.vetar(self.juiz.estado)
         if vetadas & apertando:
             self._ultimo_evento = ("reflexo: parou na beira dos espinhos", time.monotonic())
-        saida = self.saidas.vetar(self.juiz.estado) if self.PRENDER_NO_SALAO else set()
+        saida = self.saidas.vetar(self.juiz.estado) if self.prender_no_salao else set()
         if saida & apertando:
             self._ultimo_evento = ("reflexo: não sai da sala das estátuas", time.monotonic())
         vetadas |= saida
@@ -910,7 +932,7 @@ class Orquestrador(QtCore.QObject):
             detector = self.pela_posicao
             eventos += detector.passo(self.juiz.estado, esquerda, direita, bom, eventos)
             self.perigos.passo(self.juiz.estado, eventos)
-            if self.PRENDER_NO_SALAO and self._mosca_joga:
+            if self.prender_no_salao and self._mosca_joga:
                 self.saidas.passo(self.juiz.estado)
         else:  # pela tela (movimento da câmera)
             detector = self.presa

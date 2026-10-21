@@ -397,9 +397,16 @@ class CartaoMosca(QtWidgets.QFrame):
             "A mosca aperta as teclas no jogo (" + ", ".join(ROTULO_TECLA.values()) + ")"
             "\n\nAtalho: Ctrl+Alt+C (o mesmo para parar)"
         )
+        self.bt_salao = QtWidgets.QPushButton("🏛  Só no salão")
+        self.bt_salao.setCheckable(True)
+        self.bt_salao.setToolTip(
+            "Ligado: jogando sozinha, a mosca não sai da sala das estátuas do Salão dos\n"
+            "Deuses (perto das saídas, andar e esquivar para lá é vetado). As lutas continuam."
+        )
         linha.addWidget(self.bt_evolucao)
         linha.addWidget(self.bt_gravar)
         linha.addWidget(self.bt_controlar)
+        linha.addWidget(self.bt_salao)
         layout.addLayout(caixa)
 
         linha2 = QtWidgets.QHBoxLayout()
