@@ -34,23 +34,31 @@ class TesteCurriculo(unittest.TestCase):
         self.assertIn("Dominou Gruz", avisos[0])
         self.assertIn("GG_Statue_Gruz", self.c.estado["dominados"])
 
-    def test_revisa_um_dominado_a_cada_4_lutas(self):
+    def test_fica_no_chefe_atual_sem_revisar_os_dominados(self):
+        self.lutar("GG_Statue_Gruz", [True] * 10)
+        proximas = []
+        for _ in range(8):
+            proximas.append(self.c.proxima())
+            self.c.registrar(proximas[-1], False, ORDEM, 100.0)
+        self.assertEqual(proximas, ["GG_Statue_FalseKnight"] * 8)
+
+    def test_revisao_ligada_volta_a_funcionar(self):
+        self.c.REVISAO_A_CADA = 4
         self.lutar("GG_Statue_Gruz", [True] * 10)
         proximas = []
         for _ in range(8):
             proximas.append(self.c.proxima())
             self.c.registrar(proximas[-1], False, ORDEM, 100.0)
         self.assertEqual(proximas.count("GG_Statue_Gruz"), 2)
-        self.assertEqual(proximas.count("GG_Statue_FalseKnight"), 6)
 
-    def test_empacou_avisa_e_depois_pula(self):
+    def test_empacou_avisa_a_cada_30_min_e_nunca_pula(self):
         self.assertEqual(self.lutar("GG_Statue_Gruz", [False]), [])
         avisos = self.c.registrar("GG_Statue_Gruz", False, ORDEM, 31 * 60)
         self.assertIn("Empacou", avisos[0])
-        self.assertEqual(self.c.registrar("GG_Statue_Gruz", False, ORDEM, 40 * 60), [])  # uma vez só
-        avisos = self.c.registrar("GG_Statue_Gruz", False, ORDEM, 61 * 60)
-        self.assertIn("passando para FalseKnight", avisos[0])
-        self.assertEqual(self.c.atual, "GG_Statue_FalseKnight")
+        self.assertEqual(self.c.registrar("GG_Statue_Gruz", False, ORDEM, 40 * 60), [])
+        self.assertIn("Empacou", self.c.registrar("GG_Statue_Gruz", False, ORDEM, 61 * 60)[0])  # de novo
+        self.c.registrar("GG_Statue_Gruz", False, ORDEM, 300 * 60)
+        self.assertEqual(self.c.atual, "GG_Statue_Gruz")  # 5 h depois, ainda nele
 
     def test_estatua_escolhida_por_voce_vira_a_atual(self):
         self.lutar("GG_Statue_Gruz", [False])

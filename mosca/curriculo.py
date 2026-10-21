@@ -1,14 +1,14 @@
-"""Currículo de chefes no Salão dos Deuses: um chefe de cada vez, avançando por
-domínio e revisando os já dominados.
+"""Currículo de chefes no Salão dos Deuses: um chefe de cada vez, e ela só troca
+de chefe quando ficar boa contra o atual.
 
 - O chefe atual é o da primeira luta dela (a estátua que você escolheu) ou o de
   uma estátua que você escolher depois.
-- Domínio: PARA_AVANCAR vitórias nas últimas JANELA lutas dele. Aí ela passa para
-  a próxima estátua liberada, da esquerda para a direita (a ordem do Salão).
-- Revisão: uma luta a cada REVISAO_A_CADA vai para um chefe já dominado, senão as
-  partidas recentes dela que entram no treino seriam só do chefe atual.
-- Empacou: EMPACOU_MIN sem dominar, o painel pede exemplos seus daquele chefe; com
-  PULAR_MIN, ela passa para o próximo (o empacado fica marcado como pulado).
+- Domínio: PARA_AVANCAR vitórias nas últimas JANELA lutas dele. Só aí ela passa
+  para a próxima estátua liberada, da esquerda para a direita (a ordem do Salão).
+- Empacou: a cada EMPACOU_MIN sem dominar, o painel pede exemplos seus daquele
+  chefe. Ela não pula o chefe nem sai dele para revisar outro (PULAR_MIN e
+  REVISAO_A_CADA desligados desde 21/10: cada chefe tem o seu especialista, então
+  treinar um não faz ela esquecer o outro).
 
 Panteões: cada estátua tem a sua sala (a mesma no panteão). Quando todos os
 chefes de um panteão estiverem dominados nas estátuas, o painel avisa que ela
@@ -34,8 +34,8 @@ def nome_do_chefe(estatua):
 
 class Curriculo:
     JANELA, PARA_AVANCAR = 10, 7
-    REVISAO_A_CADA = 4
-    EMPACOU_MIN, PULAR_MIN = 30, 60
+    REVISAO_A_CADA = None  # None: nenhuma luta de revisão de chefes já dominados (era 4)
+    EMPACOU_MIN, PULAR_MIN = 30, None  # None: nunca pula o chefe atual (era 60 min)
 
     def __init__(self, arquivo=PASTA / "curriculo.json"):
         self.arquivo = Path(arquivo)
@@ -84,15 +84,15 @@ class Curriculo:
                               + (f": agora {nome_do_chefe(seguinte)}" if seguinte else ": todos dominados!"))
                 if seguinte:
                     self._comecar(seguinte, agora)
-            elif minutos >= self.PULAR_MIN:
+            elif self.PULAR_MIN is not None and minutos >= self.PULAR_MIN:
                 e["pulados"].append(estatua)
                 seguinte = self._seguinte(ordem)
                 avisos.append(f"⏭ {nome_do_chefe(estatua)} sem domínio em {self.PULAR_MIN} min: "
                               + (f"passando para {nome_do_chefe(seguinte)}" if seguinte else "fica nele"))
                 if seguinte:
                     self._comecar(seguinte, agora)
-            elif minutos >= self.EMPACOU_MIN and not e["avisou"]:
-                e["avisou"] = True
+            elif minutos >= self.EMPACOU_MIN * (e["avisou"] + 1):  # de novo a cada EMPACOU_MIN
+                e["avisou"] = int(e["avisou"]) + 1
                 avisos.append(f"🧩 Empacou em {nome_do_chefe(estatua)} ({sum(historico)}/{len(historico)}): "
                               "grave algumas lutas suas contra ele (Ctrl+Alt+G)")
         self.salvar()
@@ -128,11 +128,13 @@ class Curriculo:
         return avisos
 
     def proxima(self):
-        """A estátua da próxima luta: a atual ou, a cada REVISAO_A_CADA, uma dominada."""
+        """A estátua da próxima luta: a atual (ou, com REVISAO_A_CADA ligado, de vez
+        em quando uma já dominada)."""
         e = self.estado
         if not self.atual:
             return ""
-        if e["dominados"] and e["lutas"] % self.REVISAO_A_CADA == self.REVISAO_A_CADA - 1:
+        if (self.REVISAO_A_CADA and e["dominados"]
+                and e["lutas"] % self.REVISAO_A_CADA == self.REVISAO_A_CADA - 1):
             return e["dominados"][(e["lutas"] // self.REVISAO_A_CADA) % len(e["dominados"])]
         return self.atual
 
