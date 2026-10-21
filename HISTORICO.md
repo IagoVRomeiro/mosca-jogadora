@@ -5,19 +5,19 @@ o NeuroMechFly (FlyGym), o cérebro pode ser a fiação real do conectoma FlyWir
 e ela joga só vendo a tela e apertando teclas.
 
 Quase tudo aconteceu em dois dias, 13 e 14/10/2026, e continuou em 16, 18, 19,
-20 e 21/10: 98 commits, 74 versões treinadas, 1.000 partidas da mosca (~20,9 h
-de jogo) registradas no Supabase.
+20 e 21/10: 101 commits, 78 versões treinadas (4 delas especialistas de um
+chefe), 1.225 partidas da mosca (~23,9 h de jogo) registradas no Supabase.
 
 Os horários vêm dos commits do git (a partir de 13/10 18:27) e dos treinos
 registrados no Supabase. O que veio antes do primeiro commit está marcado como
 **"antes das 18:27"**.
 
-## Onde estamos (21/10, 01:45)
+## Onde estamos (21/10, 03:20)
 
 - **Campeã:** #68 (rede inventada, com memória), desde 20/10 ~16:20: venceu a
-  #64 por −9,7 × −16,3 por minuto (+41%), e depois da #69 à #73.
-- **Em disputa:** #74 (rede inventada). A #72, a primeira com a cura e a magia
-  rebalanceadas, foi interrompida, e a #73 perdeu.
+  #64 por −9,7 × −16,3 por minuto (+41%), e depois da #69 à #74.
+- **Em disputa:** #76 (conectoma, a primeira da regra "a outra arquitetura a
+  cada 3 treinos").
 - **Currículo de chefes:** desde 21/10 01:08, um chefe de cada vez. Ela passa
   para a próxima estátua quando vence 7 das últimas 10 lutas, revisa um chefe
   já dominado a cada 4 lutas, e o painel pede exemplos seus se ela empacar.
@@ -26,7 +26,13 @@ registrados no Supabase. O que veio antes do primeiro commit está marcado como
   seguintes e assume se vencer pelo menos tanto quanto antes. Fora das arenas
   joga a versão geral, como sempre. Desde 01:43, as lutas de panteão também
   contam (por chefe), e parar uma gravação treina o especialista de cada arena
-  onde você lutou pelo menos 1 min.
+  onde você lutou pelo menos 1 min. Já em uso: Soul Warrior (#77, 2 vitórias
+  em 10, contra 0 em 10 da geral) e Failed Champion (#78).
+- **Currículo, até agora:** nenhum chefe dominado. A Gruz Mother foi pulada
+  depois de 60 min sem domínio (1 vitória nas últimas 10); agora é o False
+  Knight. Ela ainda perde quase todas as lutas: falta exemplo seu por chefe.
+- **Panteões:** desde 03:10 recomeçam sozinhos depois de cada tentativa, e o
+  painel avisa quando todos os chefes de um panteão estiverem dominados.
 - **Onde ela treina:** nas estátuas do **Salão dos Deuses**, no automático:
   desde 20/10 16:06, ao fim de cada luta, perdendo ou vencendo, o plugin a
   leva de volta à mesma luta e no mesmo nível (55 voltas seguidas sem falha,
@@ -105,6 +111,7 @@ Cada solução que foi trocada por outra melhor, com o período em que esteve em
 | Revezar os cérebros no treino | Uma vez cada (mlp, conectoma, mlp...) | 13/10 21:16 → 21/10 01:08 | A outra arquitetura a cada 3 treinos |
 | Cérebro nas arenas | O mesmo cérebro geral para todos os chefes | 14/10 19:35 → 21/10 01:30 | Um especialista por arena (avaliado por vitórias em 10 lutas) |
 | Resultado das lutas de chefe | Só as iniciadas numa estátua | 20/10 14:44 → 21/10 01:43 | Toda luta de chefe, de estátua ou de panteão, pela sala |
+| Recomeçar um panteão | Você, a cada tentativa | 14/10 19:35 → 21/10 03:10 | Plugin: volta à porta e recomeça o mesmo panteão |
 | Desenho do cérebro | Amostra de ~17 mil neurônios, como no FlyWire | 13/10 → 21/10 00:44 | Silhueta dos 139 mil e posições mais simétricas (só a ilustração) |
 
 ---
@@ -177,7 +184,7 @@ sozinha sem nunca piorar quem está jogando.
 que neurônios e ligações são os da mosca real e só a força de cada grupo é
 aprendida. O primeiro conectoma foi o treino #12, às 21:15.
 
-## 3. As disputas (13/10 22:32 → 21/10 01:28)
+## 3. As disputas (13/10 22:32 → 21/10 03:04)
 
 | Versão | Treinada em | Cérebro | Resultado | Recompensa/min (desafiante × campeã) |
 |---|---|---|---|---|
@@ -233,7 +240,11 @@ aprendida. O primeiro conectoma foi o treino #12, às 21:15.
 | #71 | 21/10 00:13 | conectoma | perdeu | −15,9 × −15,2 |
 | #72 | 21/10 00:53 | mlp | interrompida | −28,2 × −25,8 |
 | #73 | 21/10 01:14 | mlp | perdeu | −36,2 × −28,5 |
-| #74 | 21/10 01:28 | mlp | em disputa | — |
+| #74 | 21/10 01:28 | mlp | perdeu | −19,5 × −20,0 |
+| #75 | 21/10 02:11 | mlp | especialista da Gruz Mother: descartado | — |
+| #76 | 21/10 02:32 | conectoma | em disputa | — |
+| #77 | 21/10 02:53 | mlp | especialista do Soul Warrior: assumiu (2 × 0 vitórias em 10) | — |
+| #78 | 21/10 03:04 | mlp | especialista do Failed Champion: assumiu (sem referência da geral) | — |
 
 A #15 foi a **primeira vitória do cérebro real**, e a #21 o venceu de novo. Depois
 vieram duas campeãs mlp com memória (#29 e #35), de novo o cérebro real (#40 e
@@ -428,6 +439,18 @@ conectar com o jogo aberto: desligar e ligar resolve.
 | 21/10 01:08 | **Currículo de chefes** e **a outra arquitetura a cada 3 treinos** | 137 de 142 min na Gruz Mother sem melhorar; o conectoma não vence desde a #46 |
 | 21/10 01:30 | **Especialistas por chefe** | um cérebro de 64 interneurônios para mais de 40 chefes aprende um e esquece parte do outro |
 | 21/10 01:43 | **Panteões e gravações nos especialistas** | num panteão cada chefe tem a sua sala: a gravação se divide sozinha, e cada luta conta para o especialista dela |
+| 21/10 03:10 | **Panteões recomeçam sozinhos** e o painel avisa quando ela está pronta para um | o que ela aprende na estátua vale no panteão (a mesma sala), mas lá ela chega machucada da luta anterior |
+| 21/10 03:20 | Treino de especialista **não cai mais** com a gravação dela crescendo no meio | o segundo especialista da Gruz Mother falhou assim |
+
+**Da estátua para o panteão.** Cada chefe do panteão usa a mesma sala da
+estátua dele, então o especialista treinado na estátua já joga no panteão. A
+diferença é que no panteão a vida passa de uma luta para a outra: ela começa
+machucada, o que a estátua nunca mostra. Por isso o panteão também treina os
+especialistas, e por isso a cura importa tanto.
+
+**A contagem de partidas estava errada.** O Supabase devolve no máximo 1.000
+linhas por consulta: o "1.000 partidas" das atualizações anteriores era o
+limite, não o total. Contando de 1.000 em 1.000: 1.225 partidas, ~23,9 h.
 
 **Especialistas.** O cérebro não sabe qual chefe enfrenta (só vê a tela e
 lembra ~4 s) e não aprende durante o jogo: aprende em lotes, a cada treino.
@@ -477,6 +500,8 @@ luta, como deveria. A média alta vinha das muitas derrotas perto do fim.
 - **Um peso de treino corrige um problema e pode criar outro.** A Magia a 15×
   fez a magia aparecer (14/10), e uma semana depois era ela que não deixava
   alma para curar.
+- **Um número redondo merece desconfiança.** "1.000 partidas" duas vezes
+  seguidas era o limite da consulta, não o total.
 - **Um bloqueio precisa de saída.** Segurar as teclas da mosca na volta da luta
   travou tudo: o Cavaleiro deitado esperava um botão que ninguém apertava.
 - **Dados limpos antes de cérebro maior.** A memória só entrou depois que o
