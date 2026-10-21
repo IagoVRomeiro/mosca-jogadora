@@ -104,6 +104,7 @@ class JuizDoJogo:
         self._magias = []  # (quando, golpes até ali): esperando ver se acertaram
         self._ultima_luta = None  # número da última luta do Salão já vista (o plugin numera)
         self.lutas = []  # lutas de chefe terminadas desde a última leitura: (estátua, sala, venceu)
+        self.panteoes = []  # [{"porta", "liberado", "salas"}]: o plugin manda a cada poucos segundos
 
     @property
     def ativo(self):
@@ -115,7 +116,7 @@ class JuizDoJogo:
         eventos = []
         while True:
             try:
-                dados = self.sock.recv(4096)
+                dados = self.sock.recv(65536)  # a lista dos panteões passa de 4 KB
             except OSError:  # nada mais na fila (ou fechado: painel saindo)
                 break
             try:
@@ -129,6 +130,8 @@ class JuizDoJogo:
             novos = self._repetidos(antes, novo, eventos_entre(antes, novo, agora - self._curando_em))
             novos += self._magias_sem_alvo(agora, novo, "magia" in novos)
             self._ler_lutas(antes, novo)
+            if "panteoes" in novo:
+                self.panteoes = novo["panteoes"]
             eventos += novos
             if BONS.intersection(novos):
                 self._bom_em = agora

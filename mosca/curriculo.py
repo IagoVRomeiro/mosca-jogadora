@@ -10,8 +10,15 @@ domínio e revisando os já dominados.
 - Empacou: EMPACOU_MIN sem dominar, o painel pede exemplos seus daquele chefe; com
   PULAR_MIN, ela passa para o próximo (o empacado fica marcado como pulado).
 
+Panteões: cada estátua tem a sua sala (a mesma no panteão). Quando todos os
+chefes de um panteão estiverem dominados nas estátuas, o painel avisa que ela
+está pronta para ele (progresso_panteoes).
+
 Só contam as lutas com a mosca no controle. O estado fica em curriculo.json.
 """
+
+# Salas de um panteão que não são chefes (banco, passagens, fim)
+SALAS_SEM_CHEFE = ("GG_Spa", "GG_Engine", "GG_End_Sequence", "GG_Unn", "GG_Atrium")
 
 import json
 import time
@@ -33,7 +40,7 @@ class Curriculo:
     def __init__(self, arquivo=PASTA / "curriculo.json"):
         self.arquivo = Path(arquivo)
         self.estado = {"atual": None, "desde": None, "historico": {}, "dominados": [], "pulados": [],
-                       "lutas": 0, "avisou": False}
+                       "lutas": 0, "avisou": False, "salas": {}, "panteoes_prontos": []}
         if self.arquivo.exists():
             self.estado.update(json.loads(self.arquivo.read_text()))
 
@@ -53,13 +60,15 @@ class Curriculo:
                 return estatua
         return None
 
-    def registrar(self, estatua, venceu, ordem, agora=None):
+    def registrar(self, estatua, venceu, ordem, agora=None, sala=""):
         """Uma luta dela terminou. Devolve avisos para o painel."""
         agora = time.time() if agora is None else agora
         e = self.estado
         avisos = []
         if not estatua:
             return avisos
+        if sala:
+            e.setdefault("salas", {})[estatua] = sala
         if self.atual is None or (estatua != self.atual and estatua not in e["dominados"]):
             self._comecar(estatua, agora)  # você escolheu outra estátua: ela vira a atual
         historico = e["historico"].setdefault(estatua, [])
@@ -87,6 +96,32 @@ class Curriculo:
                 avisos.append(f"🧩 Empacou em {nome_do_chefe(estatua)} ({sum(historico)}/{len(historico)}): "
                               "grave algumas lutas suas contra ele (Ctrl+Alt+G)")
         self.salvar()
+        return avisos
+
+    def progresso_panteoes(self, panteoes):
+        """[(porta, chefes dominados, chefes)] de cada panteão liberado. Um chefe
+        conta como dominado se a estátua dele (a da mesma sala) foi dominada."""
+        dominadas = {self.estado.get("salas", {}).get(e) for e in self.estado["dominados"]}
+        saida = []
+        for p in panteoes:
+            if not p.get("liberado"):
+                continue
+            chefes = [s for s in p.get("salas", []) if s and not s.startswith(SALAS_SEM_CHEFE)]
+            if chefes:
+                saida.append((p["porta"], sum(s in dominadas for s in chefes), len(chefes)))
+        return saida
+
+    def panteoes_novos_prontos(self, panteoes):
+        """Avisos dos panteões que acabaram de ficar com todos os chefes dominados."""
+        prontos = self.estado.setdefault("panteoes_prontos", [])
+        avisos = []
+        for porta, feitos, total in self.progresso_panteoes(panteoes):
+            if feitos == total and porta not in prontos:
+                prontos.append(porta)
+                avisos.append(f"🏛 {porta}: os {total} chefes dominados nas estátuas. Leve-a até o panteão "
+                              "(depois de cada tentativa ele recomeça sozinho)")
+        if avisos:
+            self.salvar()
         return avisos
 
     def proxima(self):

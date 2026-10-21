@@ -23,6 +23,10 @@
 // conta ao painel as estátuas liberadas ("estatuas", da esquerda para a direita)
 // e o resultado de cada luta de chefe, de estátua ou de panteão ("lutas":
 // [número, estátua ("" no panteão), sala, venceu]).
+//
+// Panteões: terminado um panteão iniciado por você (perdendo ou vencendo), ela
+// volta à porta dele e o plugin o recomeça, do mesmo jeito que nas estátuas. A
+// cada PANTEOES_S ele manda os panteões e as salas de cada um ("panteoes").
 using System.Globalization;
 using System.Net.Sockets;
 using System.Text;
@@ -62,6 +66,12 @@ public class Plugin : BaseUnityPlugin
     // entrou na luta e voltou à sala das estátuas sem a luta terminar (EndBossScene)
     internal static bool lutaEmCurso, entrouNaLuta, venceuLuta;
     static string salaDaLuta;  // a arena da luta de chefe em andamento (estátua ou panteão)
+    // panteão iniciado por você numa porta (BossDoorChallengeUI.Begin) e a volta à porta
+    internal static bool panteaoEmCurso, entrouNoPanteao, voltouDoPanteao, voltaDoPanteao;
+    internal static string portaEscolhida;
+    static string panteoesJson = "";
+    float panteoesEm = -10f, panteoesMandadosEm = -10f;
+    const float PANTEOES_S = 5f;
     internal static int derrotas;  // lutas perdidas no Salão (o painel conta como morte)
     internal static string estatuaAlvo = "", alvoDaVez;  // pedida pelo painel; a desta volta
     internal static int numeroDaLuta;
@@ -102,6 +112,14 @@ public class Plugin : BaseUnityPlugin
         ("Pausar", a => a.pause),  // Esc ou Start do controle: o painel tira a mosca do jogo
     };
 
+    // A lista dos panteões é grande: vai só a cada PANTEOES_S
+    string MandarPanteoes()
+    {
+        if (panteoesJson == "" || Time.unscaledTime - panteoesMandadosEm < PANTEOES_S) return "";
+        panteoesMandadosEm = Time.unscaledTime;
+        return ",\"panteoes\":[" + panteoesJson + "]";
+    }
+
     // As estátuas liberadas (com níveis), da esquerda para a direita
     static System.Collections.Generic.List<BossStatue> Estatuas()
     {
@@ -128,6 +146,27 @@ public class Plugin : BaseUnityPlugin
             return true;
         }
         return false;
+    }
+
+    // Os panteões (portas do GG_Atrium) e as salas de cada um, para o painel saber
+    // quando os chefes de um panteão já foram dominados nas estátuas
+    void AtualizarPanteoes(GameManager gm)
+    {
+        if (gm == null || gm.sceneName != "GG_Atrium" || Time.unscaledTime - panteoesEm < 2f) return;
+        panteoesEm = Time.unscaledTime;
+        var partes = new System.Collections.Generic.List<string>();
+        foreach (var porta in FindObjectsByType<BossSequenceDoor>(FindObjectsSortMode.None))
+        {
+            if (porta == null || porta.bossSequence == null) continue;
+            var salas = new System.Collections.Generic.List<string>();
+            for (int i = 0; i < porta.bossSequence.Count; i++)
+                salas.Add("\"" + (porta.bossSequence.GetSceneAt(i) ?? "").Replace("\"", "") + "\"");
+            partes.Add($"{{\"porta\":\"{porta.gameObject.name.Replace("\"", "")}\",\"liberado\":{(porta.CurrentCompletion.unlocked ? "true" : "false")},\"salas\":[{string.Join(",", salas)}]}}");
+        }
+        var json = string.Join(",", partes);
+        if (json != panteoesJson)
+            Logger.LogInfo($"Mosca jogadora: {partes.Count} panteões encontrados");
+        panteoesJson = json;
     }
 
     void AtualizarEstatuas(GameManager gm)
@@ -212,7 +251,14 @@ public class Plugin : BaseUnityPlugin
         if (gm == null || hc == null) return;
         var agora = Time.unscaledTime;
         if (lutaEmCurso && BossSceneController.IsBossScene) entrouNaLuta = true;
-        if (segurando && (BossSceneController.IsBossScene || agora > segurandoAte)) segurando = repetindo = false;
+        if (segurando && (BossSceneController.IsBossScene || BossSequenceController.IsInSequence || agora > segurandoAte))
+            segurando = repetindo = false;
+        if (panteaoEmCurso && BossSequenceController.IsInSequence) entrouNoPanteao = true;
+        if (panteaoEmCurso && entrouNoPanteao && !BossSequenceController.IsInSequence && gm.sceneName == "GG_Atrium")
+        {
+            panteaoEmCurso = entrouNoPanteao = false;
+            voltouDoPanteao = true;  // perdendo ou vencendo, recomeça o panteão
+        }
         if (lutaEmCurso && entrouNaLuta && !BossSceneController.IsBossScene && gm.sceneName == "GG_Workshop")
         {
             lutaEmCurso = entrouNaLuta = false;
@@ -221,21 +267,28 @@ public class Plugin : BaseUnityPlugin
         }
         if (!moscaNoControle)  // você desligou a mosca: fica onde está, com você
         {
-            morreuNaLuta = repetindo = segurando = false;
+            morreuNaLuta = voltouDoPanteao = repetindo = segurando = false;
             return;
         }
-        if (morreuNaLuta && gm.sceneName == "GG_Workshop")
+        if ((morreuNaLuta && gm.sceneName == "GG_Workshop") || (voltouDoPanteao && gm.sceneName == "GG_Atrium"))
         {
             if (!segurando) segurandoAte = agora + SEGURAR_MAX_S;
             segurando = true;  // desde já: acordando, ela não sai andando
             if (hc.cState.dead) { voltouEm = -1f; return; }
             if (voltouEm < 0) voltouEm = agora;
             if (agora - voltouEm < ESPERA_VOLTA_S) return;  // a sala terminando de aparecer
-            morreuNaLuta = false;
+            voltaDoPanteao = voltouDoPanteao;
+            morreuNaLuta = voltouDoPanteao = false;
             voltouEm = -1f;
             repetindo = true;
             tentativas = 0;
             proximoCima = agora;
+            if (voltaDoPanteao)
+            {
+                alvoDaVez = portaEscolhida;
+                Logger.LogInfo($"Mosca jogadora: recomeçando o panteão {alvoDaVez}");
+                return;
+            }
             alvoDaVez = estatuaEscolhida;
             if (!string.IsNullOrEmpty(estatuaAlvo) && estatuaAlvo != estatuaEscolhida && IrParaEstatua(hc, estatuaAlvo))
                 alvoDaVez = estatuaAlvo;
@@ -277,6 +330,7 @@ public class Plugin : BaseUnityPlugin
         FimDeLuta(GameManager.instance);
         VoltarParaALuta(GameManager.instance, HeroController.instance);
         AtualizarEstatuas(GameManager.instance);
+        AtualizarPanteoes(GameManager.instance);
         if (Time.unscaledTime < proximo) return;
         proximo = Time.unscaledTime + 1f / 30f;
         var pd = PlayerData.instance;
@@ -303,6 +357,7 @@ public class Plugin : BaseUnityPlugin
             .Append(",\"chefes_derrotados\":").Append(chefesDerrotados)
             .Append(",\"derrotas\":").Append(derrotas)
             .Append(",\"estatuas\":[").Append(estatuasJson).Append(']')
+            .Append(MandarPanteoes())
             .Append(",\"lutas\":[").Append(string.Join(",", lutas.ConvertAll(l => $"[{l.Item1},\"{l.Item2.Replace("\"", "")}\",\"{l.Item3.Replace("\"", "")}\",{(l.Item4 ? 1 : 0)}]"))).Append(']')
             .Append(",\"dano_chefe\":").Append(danoChefe)
             .Append(",\"mortos\":[").Append(string.Join(",", mortos.ConvertAll(m => $"[{m.Item1},\"{m.Item2.Replace("\"", "")}\"]"))).Append(']')
@@ -369,7 +424,7 @@ static class AoAbrirDesafio
 {
     static void Postfix(BossChallengeUI __instance, BossStatue bossStatue)
     {
-        if (!Plugin.repetindo || bossStatue == null || bossStatue.hasNoTiers) return;
+        if (!Plugin.repetindo || Plugin.voltaDoPanteao || bossStatue == null || bossStatue.hasNoTiers) return;
         Plugin.repetindo = false;  // abriu: para de apertar Cima (segue segurando até a luta)
         if (bossStatue.gameObject.name != Plugin.alvoDaVez || Plugin.nivelEscolhido < 0)
         {
@@ -383,6 +438,45 @@ static class AoAbrirDesafio
     {
         yield return new WaitForSeconds(0.6f);  // a tela termina de abrir
         if (ui != null && ui.gameObject.activeInHierarchy) ui.LoadBoss(nivel);
+    }
+}
+
+// Panteão iniciado numa porta: qual (para recomeçar o mesmo depois)
+[HarmonyPatch(typeof(BossDoorChallengeUI), "Begin")]
+static class AoComecarPanteao
+{
+    internal static readonly AccessTools.FieldRef<BossDoorChallengeUI, BossSequenceDoor> porta =
+        AccessTools.FieldRefAccess<BossDoorChallengeUI, BossSequenceDoor>("door");
+
+    static void Prefix(BossDoorChallengeUI __instance)
+    {
+        var p = porta(__instance);
+        Plugin.portaEscolhida = p != null ? p.gameObject.name : null;
+        Plugin.panteaoEmCurso = Plugin.portaEscolhida != null;
+        Plugin.entrouNoPanteao = Plugin.voltouDoPanteao = false;
+    }
+}
+
+// A tela da porta abriu depois do panteão terminar: começa o mesmo de novo
+[HarmonyPatch(typeof(BossDoorChallengeUI), "Setup")]
+static class AoAbrirPorta
+{
+    static void Postfix(BossDoorChallengeUI __instance, BossSequenceDoor door)
+    {
+        if (!Plugin.repetindo || !Plugin.voltaDoPanteao || door == null) return;
+        Plugin.repetindo = false;  // abriu: para de apertar Cima (segue segurando até começar)
+        if (door.gameObject.name != Plugin.alvoDaVez)
+        {
+            Plugin.segurando = false;
+            return;
+        }
+        __instance.StartCoroutine(Comecar(__instance));
+    }
+
+    static System.Collections.IEnumerator Comecar(BossDoorChallengeUI ui)
+    {
+        yield return new WaitForSeconds(0.8f);  // a tela termina de abrir
+        if (ui != null && ui.gameObject.activeInHierarchy) ui.Begin();
     }
 }
 

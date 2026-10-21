@@ -86,10 +86,10 @@ class TesteLutasNoPainel(unittest.TestCase):
         from mosca.orquestrador import Orquestrador
         registros = {"curriculo": [], "especialistas": []}
         o = types.SimpleNamespace(
-            juiz=types.SimpleNamespace(pegar_lutas=lambda: lutas),
+            juiz=types.SimpleNamespace(pegar_lutas=lambda: lutas, panteoes=[]),
             _estado_jogo={"estatuas": []}, _juiz_ativo=True, _mosca_joga=True, _ultima_arena=ultima_arena,
-            curriculo=types.SimpleNamespace(registrar=lambda e, v, o: registros["curriculo"].append((e, v)) or [],
-                                            proxima=lambda: ""),
+            curriculo=types.SimpleNamespace(registrar=lambda e, v, o, sala="": registros["curriculo"].append((e, v)) or [],
+                                            proxima=lambda: "", panteoes_novos_prontos=lambda p: []),
             especialistas=types.SimpleNamespace(
                 registrar_luta=lambda a, q, v: registros["especialistas"].append((a, q, v)) or [],
                 precisa_treinar=lambda: None),

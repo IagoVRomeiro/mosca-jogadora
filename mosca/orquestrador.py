@@ -800,7 +800,8 @@ class Orquestrador(QtCore.QObject):
         for estatua, sala, venceu in self.juiz.pegar_lutas():
             if self._mosca_joga:
                 # o currículo é das estátuas; os especialistas, de toda luta (panteão também)
-                avisos = self.curriculo.registrar(estatua, venceu, ordem) if estatua else []
+                avisos = self.curriculo.registrar(estatua, venceu, ordem, sala=sala) if estatua else []
+                avisos += self.curriculo.panteoes_novos_prontos(self.juiz.panteoes)
                 arena, quem = self._ultima_arena or (sala, "geral")
                 if sala and arena != sala:  # a luta que terminou não é a que ela vinha jogando
                     arena, quem = sala, "geral"

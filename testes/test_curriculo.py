@@ -63,6 +63,20 @@ class TesteCurriculo(unittest.TestCase):
         self.assertEqual(de_novo.atual, "GG_Statue_Gruz")
         self.assertEqual(de_novo.texto(), "currículo: Gruz 1/2")
 
+    def test_panteao_pronto_quando_todos_os_chefes_dominados(self):
+        panteoes = [{"porta": "GG_Boss_Door_1", "liberado": True,
+                     "salas": ["GG_Vengefly", "GG_Gruz_Mother", "GG_Spa", "GG_Engine"]},
+                    {"porta": "GG_Boss_Door_5", "liberado": False, "salas": ["GG_Vengefly"]}]
+        for i in range(10):
+            self.c.registrar("GG_Statue_Vengefly", True, ORDEM, i, sala="GG_Vengefly")
+        self.assertEqual(self.c.progresso_panteoes(panteoes), [("GG_Boss_Door_1", 1, 2)])  # banco e passagem não contam
+        self.assertEqual(self.c.panteoes_novos_prontos(panteoes), [])
+        for i in range(10):
+            self.c.registrar("GG_Statue_Gruz", True, ORDEM, 20 + i, sala="GG_Gruz_Mother")
+        avisos = self.c.panteoes_novos_prontos(panteoes)
+        self.assertIn("GG_Boss_Door_1: os 2 chefes dominados", avisos[0])
+        self.assertEqual(self.c.panteoes_novos_prontos(panteoes), [])  # avisa uma vez só
+
     def test_nome(self):
         self.assertEqual(nome_do_chefe("GG_Statue_GruzMother"), "GruzMother")
 
