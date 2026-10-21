@@ -5,26 +5,28 @@ o NeuroMechFly (FlyGym), o cérebro pode ser a fiação real do conectoma FlyWir
 e ela joga só vendo a tela e apertando teclas.
 
 Quase tudo aconteceu em dois dias, 13 e 14/10/2026, e continuou em 16, 18, 19,
-20 e 21/10: 96 commits, 73 versões treinadas, 1.000 partidas da mosca (~20,9 h
+20 e 21/10: 98 commits, 74 versões treinadas, 1.000 partidas da mosca (~20,9 h
 de jogo) registradas no Supabase.
 
 Os horários vêm dos commits do git (a partir de 13/10 18:27) e dos treinos
 registrados no Supabase. O que veio antes do primeiro commit está marcado como
 **"antes das 18:27"**.
 
-## Onde estamos (21/10, 01:30)
+## Onde estamos (21/10, 01:45)
 
 - **Campeã:** #68 (rede inventada, com memória), desde 20/10 ~16:20: venceu a
-  #64 por −9,7 × −16,3 por minuto (+41%), e depois a #69, a #70 e a #71.
-- **Em disputa:** #72 (rede inventada), a primeira treinada com a cura e a
-  magia rebalanceadas.
+  #64 por −9,7 × −16,3 por minuto (+41%), e depois da #69 à #73.
+- **Em disputa:** #74 (rede inventada). A #72, a primeira com a cura e a magia
+  rebalanceadas, foi interrompida, e a #73 perdeu.
 - **Currículo de chefes:** desde 21/10 01:08, um chefe de cada vez. Ela passa
   para a próxima estátua quando vence 7 das últimas 10 lutas, revisa um chefe
   já dominado a cada 4 lutas, e o painel pede exemplos seus se ela empacar.
 - **Especialistas por chefe:** desde 21/10 01:30, cada arena ganha um cérebro
   próprio, treinado só com as lutas dela, a cada 10 lutas. O novo joga as 10
   seguintes e assume se vencer pelo menos tanto quanto antes. Fora das arenas
-  joga a versão geral, como sempre.
+  joga a versão geral, como sempre. Desde 01:43, as lutas de panteão também
+  contam (por chefe), e parar uma gravação treina o especialista de cada arena
+  onde você lutou pelo menos 1 min.
 - **Onde ela treina:** nas estátuas do **Salão dos Deuses**, no automático:
   desde 20/10 16:06, ao fim de cada luta, perdendo ou vencendo, o plugin a
   leva de volta à mesma luta e no mesmo nível (55 voltas seguidas sem falha,
@@ -102,6 +104,7 @@ Cada solução que foi trocada por outra melhor, com o período em que esteve em
 | Cura com 1-2 máscaras | +0,3 a mais | 14/10 14:15 → 21/10 01:02 | +1,0 a mais; magia no vazio e magia em vez de curar: −0,5 cada |
 | Revezar os cérebros no treino | Uma vez cada (mlp, conectoma, mlp...) | 13/10 21:16 → 21/10 01:08 | A outra arquitetura a cada 3 treinos |
 | Cérebro nas arenas | O mesmo cérebro geral para todos os chefes | 14/10 19:35 → 21/10 01:30 | Um especialista por arena (avaliado por vitórias em 10 lutas) |
+| Resultado das lutas de chefe | Só as iniciadas numa estátua | 20/10 14:44 → 21/10 01:43 | Toda luta de chefe, de estátua ou de panteão, pela sala |
 | Desenho do cérebro | Amostra de ~17 mil neurônios, como no FlyWire | 13/10 → 21/10 00:44 | Silhueta dos 139 mil e posições mais simétricas (só a ilustração) |
 
 ---
@@ -174,7 +177,7 @@ sozinha sem nunca piorar quem está jogando.
 que neurônios e ligações são os da mosca real e só a força de cada grupo é
 aprendida. O primeiro conectoma foi o treino #12, às 21:15.
 
-## 3. As disputas (13/10 22:32 → 21/10 00:53)
+## 3. As disputas (13/10 22:32 → 21/10 01:28)
 
 | Versão | Treinada em | Cérebro | Resultado | Recompensa/min (desafiante × campeã) |
 |---|---|---|---|---|
@@ -228,7 +231,9 @@ aprendida. O primeiro conectoma foi o treino #12, às 21:15.
 | #69 | 20/10 16:24 | conectoma | perdeu | −12,0 × −14,6 |
 | #70 | 20/10 23:30 | mlp | perdeu | −16,6 × −13,9 |
 | #71 | 21/10 00:13 | conectoma | perdeu | −15,9 × −15,2 |
-| #72 | 21/10 00:53 | mlp | em disputa | — |
+| #72 | 21/10 00:53 | mlp | interrompida | −28,2 × −25,8 |
+| #73 | 21/10 01:14 | mlp | perdeu | −36,2 × −28,5 |
+| #74 | 21/10 01:28 | mlp | em disputa | — |
 
 A #15 foi a **primeira vitória do cérebro real**, e a #21 o venceu de novo. Depois
 vieram duas campeãs mlp com memória (#29 e #35), de novo o cérebro real (#40 e
@@ -422,6 +427,7 @@ conectar com o jogo aberto: desligar e ligar resolve.
 | 21/10 01:02 | **Magia até 5×, Foco até 6×**, cura com pouca vida +1,0, punições de magia | ela tocava a magia 11% do tempo e curava 0,01 vez por minuto |
 | 21/10 01:08 | **Currículo de chefes** e **a outra arquitetura a cada 3 treinos** | 137 de 142 min na Gruz Mother sem melhorar; o conectoma não vence desde a #46 |
 | 21/10 01:30 | **Especialistas por chefe** | um cérebro de 64 interneurônios para mais de 40 chefes aprende um e esquece parte do outro |
+| 21/10 01:43 | **Panteões e gravações nos especialistas** | num panteão cada chefe tem a sua sala: a gravação se divide sozinha, e cada luta conta para o especialista dela |
 
 **Especialistas.** O cérebro não sabe qual chefe enfrenta (só vê a tela e
 lembra ~4 s) e não aprende durante o jogo: aprende em lotes, a cada treino.
