@@ -4,35 +4,38 @@ Uma mosca-das-frutas (*Drosophila*) aprendendo a jogar Hollow Knight. O corpo é
 o NeuroMechFly (FlyGym), o cérebro pode ser a fiação real do conectoma FlyWire,
 e ela joga só vendo a tela e apertando teclas.
 
-Tudo aconteceu em dois dias, 13 e 14/10/2026: 79 commits, 46 versões
-treinadas, 589 partidas da mosca (~10,6 h de jogo) registradas no Supabase.
+Quase tudo aconteceu em dois dias, 13 e 14/10/2026, e continuou em 16, 18, 19
+e 20/10: 88 commits, 69 versões treinadas, 995 partidas da mosca (~20,8 h de
+jogo) registradas no Supabase.
 
 Os horários vêm dos commits do git (a partir de 13/10 18:27) e dos treinos
 registrados no Supabase. O que veio antes do primeiro commit está marcado como
 **"antes das 18:27"**.
 
-## Onde estamos (14/10, 23:45)
+## Onde estamos (20/10, 23:00)
 
-- **Campeã:** #45 (rede inventada, com memória), desde 14/10 ~23:10: venceu a
-  #40 por −4,6 × −13,4 por minuto (+66%).
-- **Em disputa:** #46 (conectoma).
-- **Onde ela treina:** além do save sem progressão, o **Salão dos Deuses** (save
-  completo), lutando contra chefes. Desde 23:40, ferir o chefe vale aos poucos
-  (+3 no chefe inteiro), além dos +5 de vencê-lo.
+- **Campeã:** #68 (rede inventada, com memória), desde 20/10 ~16:20: venceu a
+  #64 por −9,7 × −16,3 por minuto (+41%).
+- **Em disputa:** #69 (conectoma).
+- **Onde ela treina:** nas estátuas do **Salão dos Deuses**, no automático:
+  desde 20/10 16:06, ao fim de cada luta, perdendo ou vencendo, o plugin a
+  leva de volta à mesma luta e no mesmo nível (55 voltas seguidas sem falha,
+  das 16:10 às 23:00). Nesse período: ~18 golpes, ~9 danos e ~0,7 derrota por
+  minuto, e nenhum loop.
 - **Juiz:** desde 14/10 03:16, um plugin dentro do jogo conta exatamente o que
   aconteceu (dano, cura, morte, geo, golpes, inimigos mortos, sala, posição,
-  dano no chefe, sombra). A leitura pela tela fica de reserva.
-- **Teclas:** desde 14/10 23:40 a mosca aperta as ações por dentro do jogo
-  (plugin), então joga mesmo com o foco em outra janela. Sem o plugin, volta
-  ao XTest, que precisa do jogo em foco.
-- **Ajuda pelo controle:** desde 14/10 12:34 você pode gravar e corrigir pelo
-  controle; a mosca aprende as ações e continua jogando pelo teclado.
-- **Onde treinar:** no PC do jogo (automático, depois de cada gravação) ou, desde
-  23:45, em outro computador: `notebook.py enviar` aqui, `./notebook.sh` lá e
-  `notebook.py trazer` aqui de volta.
-- **Dados:** 169 gravações suas (142 delas correções ao vivo).
-- **Resolução:** 1280×720 em janela, desde 14/10 ~23:15 (a área do jogo fica
-  16:9 exata e a captura custa metade do tempo de 1920×1080).
+  dano no chefe, sombra). Desde 20/10 15:05, perder no Salão dos Deuses também
+  conta como morte. A leitura pela tela fica de reserva.
+- **Teclas:** a mosca aperta as ações por dentro do jogo (plugin), então joga
+  com o foco em qualquer janela. **Esc** (ou Start no controle) a tira do jogo.
+- **Reflexos:** além dos de sair do lugar, presa e loop, desde 20/10 14:44 ela
+  para na beira dos espinhos onde já caiu (memória das bordas).
+- **Ajuda pelo controle:** você grava e corrige pelo controle; a mosca aprende
+  as ações e continua jogando pelo plugin. Ligue o controle **depois** de abrir
+  o jogo: no Proton, um controle já conectado não é visto.
+- **Onde treinar:** no PC do jogo (automático, depois de cada gravação) ou em
+  outro computador (`notebook.py enviar`, `./notebook.sh`, `notebook.py trazer`).
+- **Dados:** 270 gravações suas (241 delas correções ao vivo).
 
 ---
 
@@ -80,6 +83,12 @@ Cada solução que foi trocada por outra melhor, com o período em que esteve em
 | Inimigo morto | +1 sempre, mesmo renascido | 14/10 03:16 → 23:40 | +1 na primeira vez; +0,1 para o mesmo inimigo renascido |
 | Ferir o chefe | Só os +5 de vencê-lo, no fim | 14/10 18:30 → 23:40 | +0,03 a cada 1% da vida dele, além dos +5 |
 | Resolução do jogo | 1920×1080 (área real ~1912×1046 por causa da barra do Wine) | antes das 18:27 → 14/10 ~23:15 | 1280×720 em janela |
+| Parar a mosca | Ctrl+Alt+C ou o botão do painel | antes das 18:27 → 19/10 16:22 | Também Esc (teclado) ou Start (controle) |
+| Loop e presa | −0,6 cada | 13/10 23:28 → 20/10 14:20 | Loop −1,2, presa −1,5, mais "forçando a parede" (−0,5) e "nada de novo há 1 min" (−0,5) |
+| Espinhos e ácido | −1 a mais no dano | 14/10 14:15 → 20/10 14:44 | −2 a mais, e o reflexo de parar na borda conhecida |
+| Loop nas arenas do Salão | Punido como em qualquer sala | 13/10 22:55 → 20/10 14:44 | Não conta (lá ir e voltar é lutar) |
+| Perder no Salão dos Deuses | Não contava (o Cavaleiro acorda do sonho, não morre) | 14/10 19:35 → 20/10 15:05 | Morte (−8), pela luta não terminada |
+| Voltar para a luta | Você a colocava de novo na estátua | 14/10 19:35 → 20/10 14:44 | Plugin: abre o desafio e entra no mesmo nível (só derrota até 15:14; depois também vitória; confiável desde 16:06) |
 
 ---
 
@@ -151,7 +160,7 @@ sozinha sem nunca piorar quem está jogando.
 que neurônios e ligações são os da mosca real e só a força de cada grupo é
 aprendida. O primeiro conectoma foi o treino #12, às 21:15.
 
-## 3. As disputas (13/10 22:32 → 14/10 23:10)
+## 3. As disputas (13/10 22:32 → 20/10 16:24)
 
 | Versão | Treinada em | Cérebro | Resultado | Recompensa/min (desafiante × campeã) |
 |---|---|---|---|---|
@@ -187,11 +196,27 @@ aprendida. O primeiro conectoma foi o treino #12, às 21:15.
 | #43 | 14/10 20:25 | mlp | na frente sem certeza por 30 min → perdeu | −6,8 × −8,0 |
 | #44 | 14/10 21:54 | conectoma | perdeu | −8,6 × −6,9 |
 | **#45** | 14/10 22:50 | **mlp** | **🏆 venceu a #40** | −4,6 × −13,4 (**+66%**) |
-| #46 | 14/10 23:10 | conectoma | em disputa | — |
+| **#46** | 14/10 23:10 | **conectoma** | **🏆 venceu a #45** | −3,7 × −7,4 (**+50%**) |
+| #47 | 16/10 14:04 | mlp | não disputou | — |
+| **#48** | 18/10 05:21 | **mlp** | **🏆 venceu a #46** | −6,1 × −12,0 (**+49%**) |
+| #49 | 19/10 15:27 | conectoma | perdeu | −16,3 × −8,5 |
+| **#50** | 19/10 15:43 | **mlp** | **🏆 venceu a #48** | −2,9 × −5,8 (**+51%**) |
+| #51 | 20/10 00:12 | conectoma | perdeu | −14,8 × −6,8 |
+| **#52** | 20/10 00:24 | mlp | 🏆 venceu a #50 (na sala sem saída, ver seção 10) | −1,6 × −3,7 |
+| #53 a #55 | 20/10 00:40–01:09 | conectoma e mlp | perderam para a #52 | — |
+| **#56** | 20/10 01:41 | mlp | 🏆 venceu a #52 (na sala sem saída) | −4,3 × −7,1 |
+| #57 a #63 | 20/10 01:55–06:07 | conectoma e mlp | perderam para a #56 | — |
+| **#64** | 20/10 06:18 | mlp | 🏆 venceu a #56 (na sala sem saída) | −9,0 × −10,6 |
+| #65 | 20/10 07:43 | conectoma | perdeu | −13,2 × −8,0 |
+| #66 | 20/10 07:54 | mlp | interrompida | — |
+| #67 | 20/10 14:21 | conectoma | perdeu (empate, no Salão dos Deuses) | −22,1 × −22,6 |
+| **#68** | 20/10 15:26 | **mlp** | **🏆 venceu a #64** (no Salão dos Deuses) | −9,7 × −16,3 (**+41%**) |
+| #69 | 20/10 16:24 | conectoma | em disputa | — |
 
 A #15 foi a **primeira vitória do cérebro real**, e a #21 o venceu de novo. Depois
-vieram duas campeãs mlp com memória (#29 e #35), de novo o cérebro real (#40) e
-de novo a mlp (#45).
+vieram duas campeãs mlp com memória (#29 e #35), de novo o cérebro real (#40 e
+#46) e, desde 18/10, só a mlp (#48, #50, #52, #56, #64, #68). As vitórias de
+#52, #56 e #64 aconteceram numa sala sem inimigos e valem pouco (seção 10).
 Entre as vitórias, muitos **empates**: por isso, às 18:22, o torneio passou a dar
 mais tempo a quem está na frente e o treino passou a aproveitar quem empatou.
 
@@ -337,6 +362,39 @@ dois lados são iguais. As 62 sessões só no Supabase são partidas antigas da
 mosca, cujas telas o treino apaga de propósito; as 6 só locais são as mais
 recentes, registradas no próximo treino.
 
+## 10. A sala sem saída e o Salão dos Deuses no automático (19/10 16:22 → 20/10 16:06)
+
+| Data e hora | O que entrou | Por quê |
+|---|---|---|
+| 19/10 16:22 | **Esc tira a mosca do jogo** (Start no controle, pelo plugin) | no menu de pausa ela saía apertando as opções |
+| 20/10 14:20 | **Loop −1,2, presa −1,5, "forçando a parede" (−0,5) e "nada de novo há 1 min" (−0,5)** | o loop era o vício dela (~4,4 por minuto) e a punição de presa quase nunca chegava: o reflexo a salvava antes |
+| 20/10 14:44 | **Espinhos: memória das bordas e reflexo de parar nelas**, espinho −2 a mais, loop não conta nas arenas | na arena dos Mantis Lords ela caía 11,7 vezes por minuto (você, 0,21) |
+| 20/10 14:44 | **Volta sozinha para a luta** depois de perder | você a colocava de novo na estátua a cada derrota |
+| 20/10 15:05 | **Derrota no Salão dos Deuses é morte** | ela acorda do sonho em vez de morrer: a volta não disparava e as derrotas nunca contaram |
+| 20/10 15:14 | Volta para a luta **também depois de vencer** | treinar a mesma luta sem parar |
+| 20/10 15:58 | Volta para a luta **segurando a mosca parada**, Cima até 4 vezes | às vezes ela se afastava da estátua e saía para o GG_Atrium |
+| 20/10 16:06 | **O Cima também levanta o Cavaleiro**, até 8 vezes | ele volta deitado e só levanta com um botão; segurando as teclas dela, ninguém o levantava |
+
+**A sala sem saída (20/10, ~00:20 → ~08:00).** A mosca passou 93% de ~3 h na
+Crossroads_18, uma sala escura sem inimigos, andando de um lado para o outro.
+As disputas de #52, #56 e #64 foram todas lá: sem dano nem morte possíveis,
+vencia quem perdia um pouco menos com os loops, e cada treino ainda copiava
+~1,5 h dela dando voltas. Parecia que ela tinha ficado mais burra. Um teste
+nas suas telas de depois (que nenhuma versão viu) mostrou que não: a #64
+previa o que você fazia tão bem quanto a #50 (erro 0,344 × 0,353) e a #45
+(0,345). O cérebro estava bem, o lugar é que não media nada. Você a tirou de
+lá, e no Salão dos Deuses a #68 venceu a #64 por +41%.
+
+**Os espinhos dos Mantis Lords.** Ela não pulava neles: andava para fora do
+chão seguro, segurando Esquerda ou Direita, e o jogo a devolvia ao meio. A
+punição de loop ajudava a empurrá-la para as bordas. Agora o painel guarda
+cada borda onde ela caiu e veta andar ou esquivar para lá; como a gravação
+guarda a tecla vetada, o treino aprende com ela parando.
+
+**O controle sumiu (20/10 14:45).** Reaberto com o controle já conectado, o
+jogo não o via ("Game controller set to None"). No Proton ele só aparece se
+conectar com o jogo aberto: desligar e ligar resolve.
+
 ---
 
 ## O que se aprendeu no caminho
@@ -356,20 +414,25 @@ recentes, registradas no próximo treino.
 - **O que funciona nos testes pode não funcionar no Wine.** A porta das teclas
   passava em todos os testes e não lia nada dentro do jogo. Por isso o caminho
   novo agora confirma que funciona (a contagem de lidos) e tem volta automática.
+- **O lugar decide o placar.** Numa sala sem inimigos, o torneio não mede
+  nada e o treino copia o vício. Para saber se uma versão ficou pior, o teste
+  justo é nas mesmas telas, que nenhuma viu.
+- **Um bloqueio precisa de saída.** Segurar as teclas da mosca na volta da luta
+  travou tudo: o Cavaleiro deitado esperava um botão que ninguém apertava.
 - **Dados limpos antes de cérebro maior.** A memória só entrou depois que o
   juiz ficou exato: com recompensas erradas, um cérebro melhor só aprenderia o
   erro mais rápido.
 
 ## Próximos passos
 
-1. **Combate no Salão dos Deuses:** um chefe de cada vez, das mais fáceis às
-   mais difíceis; gravar lutas com magia (bola de fogo, mergulho e,
-   principalmente, o grito, que tem só 17 exemplos), esquiva e cura em segurança.
-2. **Correção ao vivo pelo controle** sempre que qualquer versão errar.
-3. **Conferir** se o Falso Cavaleiro e os Mestres do Ferrão contam como chefe, o
-   equilíbrio das recompensas e o detector de parada.
-4. **Conferir no jogo** os estímulos novos (ferir o chefe, sombra, inimigo
-   renascido) e a mosca jogando com o foco em outra janela.
-5. **Se a esquiva continuar fraca:** um prêmio por desviar de golpes com um
-   inimigo perto. **Se a magia continuar rara:** um reflexo de magia com a alma
-   cheia em combate.
+1. **Combate no Salão dos Deuses, no automático:** escolher a luta na estátua e
+   deixar a mosca repetir; trocar de chefe quando ela começar a vencer.
+2. **Correção ao vivo pelo controle** sempre que qualquer versão errar,
+   principalmente esquiva, magia e cura em segurança.
+3. **Proteger o torneio de salas sem nada:** anular a disputa (e pesar menos no
+   treino) quando ela ficar muito tempo na mesma sala sem lutar nem explorar.
+4. **Bordas de espinho por esquiva:** uma queda depois de uma esquiva marca a
+   borda onde a esquiva começou, mais para dentro que a real (na arena dos
+   Mantis Lords, x≈24,9 em vez de ~21). Se ela ficar presa no meio, ajustar.
+5. **Conferir** o equilíbrio das recompensas novas: com loop −1,2 ela pode
+   ficar medrosa; se a esquiva continuar fraca, um prêmio por desviar de golpes.
