@@ -12,10 +12,11 @@ import mosca.orquestrador as orquestrador
 from mosca.orquestrador import Orquestrador
 
 class TesteTorneioETreino(unittest.TestCase):
-    def orq(self, campea="mlp", ultima=None, em_disputa=False, na_frente=False):
+    def orq(self, campea="mlp", seguidas=0, em_disputa=False, na_frente=False):
         o = types.SimpleNamespace(
             modelos={"campea": types.SimpleNamespace(arquitetura=campea)},
-            torneio=types.SimpleNamespace(estado={"ultima_arquitetura": ultima}, em_disputa=em_disputa),
+            torneio=types.SimpleNamespace(estado={"seguidas_da_campea": seguidas}, em_disputa=em_disputa),
+            OUTRA_ARQUITETURA_A_CADA=Orquestrador.OUTRA_ARQUITETURA_A_CADA,
             treinos=[], avisos=[], encerradas=[], _treino_pendente=False,
         )
         o._desafiante_na_frente = lambda: na_frente
@@ -27,10 +28,10 @@ class TesteTorneioETreino(unittest.TestCase):
 
     def test_reveza_arquiteturas(self):
         f = Orquestrador._arquitetura_do_treino
-        self.assertEqual(f(self.orq("mlp", None)), "mlp")
-        self.assertEqual(f(self.orq("mlp", "mlp")), "conectoma")  # depois de uma igual à campeã
-        self.assertEqual(f(self.orq("mlp", "conectoma")), "mlp")
-        self.assertEqual(f(self.orq("conectoma", "conectoma")), "mlp")
+        self.assertEqual(f(self.orq("mlp", 0)), "mlp")
+        self.assertEqual(f(self.orq("mlp", 1)), "mlp")
+        self.assertEqual(f(self.orq("mlp", 2)), "conectoma")  # depois de duas iguais à campeã
+        self.assertEqual(f(self.orq("conectoma", 2)), "mlp")
 
     def test_gravacao_treina_na_hora_mesmo_com_disputa(self):
         o = self.orq(em_disputa=True)

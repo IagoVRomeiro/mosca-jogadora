@@ -14,6 +14,7 @@ from comparar import melhoria_percentual
 from registro import registrar_partida, marcar_torneio
 from .aprendizado import Gravador, Imitacao, Torneio
 from .correcao import Correcao
+from .curriculo import Curriculo
 from .juiz import DetectoresPelaPosicao, JuizDoJogo, MemoriaDePerigos
 from .config import ACOES, ARQUIVO_DESAFIANTE, PASTA, PASTA_GRAVACOES_MOSCA, QUADRO_MS, ROTULO_TECLA
 from .estimulos import DetectorLoop, DetectorParada, DetectorPresa, ExploradorSalas, LeitorHUD
@@ -56,6 +57,7 @@ class Orquestrador(QtCore.QObject):
         if self.hud is not None:
             self.pela_posicao = DetectoresPelaPosicao()
             self.perigos = MemoriaDePerigos()
+            self.curriculo = Curriculo()
             try:
                 self.juiz = JuizDoJogo()
             except OSError as e:  # porta ocupada (outro painel aberto?)
@@ -237,6 +239,13 @@ class Orquestrador(QtCore.QObject):
         self.treinar()
 
     def _texto_torneio(self):
+        texto = self._texto_da_disputa()
+        curriculo = getattr(self, "curriculo", None)
+        if texto and curriculo is not None and curriculo.texto():
+            return f"{texto} · {curriculo.texto()}"
+        return texto
+
+    def _texto_da_disputa(self):
         t = self.torneio
         if t is None or self.partida is None:
             return None
@@ -361,15 +370,21 @@ class Orquestrador(QtCore.QObject):
             self._encerrar_torneio("interrompida")
         self.treinar()
 
+    # A outra arquitetura (não a da campeã) treina uma vez a cada tantas. Era uma
+    # sim, uma não: o conectoma perdeu as ~13 disputas depois da #46 (14/10) e
+    # metade dos treinos ia para ele
+    OUTRA_ARQUITETURA_A_CADA = 3
+
     def _arquitetura_do_treino(self):
-        """Reveza as arquiteturas: depois de uma desafiante da mesma arquitetura
-        da campeã, a próxima é da outra. Assim as duas seguem competindo."""
+        """Reveza as arquiteturas: depois de OUTRA_ARQUITETURA_A_CADA - 1 desafiantes
+        da arquitetura da campeã, uma da outra. Assim as duas seguem competindo."""
         campea = self.modelos["campea"]
         da_campea = getattr(campea, "arquitetura", "mlp") if campea is not None else "mlp"
         if self.torneio is None:
             return da_campea
         outra = "conectoma" if da_campea == "mlp" else "mlp"
-        return outra if self.torneio.estado.get("ultima_arquitetura") == da_campea else da_campea
+        seguidas = self.torneio.estado.get("seguidas_da_campea", 0)
+        return outra if seguidas >= self.OUTRA_ARQUITETURA_A_CADA - 1 else da_campea
 
     def treinar(self):
         """Roda o treinar.py em outro processo (não trava o painel) e, no fim,
@@ -451,6 +466,11 @@ class Orquestrador(QtCore.QObject):
             self._info_treino = (f"⚔ Nova {self._nome('desafiante')} treinada: ela disputa com a "
                                  f"{self._nome('campea')} quando a mosca jogar")
         self.torneio.estado["ultima_arquitetura"] = nova.arquitetura  # para revezar
+        campea = self.modelos["campea"]
+        if getattr(nova, "arquitetura", "mlp") == getattr(campea, "arquitetura", "mlp") and nova is not campea:
+            self.torneio.estado["seguidas_da_campea"] = self.torneio.estado.get("seguidas_da_campea", 0) + 1
+        else:  # a outra arquitetura treinou (ou a nova virou campeã): recomeça a conta
+            self.torneio.estado["seguidas_da_campea"] = 0
         self.torneio.salvar()
         self._usar(self.torneio.quem_joga() if jogando else "campea")
         if jogando:
@@ -703,6 +723,20 @@ class Orquestrador(QtCore.QObject):
     def _vida(self):
         return self.juiz.vida if self._juiz_ativo else self.hud.vida
 
+    def _seguir_curriculo(self):
+        """Lutas do Salão dos Deuses que terminaram vão para o currículo (só as dela),
+        e a estátua da próxima luta vai para o plugin."""
+        if self.juiz is None:
+            return
+        estado = self._estado_jogo
+        ordem = list(estado.get("estatuas") or []) if estado else []
+        for estatua, venceu in self.juiz.pegar_lutas():
+            if self._mosca_joga:
+                for aviso in self.curriculo.registrar(estatua, venceu, ordem):
+                    self._notificar(aviso)
+                    self._info_treino, self._info_ate = aviso, time.monotonic() + 15
+        self.jogo.estatua_alvo = self.curriculo.proxima() if self._juiz_ativo else ""
+
     PLUGIN_SURDO_S = 1.0  # sem o plugin contar teclas lidas por isto: volta ao XTest
 
     def _teclas_pelo_plugin(self):
@@ -730,6 +764,7 @@ class Orquestrador(QtCore.QObject):
         valor, eventos = self.hud.passo(imagem)
         do_jogo = self.juiz.passo() if self.juiz is not None else []
         self._teclas_pelo_plugin()
+        self._seguir_curriculo()
         if self._juiz_ativo:
             eventos = do_jogo
         elif self.cerebro.reduzida is not None:

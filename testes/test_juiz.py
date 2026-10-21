@@ -162,6 +162,14 @@ class TesteRede(unittest.TestCase):
         finally:
             juiz.MAGIA_ALVO_S = antigo
 
+    def test_lutas_do_salao_chegam_uma_vez(self):
+        self.mandar(lutas=[[3, "GG_Statue_Gruz", 1]])  # referência
+        self.assertEqual(self.juiz.pegar_lutas(), [])
+        self.mandar(lutas=[[3, "GG_Statue_Gruz", 1], [4, "GG_Statue_Gruz", 0]])
+        self.mandar(lutas=[[3, "GG_Statue_Gruz", 1], [4, "GG_Statue_Gruz", 0]])  # repetido
+        self.assertEqual(self.juiz.pegar_lutas(), [("GG_Statue_Gruz", False)])
+        self.assertEqual(self.juiz.pegar_lutas(), [])
+
     def test_jogo_reaberto_recomeca_a_contagem_de_abates(self):
         self.mandar(inimigos_mortos=50, mortos=[[50, "Crawler 1"]])
         self.assertEqual(self.mandar(inimigos_mortos=1, mortos=[[1, "Climber 2"]]), [])  # contadores voltaram: só referência

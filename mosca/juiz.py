@@ -102,6 +102,8 @@ class JuizDoJogo:
         self.inimigos = set(json.loads(self.arquivo_inimigos.read_text())) if self.arquivo_inimigos.exists() else set()
         self._ultimo_abate = None  # número do último abate já visto (o plugin numera)
         self._magias = []  # (quando, golpes até ali): esperando ver se acertaram
+        self._ultima_luta = None  # número da última luta do Salão já vista (o plugin numera)
+        self.lutas = []  # lutas terminadas desde a última leitura: (estátua, venceu)
 
     @property
     def ativo(self):
@@ -126,6 +128,7 @@ class JuizDoJogo:
                 self._curando_em = agora
             novos = self._repetidos(antes, novo, eventos_entre(antes, novo, agora - self._curando_em))
             novos += self._magias_sem_alvo(agora, novo, "magia" in novos)
+            self._ler_lutas(antes, novo)
             eventos += novos
             if BONS.intersection(novos):
                 self._bom_em = agora
@@ -157,6 +160,22 @@ class JuizDoJogo:
                 self._salvar(self.arquivo_bancos, self.bancos)
             self.estado, self._recebido_em = novo, agora
         return eventos
+
+    def _ler_lutas(self, antes, novo):
+        """Lutas do Salão dos Deuses terminadas (o plugin manda as últimas, numeradas)."""
+        lutas = novo.get("lutas")
+        if lutas is None:  # plugin antigo
+            return
+        ultima = lutas[-1][0] if lutas else 0
+        if antes is None or self._ultima_luta is None or ultima < self._ultima_luta:
+            self._ultima_luta = ultima  # começo ou o jogo reabriu: só referência
+            return
+        self.lutas += [(estatua, bool(venceu)) for n, estatua, venceu in lutas if n > self._ultima_luta]
+        self._ultima_luta = ultima
+
+    def pegar_lutas(self):
+        lutas, self.lutas = self.lutas, []
+        return lutas
 
     def _magias_sem_alvo(self, agora, novo, soltou):
         """Uma magia que não acertou nada em MAGIA_ALVO_S vira "magia_sem_alvo"."""

@@ -18,6 +18,10 @@
 // Salão dos Deuses: quando a mosca volta de uma luta escolhida numa estátua
 // (perdendo ou vencendo), o plugin abre o desafio (Cima) e entra de novo no
 // mesmo nível, sem você precisar colocá-la. Só com a mosca no controle.
+// Currículo: o painel pode pedir outra estátua (terceiro campo do pacote:
+// "1|Esquerda|GG_Statue_Gorb"); o plugin leva o Cavaleiro até ela. O plugin
+// conta ao painel as estátuas liberadas ("estatuas", da esquerda para a direita)
+// e o resultado de cada luta ("lutas": [número, estátua, venceu]).
 using System.Globalization;
 using System.Net.Sockets;
 using System.Text;
@@ -57,6 +61,12 @@ public class Plugin : BaseUnityPlugin
     // entrou na luta e voltou à sala das estátuas sem a luta terminar (EndBossScene)
     internal static bool lutaEmCurso, entrouNaLuta, venceuLuta;
     internal static int derrotas;  // lutas perdidas no Salão (o painel conta como morte)
+    internal static string estatuaAlvo = "", alvoDaVez;  // pedida pelo painel; a desta volta
+    internal static int numeroDaLuta;
+    internal static readonly System.Collections.Generic.List<(int, string, bool)> lutas =
+        new System.Collections.Generic.List<(int, string, bool)>();
+    static string estatuasJson = "";
+    float estatuasEm = -10f;
     // segurando: da volta até entrar na luta, as teclas dela não passam (andando, ela
     // saía de perto da estátua e o Cima não abria o desafio; no desafio, apertaria opções)
     internal static bool segurando;
@@ -90,6 +100,45 @@ public class Plugin : BaseUnityPlugin
         ("Pausar", a => a.pause),  // Esc ou Start do controle: o painel tira a mosca do jogo
     };
 
+    // As estátuas liberadas (com níveis), da esquerda para a direita
+    static System.Collections.Generic.List<BossStatue> Estatuas()
+    {
+        var lista = new System.Collections.Generic.List<BossStatue>();
+        foreach (var e in FindObjectsByType<BossStatue>(FindObjectsSortMode.None))
+            if (e != null && !e.hasNoTiers && !e.isHidden && e.dreamReturnGate != null && e.StatueState.isUnlocked)
+                lista.Add(e);
+        lista.Sort((a, b) => a.transform.position.x.CompareTo(b.transform.position.x));
+        return lista;
+    }
+
+    // Currículo: leva o Cavaleiro para a frente de outra estátua (onde ele acordaria
+    // depois da luta dela) para o Cima abrir o desafio dela
+    static bool IrParaEstatua(HeroController hc, string nome)
+    {
+        foreach (var e in Estatuas())
+        {
+            if (e.gameObject.name != nome) continue;
+            hc.transform.position = e.dreamReturnGate.transform.position;
+            var corpo = hc.GetComponent<Rigidbody2D>();
+            if (corpo != null) corpo.linearVelocity = Vector2.zero;
+            if (GameCameras.instance != null && GameCameras.instance.cameraController != null)
+                GameCameras.instance.cameraController.PositionToHero(false);
+            return true;
+        }
+        return false;
+    }
+
+    void AtualizarEstatuas(GameManager gm)
+    {
+        if (gm == null || gm.sceneName != "GG_Workshop" || Time.unscaledTime - estatuasEm < 2f) return;
+        estatuasEm = Time.unscaledTime;
+        var lista = Estatuas();
+        var json = string.Join(",", lista.ConvertAll(e => "\"" + e.gameObject.name.Replace("\"", "") + "\""));
+        if (json != estatuasJson)
+            Logger.LogInfo($"Mosca jogadora: {lista.Count} estátuas liberadas para o currículo");
+        estatuasJson = json;
+    }
+
     // Teclas da mosca: o K é Foco e Magia ao mesmo tempo (segurar cura, tocar solta
     // magia), como no teclado; a Magia não está em ACOES porque o jogo a vê como Foco
     static System.Collections.Generic.IEnumerable<InControl.PlayerAction> AcoesDe(string nome, HeroActions a)
@@ -120,9 +169,10 @@ public class Plugin : BaseUnityPlugin
         {
             teclasEm = Time.unscaledTime;
             daMosca.Clear();
-            var barra = ultimo.IndexOf('|');  // painel antigo: só as ações
-            moscaNoControle = barra < 0 || ultimo.Substring(0, barra) == "1";
-            foreach (var nome in ultimo.Substring(barra + 1).Split(','))
+            var partes = ultimo.Split('|');  // painel antigo: só as ações
+            moscaNoControle = partes.Length < 2 || partes[0] == "1";
+            estatuaAlvo = partes.Length >= 3 ? partes[2] : "";
+            foreach (var nome in partes[partes.Length >= 2 ? 1 : 0].Split(','))
                 foreach (var acao in AcoesDe(nome, ih.inputActions)) daMosca.Add(acao);
         }
         else if (Time.unscaledTime - teclasEm > SOLTAR_S)
@@ -145,6 +195,8 @@ public class Plugin : BaseUnityPlugin
             lutaEmCurso = entrouNaLuta = false;
             morreuNaLuta = true;  // perdendo ou vencendo, volta para a luta
             if (!venceuLuta) derrotas++;
+            lutas.Add((++numeroDaLuta, estatuaEscolhida ?? "", venceuLuta));
+            if (lutas.Count > 8) lutas.RemoveAt(0);
         }
         if (!moscaNoControle)  // você desligou a mosca: fica onde está, com você
         {
@@ -163,7 +215,10 @@ public class Plugin : BaseUnityPlugin
             repetindo = true;
             tentativas = 0;
             proximoCima = agora;
-            Logger.LogInfo($"Mosca jogadora: de volta à luta de {estatuaEscolhida} (nível {nivelEscolhido + 1})");
+            alvoDaVez = estatuaEscolhida;
+            if (!string.IsNullOrEmpty(estatuaAlvo) && estatuaAlvo != estatuaEscolhida && IrParaEstatua(hc, estatuaAlvo))
+                alvoDaVez = estatuaAlvo;
+            Logger.LogInfo($"Mosca jogadora: de volta à luta de {alvoDaVez} (nível {nivelEscolhido + 1})");
         }
         if (repetindo && agora >= proximoCima)  // Cima até o desafio abrir (AoAbrirDesafio)
         {
@@ -199,6 +254,7 @@ public class Plugin : BaseUnityPlugin
         InControl.InputManager.SuspendInBackground = false;
         LerTeclasDaMosca();
         VoltarParaALuta(GameManager.instance, HeroController.instance);
+        AtualizarEstatuas(GameManager.instance);
         if (Time.unscaledTime < proximo) return;
         proximo = Time.unscaledTime + 1f / 30f;
         var pd = PlayerData.instance;
@@ -224,6 +280,8 @@ public class Plugin : BaseUnityPlugin
             .Append(",\"inimigos_mortos\":").Append(inimigosMortos)
             .Append(",\"chefes_derrotados\":").Append(chefesDerrotados)
             .Append(",\"derrotas\":").Append(derrotas)
+            .Append(",\"estatuas\":[").Append(estatuasJson).Append(']')
+            .Append(",\"lutas\":[").Append(string.Join(",", lutas.ConvertAll(l => $"[{l.Item1},\"{l.Item2.Replace("\"", "")}\",{(l.Item3 ? 1 : 0)}]"))).Append(']')
             .Append(",\"dano_chefe\":").Append(danoChefe)
             .Append(",\"mortos\":[").Append(string.Join(",", mortos.ConvertAll(m => $"[{m.Item1},\"{m.Item2.Replace("\"", "")}\"]"))).Append(']')
             // sombra esperando no mapa (morreu e não foi buscar) e o geo que ela guarda
@@ -291,7 +349,7 @@ static class AoAbrirDesafio
     {
         if (!Plugin.repetindo || bossStatue == null || bossStatue.hasNoTiers) return;
         Plugin.repetindo = false;  // abriu: para de apertar Cima (segue segurando até a luta)
-        if (bossStatue.gameObject.name != Plugin.estatuaEscolhida || Plugin.nivelEscolhido < 0)
+        if (bossStatue.gameObject.name != Plugin.alvoDaVez || Plugin.nivelEscolhido < 0)
         {
             Plugin.segurando = false;
             return;
