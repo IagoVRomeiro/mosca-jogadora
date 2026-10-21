@@ -32,6 +32,8 @@ PORTA = 47123
 ATIVO_S = 1.0
 CURA_S = 1.0  # vida que sobe até 1 s depois do Foco é cura (banco e renascer, não)
 VIDA_BAIXA = 2  # máscaras: curar com isto ou menos é "cura crítica"
+MAGIA_ALMA = 20  # alma gasta de uma vez (sem curar) que é uma magia (custa 33, ou 24 com amuleto)
+MAGIA_ALVO_S = 1.0  # a magia que não acertou nada neste tempo foi "sem alvo"
 MAX_GOLPES_QUADRO = 3
 # Vai e volta pela mesma passagem: em PASSAGEM_S, PASSAGEM_VEZES trocas entre as
 # mesmas duas salas (A->B->A->B->A) sem nada de bom no meio
@@ -58,6 +60,12 @@ def eventos_entre(antes, agora, curou_ha_s):
             eventos += ["cura"] * ganhou
             if antes["vida"] <= VIDA_BAIXA:  # curar quando importa vale mais
                 eventos.append("cura_critica")
+    # magia: a alma cai de uma vez, sem estar curando (o Foco gasta aos poucos)
+    if (not agora["morta"] and not antes["curando"] and not agora["curando"] and agora["cena"] == antes["cena"]
+            and antes.get("alma", 0) - agora.get("alma", 0) >= MAGIA_ALMA):
+        eventos.append("magia")
+        if antes["vida"] <= VIDA_BAIXA and antes["vida"] < antes.get("vida_max", 99):
+            eventos.append("magia_com_vida_baixa")
     if agora.get("perigo") and not antes.get("perigo"):  # caiu em espinhos ou ácido
         eventos.append("perigo")
     if agora["geo"] > antes["geo"]:  # gastar ou perder geo não é prêmio
@@ -93,6 +101,7 @@ class JuizDoJogo:
         self.arquivo_inimigos = self.arquivo_cenas.with_name("memoria_inimigos.json")
         self.inimigos = set(json.loads(self.arquivo_inimigos.read_text())) if self.arquivo_inimigos.exists() else set()
         self._ultimo_abate = None  # número do último abate já visto (o plugin numera)
+        self._magias = []  # (quando, golpes até ali): esperando ver se acertaram
 
     @property
     def ativo(self):
@@ -116,6 +125,7 @@ class JuizDoJogo:
             if novo["curando"]:
                 self._curando_em = agora
             novos = self._repetidos(antes, novo, eventos_entre(antes, novo, agora - self._curando_em))
+            novos += self._magias_sem_alvo(agora, novo, "magia" in novos)
             eventos += novos
             if BONS.intersection(novos):
                 self._bom_em = agora
@@ -147,6 +157,20 @@ class JuizDoJogo:
                 self._salvar(self.arquivo_bancos, self.bancos)
             self.estado, self._recebido_em = novo, agora
         return eventos
+
+    def _magias_sem_alvo(self, agora, novo, soltou):
+        """Uma magia que não acertou nada em MAGIA_ALVO_S vira "magia_sem_alvo"."""
+        golpes = novo.get("golpes", 0)
+        if soltou:
+            self._magias.append((agora, golpes))
+        saida = []
+        while self._magias and agora - self._magias[0][0] >= MAGIA_ALVO_S:
+            _, antes = self._magias.pop(0)
+            if golpes <= antes:
+                saida.append("magia_sem_alvo")
+        if any(golpes > g for _, g in self._magias):  # acertou: as pendentes antes dela valem
+            self._magias = [m for m in self._magias if golpes <= m[1]]
+        return saida
 
     def _repetidos(self, antes, novo, eventos):
         """Troca "inimigo_morto" por "inimigo_repetido" nos inimigos que ela já

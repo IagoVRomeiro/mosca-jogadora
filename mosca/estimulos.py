@@ -61,7 +61,13 @@ class LeitorHUD:
         "inimigo_morto": 1.0, "cena_nova": 1.0,
         "lugar_novo": 0.2,  # um pedaço novo de uma sala (8x8 unidades do jogo)
         "banco_novo": 1.0,  # descansou num banco nunca usado: progresso real
-        "cura_critica": 0.3,  # a mais na cura com 1-2 máscaras (curar quando importa)
+        # a mais na cura com 1-2 máscaras (curar quando importa). 0,3 até 21/10:
+        # nas arenas ela curava 0,01 vez por minuto (você, 2,7)
+        "cura_critica": 1.0,
+        # magia: detectada pela alma gasta de uma vez (o plugin manda a alma)
+        "magia": 0.0,
+        "magia_sem_alvo": -0.5,  # nenhum golpe acertou no 1 s seguinte
+        "magia_com_vida_baixa": -0.5,  # com 1-2 máscaras: a alma devia ter ido para curar
         # a mais no dano ao cair em espinhos ou ácido (erro evitável). -1 até 20/10:
         # na arena dos Mantis Lords ela caía 11,7 vezes por minuto (você, 0,21)
         "perigo": -2.0,

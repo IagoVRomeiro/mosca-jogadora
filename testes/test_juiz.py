@@ -69,6 +69,13 @@ class TesteEventos(unittest.TestCase):
         self.assertEqual(eventos_entre(estado(sombra=True), estado(sombra=True, vida=0, morta=True), LONGE), ["morte"])
         self.assertEqual(eventos_entre(estado(sombra=True), estado(), LONGE), [])
 
+    def test_magia_pela_alma_gasta_de_uma_vez(self):
+        self.assertEqual(eventos_entre(estado(alma=66), estado(alma=33), LONGE), ["magia"])
+        self.assertEqual(eventos_entre(estado(alma=66, curando=True), estado(alma=33, curando=True), LONGE), [])
+        self.assertEqual(eventos_entre(estado(alma=66), estado(alma=64), LONGE), [])  # aos poucos não
+        self.assertEqual(eventos_entre(estado(alma=66, vida=2), estado(alma=33, vida=2), LONGE),
+                         ["magia", "magia_com_vida_baixa"])
+
     def test_perder_no_salao_dos_deuses_e_morte(self):
         self.assertEqual(eventos_entre(estado(derrotas=2), estado(derrotas=3), LONGE), ["morte"])
         self.assertEqual(eventos_entre(estado(derrotas=3), estado(derrotas=3), LONGE), [])
@@ -138,6 +145,22 @@ class TesteRede(unittest.TestCase):
         de_novo = JuizDoJogo(self.pasta / "cenas.json", porta=0)
         self.assertIn("Crossroads_01|Crawler 1", de_novo.inimigos)
         de_novo.fechar()
+
+    def test_magia_sem_alvo_depois_de_um_tempo(self):
+        import mosca.juiz as juiz
+        juiz.MAGIA_ALVO_S, antigo = 0.05, juiz.MAGIA_ALVO_S
+        try:
+            self.mandar(alma=66)
+            self.assertEqual(self.mandar(alma=33), ["magia"])
+            time.sleep(0.06)
+            self.assertEqual(self.mandar(alma=33), ["magia_sem_alvo"])
+            self.mandar(alma=66, golpes=0)
+            self.assertEqual(self.mandar(alma=33, golpes=0), ["magia"])
+            self.assertEqual(self.mandar(alma=36, golpes=1), ["acerto"])  # acertou
+            time.sleep(0.06)
+            self.assertEqual(self.mandar(alma=36, golpes=1), [])
+        finally:
+            juiz.MAGIA_ALVO_S = antigo
 
     def test_jogo_reaberto_recomeca_a_contagem_de_abates(self):
         self.mandar(inimigos_mortos=50, mortos=[[50, "Crawler 1"]])

@@ -587,6 +587,8 @@ class Orquestrador(QtCore.QObject):
         "dano_chefe": "feriu o chefe", "sombra_recuperada": "recuperou a sombra!",
         "inimigo_repetido": "matou inimigo de novo",
         "parede": "forçando a parede", "sem_novidade": "nada de novo há 1 min",
+        "magia": "soltou magia", "magia_sem_alvo": "magia no vazio",
+        "magia_com_vida_baixa": "magia em vez de curar",
     }
 
     # Reflexo de sair do lugar: moscas paradas demais fazem movimentos

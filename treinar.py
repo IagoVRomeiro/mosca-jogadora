@@ -73,6 +73,10 @@ PESO_MAXIMO = 3  # peso máximo das teclas raras (ver treinar)
 # aprende "na dúvida, não solta" e a magia quase nunca sai. Podem pesar mais
 HABILIDADES_RARAS = {"Magia", "Magia Rápida", "Super Investida", "Ferrão dos Sonhos"}
 PESO_MAXIMO_HABILIDADE = 15.0
+# Exceções ao teto: a Magia a 15x passou do ponto (ela tocava a magia 11% do
+# tempo nas arenas e gastava toda a alma), e o Foco a 3x curava pouco (1% do
+# tempo contra os seus 6%; 0,01 cura por minuto contra 2,7). Até 21/10: 15 e 3
+PESO_MAXIMO_POR_TECLA = {"Magia": 5.0, "Foco": 6.0}
 DESCONTO = 0.993  # por quadro: um evento a ~3 s (100 quadros) conta pela metade
 FORCA_VANTAGEM = 1.0  # peso = exp(FORCA x vantagem em desvios-padrão), limitado
 PESO_QUADRO = (0.25, 4.0)  # mínimo e máximo do peso de um quadro
@@ -754,7 +758,8 @@ def pesos_positivos(dados):
     """Teclas raras pesam mais, senão a rede só aprende "nunca aperta"; mas pouco
     mais (até PESO_MAXIMO), senão ela aperta à toa teclas que não dá para prever."""
     frac = dados.teclas[dados.treino].mean(axis=0)
-    teto = np.array([PESO_MAXIMO_HABILIDADE if a in HABILIDADES_RARAS else PESO_MAXIMO for a in ACOES], np.float32)
+    teto = np.array([PESO_MAXIMO_POR_TECLA.get(a, PESO_MAXIMO_HABILIDADE if a in HABILIDADES_RARAS else PESO_MAXIMO)
+                     for a in ACOES], np.float32)
     return np.clip((1 - frac) / np.maximum(frac, 1e-3), 1, teto).astype(np.float32)
 
 
