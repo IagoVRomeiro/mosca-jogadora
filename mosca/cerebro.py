@@ -22,6 +22,11 @@ class FormaReal:
 
     def __init__(self, conectoma):
         pos = conectoma["desenho_posicao"]
+        arquivo = PASTA / "dados_conectoma" / "fundo_cerebro.npz"
+        if arquivo.exists():  # posições mais simétricas (preparar_conectoma.py --fundo)
+            with np.load(arquivo) as f:
+                if "desenho_ids" in f.files and np.array_equal(f["desenho_ids"], conectoma["desenho_flywire_id"]):
+                    pos = f["desenho_posicao"]
         x0, x1 = np.percentile(pos[:, 0], [0.5, 99.5])
         y0, y1 = np.percentile(pos[:, 1], [0.5, 99.5])
         escala = 2.9 / (x1 - x0)

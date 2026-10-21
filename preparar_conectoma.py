@@ -108,11 +108,63 @@ def entre_grupos(pesos, de, para):
     return (m / np.maximum(total, 1)).astype(np.float32)
 
 
+MINIMO_POR_LADO = 3  # neurônios de um tipo em cada lado para ele servir de par
+
+
+def posicoes_simetricas(anotacoes):
+    """Posições (x, y) de frente, mais simétricas que as do FlyWire, só para o
+    desenho. O cérebro do FlyWire é um exemplar real: ficou um pouco girado no
+    microscópio, e a lâmina esquerda dobrou para fora na dissecção. Cada tipo de
+    neurônio que existe dos dois lados vai para a posição média dos dois, espelhada
+    (e com o espalhamento médio); os sem par seguem um ajuste afim de cada lado,
+    calculado com os tipos que têm par. Os do meio ficam onde estão."""
+    x, y = anotacoes.pos_x.to_numpy(np.float64), anotacoes.pos_y.to_numpy(np.float64)
+    lado = anotacoes.side.fillna("na").to_numpy().astype(str)
+    tipo = anotacoes.cell_type.fillna("").to_numpy().astype(str)
+    com_par = []
+    for t in np.unique(tipo[(tipo != "") & np.isin(lado, ["left", "right"])]):
+        e, d = (tipo == t) & (lado == "left"), (tipo == t) & (lado == "right")
+        if e.sum() >= MINIMO_POR_LADO and d.sum() >= MINIMO_POR_LADO:
+            com_par.append((e, d))
+    # linha do meio: onde os pares ficam equilibrados
+    meio = np.median([(x[e].mean() + x[d].mean()) / 2 for e, d in com_par])
+    nx, ny = x.copy(), y.copy()
+    origem = {"left": [], "right": []}
+    alvo = {"left": [], "right": []}
+    for e, d in com_par:
+        distancia = ((meio - x[e].mean()) + (x[d].mean() - meio)) / 2
+        altura = (y[e].mean() + y[d].mean()) / 2
+        sx = np.sqrt((x[e].var() + x[d].var()) / 2)
+        sy = np.sqrt((y[e].var() + y[d].var()) / 2)
+        for m, sinal, nome in ((e, -1, "left"), (d, 1, "right")):
+            cx, cy = x[m].mean(), y[m].mean()
+            fx = sx / x[m].std() if m.sum() >= 20 and x[m].std() > 0 else 1.0
+            fy = sy / y[m].std() if m.sum() >= 20 and y[m].std() > 0 else 1.0
+            nx[m] = meio + sinal * distancia + (x[m] - cx) * fx
+            ny[m] = altura + (y[m] - cy) * fy
+            origem[nome].append((cx, cy))
+            alvo[nome].append((meio + sinal * distancia, altura))
+    # sem par: afim de cada lado, dos centros reais para os simétricos
+    sem_par = np.ones(len(x), bool)
+    for e, d in com_par:
+        sem_par &= ~(e | d)
+    for nome in ("left", "right"):
+        o, a = np.array(origem[nome]), np.array(alvo[nome])
+        afim, *_ = np.linalg.lstsq(np.column_stack([o, np.ones(len(o))]), a, rcond=None)
+        m = sem_par & (lado == nome)
+        nx[m], ny[m] = (np.column_stack([x[m], y[m], np.ones(m.sum())]) @ afim).T
+    return nx, ny
+
+
 def fundo_do_desenho():
-    """Silhueta do cérebro: a densidade dos ~139 mil neurônios (vista de frente).
-    A amostra que acende no painel (16 mil pontos) sozinha não mostra a forma:
-    os pontos ficavam espalhados. Gera ARQUIVO_FUNDO, em coordenadas do FlyWire."""
-    pos = pd.read_csv(ARQUIVO_ANOTACOES, sep="\t", usecols=["pos_x", "pos_y"]).dropna().to_numpy(np.float64)
+    """Silhueta do cérebro (a densidade dos ~139 mil neurônios, vista de frente) e
+    as posições simétricas da amostra do desenho. A amostra que acende no painel
+    (16 mil pontos) sozinha não mostra a forma: os pontos ficavam espalhados."""
+    anotacoes = pd.read_csv(ARQUIVO_ANOTACOES, sep="\t", low_memory=False,
+                            usecols=["root_id", "pos_x", "pos_y", "side", "cell_type"])
+    anotacoes = anotacoes[anotacoes.pos_x.notna()].drop_duplicates("root_id").set_index("root_id")
+    sx, sy = posicoes_simetricas(anotacoes)
+    pos = np.column_stack([sx, sy])
     (x0, x1), (y0, y1) = (np.percentile(pos[:, k], [0.05, 99.95]) for k in (0, 1))
     margem_x, margem_y = 0.03 * (x1 - x0), 0.03 * (y1 - y0)
     x0, x1, y0, y1 = x0 - margem_x, x1 + margem_x, y0 - margem_y, y1 + margem_y
@@ -126,8 +178,17 @@ def fundo_do_desenho():
         h = np.apply_along_axis(lambda v: np.convolve(v, nucleo, mode="same"), eixo, h)
     densidade = np.log1p(h)
     densidade = np.clip(densidade / np.percentile(densidade[densidade > 0], 99), 0, 1).astype(np.float32)
+    # a amostra do desenho (conectoma_mosca.npz), na mesma ordem, nas posições simétricas
+    extra = {}
+    if ARQUIVO_SAIDA.exists():
+        with np.load(ARQUIVO_SAIDA) as c:
+            ids = c["desenho_flywire_id"]
+        indice = pd.Series(np.arange(len(anotacoes)), index=anotacoes.index)
+        achados = indice.reindex(ids)
+        if achados.notna().all():
+            extra = {"desenho_ids": ids, "desenho_posicao": pos[achados.to_numpy(int)].astype(np.float32)}
     np.savez_compressed(ARQUIVO_FUNDO, densidade=densidade, x=np.array([x0, x1]), y=np.array([y0, y1]),
-                        neuronios=len(pos))
+                        neuronios=len(pos), **extra)
     print(f"silhueta do cérebro: {num(len(pos))} neurônios, salva em {ARQUIVO_FUNDO.relative_to(PASTA)}")
 
 
