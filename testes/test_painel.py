@@ -141,3 +141,27 @@ class TesteAtalhos(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TesteMemoriaDoTreino(unittest.TestCase):
+    """Com pouca memória livre, o treino espera em vez de derrubar o jogo."""
+
+    def orq(self, livre):
+        o = types.SimpleNamespace(treino=None, _treinar_de_novo=False, _fila_especialistas=[], avisos=[],
+                                  MEMORIA_TREINO_GB=4.5, MEMORIA_ESPECIALISTA_GB=3.0, ESPERA_MEMORIA_S=30)
+        o._memoria_livre_gb = lambda: livre
+        o._avisar = lambda texto, s: o.avisos.append(texto)
+        o._memoria_basta = lambda gb, oque: Orquestrador._memoria_basta(o, gb, oque)
+        return o
+
+    def test_pouca_memoria_adia_o_treino_geral(self):
+        o = self.orq(livre=2.0)
+        Orquestrador.treinar(o)
+        self.assertIsNone(o.treino)
+        self.assertTrue(o._geral_adiado)
+        self.assertIn("adiado", o.avisos[0])
+
+    def test_pouca_memoria_devolve_o_especialista_para_a_fila(self):
+        o = self.orq(livre=2.0)
+        Orquestrador.treinar_especialista(o, "GG_Gruz_Mother")
+        self.assertEqual(o._fila_especialistas, ["GG_Gruz_Mother"])

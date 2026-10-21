@@ -420,11 +420,51 @@ class Orquestrador(QtCore.QObject):
         seguidas = self.torneio.estado.get("seguidas_da_campea", 0)
         return outra if seguidas >= self.OUTRA_ARQUITETURA_A_CADA - 1 else da_campea
 
+    # Memória livre (GB) para começar um treino. Em 21/10 16:41 um treino (~3,5 GB)
+    # junto com outros programas esgotou os 14 GB, e o sistema derrubou o jogo
+    MEMORIA_TREINO_GB, MEMORIA_ESPECIALISTA_GB = 4.5, 3.0
+    ESPERA_MEMORIA_S = 30
+
+    @staticmethod
+    def _memoria_livre_gb():
+        try:
+            for linha in open("/proc/meminfo"):
+                if linha.startswith("MemAvailable:"):
+                    return int(linha.split()[1]) / 1024 / 1024
+        except OSError:
+            pass
+        return float("inf")  # sem como medir: não impede o treino
+
+    def _memoria_basta(self, gb, o_que):
+        """Há memória livre para o treino? Se não, avisa e adia (tick tenta de novo)."""
+        livre = self._memoria_livre_gb()
+        if livre >= gb:
+            return True
+        self._treino_adiado_em = time.monotonic()
+        self._avisar(f"🧠 {o_que} adiado: {livre:.1f} GB de memória livre (precisa de {gb:.1f}); "
+                     f"tenta de novo em {self.ESPERA_MEMORIA_S} s", self.ESPERA_MEMORIA_S)
+        return False
+
+    def _tentar_treino_adiado(self):
+        """Um treino adiado por falta de memória: tenta de novo a cada ESPERA_MEMORIA_S."""
+        quando = getattr(self, "_treino_adiado_em", None)
+        if quando is None or self.treino is not None or time.monotonic() - quando < self.ESPERA_MEMORIA_S:
+            return
+        self._treino_adiado_em = None
+        if getattr(self, "_geral_adiado", False):
+            self._geral_adiado = False
+            self.treinar()
+        else:
+            self._proximo_da_fila()
+
     def treinar(self):
         """Roda o treinar.py em outro processo (não trava o painel) e, no fim,
         troca o cérebro da mosca pelo modelo novo."""
         if self.treino is not None:
             self._treinar_de_novo = True  # termina este e treina de novo com tudo
+            return
+        if not self._memoria_basta(self.MEMORIA_TREINO_GB, "Treino"):
+            self._geral_adiado = True
             return
         processo = QtCore.QProcess(self)
         processo.setWorkingDirectory(str(PASTA))
@@ -441,6 +481,10 @@ class Orquestrador(QtCore.QObject):
     def treinar_especialista(self, arena):
         """Treina (em outro processo) o especialista de uma arena: vira candidato."""
         if self.treino is not None:
+            return
+        if not self._memoria_basta(self.MEMORIA_ESPECIALISTA_GB, f"Especialista de {arena.removeprefix('GG_')}"):
+            if arena not in self._fila_especialistas:
+                self._fila_especialistas.insert(0, arena)  # volta para a fila
             return
         campea = self.modelos["campea"]
         arquitetura = getattr(campea, "arquitetura", "mlp") if campea is not None else "mlp"
@@ -981,6 +1025,7 @@ class Orquestrador(QtCore.QObject):
 
     def tick(self):
         self._escolher_cerebro()
+        self._tentar_treino_adiado()
         imagem = self.jogo.quadro()
         _, acoes = self.cerebro.passo(imagem)
         self._ler_hud(imagem)  # depois do cérebro: usa o movimento que o olho viu
