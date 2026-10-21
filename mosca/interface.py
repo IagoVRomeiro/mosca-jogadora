@@ -384,6 +384,8 @@ class CartaoMosca(QtWidgets.QFrame):
         caixa, linha, _ = cabecalho("02", "Veja a resposta")
         self.bt_evolucao = QtWidgets.QPushButton("📈  Evolução")
         self.bt_evolucao.setToolTip("Abre o painel com a melhora da mosca versão a versão")
+        self.bt_chefes = QtWidgets.QPushButton("📊  Chefes")
+        self.bt_chefes.setToolTip("Abre as estatísticas de cada chefe do Salão dos Deuses: suas e dela")
         self.bt_gravar = QtWidgets.QPushButton("⏺  Gravar")
         self.bt_gravar.setCheckable(True)
         self.bt_gravar.setObjectName("gravar")
@@ -404,6 +406,7 @@ class CartaoMosca(QtWidgets.QFrame):
             "Deuses (perto das saídas, andar e esquivar para lá é vetado). As lutas continuam."
         )
         linha.addWidget(self.bt_evolucao)
+        linha.addWidget(self.bt_chefes)
         linha.addWidget(self.bt_gravar)
         linha.addWidget(self.bt_controlar)
         linha.addWidget(self.bt_salao)

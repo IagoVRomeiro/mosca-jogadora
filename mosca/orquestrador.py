@@ -49,6 +49,8 @@ class Orquestrador(QtCore.QObject):
         cartao_mosca = self.painel.cartao_mosca
         cartao_mosca.bt_evolucao.clicked.connect(lambda: QtCore.QProcess.startDetached(
             sys.executable, [str(PASTA / "evolucao.py")], str(PASTA)))
+        cartao_mosca.bt_chefes.clicked.connect(lambda: QtCore.QProcess.startDetached(
+            sys.executable, [str(PASTA / "chefes.py")], str(PASTA)))
         self.gravador = None
         self.hud = LeitorHUD() if hasattr(jogo, "controlando") else None
         self.parada = DetectorParada()
