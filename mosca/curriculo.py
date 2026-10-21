@@ -115,6 +115,9 @@ class Curriculo:
         """Avisos dos panteões que acabaram de ficar com todos os chefes dominados."""
         prontos = self.estado.setdefault("panteoes_prontos", [])
         avisos = []
+        if panteoes and panteoes != self.estado.get("panteoes"):
+            self.estado["panteoes"] = panteoes  # o painel de evolução mostra o progresso
+            self.salvar()
         for porta, feitos, total in self.progresso_panteoes(panteoes):
             if feitos == total and porta not in prontos:
                 prontos.append(porta)

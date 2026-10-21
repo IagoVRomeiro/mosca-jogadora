@@ -94,11 +94,23 @@ def comparar_duas(x, y, campo, maior_melhor):
     return antes, depois, pct, incerteza
 
 
+def todas(banco, caminho, pagina=1000):
+    """Todas as linhas de uma consulta: o Supabase devolve no máximo 1.000 por vez
+    (até 21/10 o painel de evolução via só as primeiras 1.000 partidas)."""
+    linhas, inicio = [], 0
+    while True:
+        lote = banco._pedir("GET", f"{caminho}&offset={inicio}&limit={pagina}")
+        linhas += lote
+        inicio += len(lote)
+        if len(lote) < pagina:
+            return linhas
+
+
 def carregar():
     banco = Supabase.do_env()
     if banco is None:
         sys.exit("Supabase não configurado (.env).")
-    partidas = banco._pedir("GET", "/rest/v1/partidas_mosca?select=*&order=inicio")
+    partidas = todas(banco, "/rest/v1/partidas_mosca?select=*&order=inicio")
     treinos = {t["id"]: t for t in banco._pedir("GET", "/rest/v1/treinos?select=id,config")}
     versoes = {}
     for p in partidas:
