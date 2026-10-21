@@ -103,7 +103,7 @@ class JuizDoJogo:
         self._ultimo_abate = None  # número do último abate já visto (o plugin numera)
         self._magias = []  # (quando, golpes até ali): esperando ver se acertaram
         self._ultima_luta = None  # número da última luta do Salão já vista (o plugin numera)
-        self.lutas = []  # lutas terminadas desde a última leitura: (estátua, venceu)
+        self.lutas = []  # lutas de chefe terminadas desde a última leitura: (estátua, sala, venceu)
 
     @property
     def ativo(self):
@@ -162,7 +162,9 @@ class JuizDoJogo:
         return eventos
 
     def _ler_lutas(self, antes, novo):
-        """Lutas do Salão dos Deuses terminadas (o plugin manda as últimas, numeradas)."""
+        """Lutas de chefe terminadas no Salão dos Deuses, de estátua ou de panteão (o
+        plugin manda as últimas, numeradas: [n, estátua ("" no panteão), sala, venceu];
+        o plugin anterior não mandava a sala)."""
         lutas = novo.get("lutas")
         if lutas is None:  # plugin antigo
             return
@@ -170,7 +172,10 @@ class JuizDoJogo:
         if antes is None or self._ultima_luta is None or ultima < self._ultima_luta:
             self._ultima_luta = ultima  # começo ou o jogo reabriu: só referência
             return
-        self.lutas += [(estatua, bool(venceu)) for n, estatua, venceu in lutas if n > self._ultima_luta]
+        for luta in lutas:
+            if luta[0] > self._ultima_luta:
+                estatua, sala, venceu = (luta[1], luta[2], luta[3]) if len(luta) >= 4 else (luta[1], "", luta[2])
+                self.lutas.append((estatua, sala, bool(venceu)))
         self._ultima_luta = ultima
 
     def pegar_lutas(self):

@@ -21,7 +21,8 @@
 // Currículo: o painel pode pedir outra estátua (terceiro campo do pacote:
 // "1|Esquerda|GG_Statue_Gorb"); o plugin leva o Cavaleiro até ela. O plugin
 // conta ao painel as estátuas liberadas ("estatuas", da esquerda para a direita)
-// e o resultado de cada luta ("lutas": [número, estátua, venceu]).
+// e o resultado de cada luta de chefe, de estátua ou de panteão ("lutas":
+// [número, estátua ("" no panteão), sala, venceu]).
 using System.Globalization;
 using System.Net.Sockets;
 using System.Text;
@@ -60,11 +61,12 @@ public class Plugin : BaseUnityPlugin
     // perder no Salão dos Deuses não é "dead": o Cavaleiro acorda do sonho. Perdeu =
     // entrou na luta e voltou à sala das estátuas sem a luta terminar (EndBossScene)
     internal static bool lutaEmCurso, entrouNaLuta, venceuLuta;
+    static string salaDaLuta;  // a arena da luta de chefe em andamento (estátua ou panteão)
     internal static int derrotas;  // lutas perdidas no Salão (o painel conta como morte)
     internal static string estatuaAlvo = "", alvoDaVez;  // pedida pelo painel; a desta volta
     internal static int numeroDaLuta;
-    internal static readonly System.Collections.Generic.List<(int, string, bool)> lutas =
-        new System.Collections.Generic.List<(int, string, bool)>();
+    internal static readonly System.Collections.Generic.List<(int, string, string, bool)> lutas =
+        new System.Collections.Generic.List<(int, string, string, bool)>();
     static string estatuasJson = "";
     float estatuasEm = -10f;
     // segurando: da volta até entrar na luta, as teclas dela não passam (andando, ela
@@ -184,6 +186,27 @@ public class Plugin : BaseUnityPlugin
         if (ih != null && ih.inputActions != null && Time.unscaledTime < cimaAte) daMosca.Add(ih.inputActions.up);
     }
 
+    // Toda luta de chefe que termina (a arena some): vitória se o jogo chamou
+    // EndBossScene nela. Vale para as estátuas e para os panteões
+    void FimDeLuta(GameManager gm)
+    {
+        // a sala da luta acabou (outra sala, ou fora de arena): no panteão um chefe
+        // pode vir logo depois do outro, sem nenhum quadro fora de arena no meio
+        var sala = BossSceneController.IsBossScene && gm != null ? gm.sceneName : null;
+        if (salaDaLuta != null && sala != salaDaLuta)
+        {
+            if (!venceuLuta) derrotas++;
+            lutas.Add((++numeroDaLuta, lutaEmCurso ? estatuaEscolhida ?? "" : "", salaDaLuta, venceuLuta));
+            if (lutas.Count > 8) lutas.RemoveAt(0);
+            salaDaLuta = null;
+        }
+        if (sala != null && salaDaLuta == null)
+        {
+            salaDaLuta = sala;
+            venceuLuta = false;
+        }
+    }
+
     void VoltarParaALuta(GameManager gm, HeroController hc)
     {
         if (gm == null || hc == null) return;
@@ -194,9 +217,7 @@ public class Plugin : BaseUnityPlugin
         {
             lutaEmCurso = entrouNaLuta = false;
             morreuNaLuta = true;  // perdendo ou vencendo, volta para a luta
-            if (!venceuLuta) derrotas++;
-            lutas.Add((++numeroDaLuta, estatuaEscolhida ?? "", venceuLuta));
-            if (lutas.Count > 8) lutas.RemoveAt(0);
+
         }
         if (!moscaNoControle)  // você desligou a mosca: fica onde está, com você
         {
@@ -253,6 +274,7 @@ public class Plugin : BaseUnityPlugin
         // a InControl para de ler as teclas fora de foco se isto estiver ligado
         InControl.InputManager.SuspendInBackground = false;
         LerTeclasDaMosca();
+        FimDeLuta(GameManager.instance);
         VoltarParaALuta(GameManager.instance, HeroController.instance);
         AtualizarEstatuas(GameManager.instance);
         if (Time.unscaledTime < proximo) return;
@@ -281,7 +303,7 @@ public class Plugin : BaseUnityPlugin
             .Append(",\"chefes_derrotados\":").Append(chefesDerrotados)
             .Append(",\"derrotas\":").Append(derrotas)
             .Append(",\"estatuas\":[").Append(estatuasJson).Append(']')
-            .Append(",\"lutas\":[").Append(string.Join(",", lutas.ConvertAll(l => $"[{l.Item1},\"{l.Item2.Replace("\"", "")}\",{(l.Item3 ? 1 : 0)}]"))).Append(']')
+            .Append(",\"lutas\":[").Append(string.Join(",", lutas.ConvertAll(l => $"[{l.Item1},\"{l.Item2.Replace("\"", "")}\",\"{l.Item3.Replace("\"", "")}\",{(l.Item4 ? 1 : 0)}]"))).Append(']')
             .Append(",\"dano_chefe\":").Append(danoChefe)
             .Append(",\"mortos\":[").Append(string.Join(",", mortos.ConvertAll(m => $"[{m.Item1},\"{m.Item2.Replace("\"", "")}\"]"))).Append(']')
             // sombra esperando no mapa (morreu e não foi buscar) e o geo que ela guarda
@@ -329,7 +351,7 @@ static class AoEscolherLuta
         var e = estatua(__instance);
         Plugin.nivelEscolhido = level;
         Plugin.estatuaEscolhida = e != null ? e.gameObject.name : null;
-        Plugin.morreuNaLuta = Plugin.entrouNaLuta = Plugin.venceuLuta = false;
+        Plugin.morreuNaLuta = Plugin.entrouNaLuta = false;
         Plugin.lutaEmCurso = true;
     }
 }

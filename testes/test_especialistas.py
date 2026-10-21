@@ -75,3 +75,40 @@ class TesteEspecialistas(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TesteLutasNoPainel(unittest.TestCase):
+    """O painel manda cada luta terminada para o currículo (só as de estátua) e
+    para o especialista da sala (estátua ou panteão)."""
+
+    def orq(self, lutas, ultima_arena=None):
+        import types
+        from mosca.orquestrador import Orquestrador
+        registros = {"curriculo": [], "especialistas": []}
+        o = types.SimpleNamespace(
+            juiz=types.SimpleNamespace(pegar_lutas=lambda: lutas),
+            _estado_jogo={"estatuas": []}, _juiz_ativo=True, _mosca_joga=True, _ultima_arena=ultima_arena,
+            curriculo=types.SimpleNamespace(registrar=lambda e, v, o: registros["curriculo"].append((e, v)) or [],
+                                            proxima=lambda: ""),
+            especialistas=types.SimpleNamespace(
+                registrar_luta=lambda a, q, v: registros["especialistas"].append((a, q, v)) or [],
+                precisa_treinar=lambda: None),
+            jogo=types.SimpleNamespace(estatua_alvo=""), treino=None, _fila_especialistas=[],
+            _notificar=lambda t: None, _info_treino=None, _info_ate=0.0,
+        )
+        Orquestrador._seguir_curriculo(o)
+        return registros
+
+    def test_panteao_vai_so_para_o_especialista_da_sala(self):
+        r = self.orq([("", "GG_Vengefly", True)], ultima_arena=("GG_Vengefly", "atual"))
+        self.assertEqual(r["curriculo"], [])
+        self.assertEqual(r["especialistas"], [("GG_Vengefly", "atual", True)])
+
+    def test_estatua_vai_para_os_dois(self):
+        r = self.orq([("GG_Statue_Gruz", "GG_Gruz_Mother", False)], ultima_arena=("GG_Gruz_Mother", "candidato"))
+        self.assertEqual(r["curriculo"], [("GG_Statue_Gruz", False)])
+        self.assertEqual(r["especialistas"], [("GG_Gruz_Mother", "candidato", False)])
+
+    def test_sem_saber_quem_jogou_conta_como_a_geral(self):
+        r = self.orq([("", "GG_Hornet_1", False)], ultima_arena=("GG_Vengefly", "atual"))
+        self.assertEqual(r["especialistas"], [("GG_Hornet_1", "geral", False)])

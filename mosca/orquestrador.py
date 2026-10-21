@@ -75,6 +75,8 @@ class Orquestrador(QtCore.QObject):
         self._especialista = None  # (arena, "atual"/"candidato") quando um especialista joga
         self._ultima_arena = None  # (arena, quem jogou) da luta em andamento, para o veredito
         self._treino_especialista = None  # arena do treino em andamento, se for de especialista
+        self._fila_especialistas = []  # arenas da sua última gravação, esperando o treino delas
+        self._arenas_gravadas = collections.Counter()  # quadros seus em cada arena, na gravação
         self._recompensa_quadro = 0.0
         self.partida = None  # o que a mosca fez desde que ligou "Controlar jogo"
         self._envios = []  # threads de registro de partidas
@@ -351,6 +353,7 @@ class Orquestrador(QtCore.QObject):
             bt_controlar.setChecked(False)
             bt_controlar.setEnabled(False)
             self.gravador = Gravador()
+            self._arenas_gravadas = collections.Counter()
             self.jogo.focar()
         else:
             self.gravador.parar()
@@ -362,6 +365,13 @@ class Orquestrador(QtCore.QObject):
                 # interromper uma disputa nem treinar só por ela
                 self._avisar(f"Gravação de {segundos:.0f} s: curta demais para treinar agora", 10)
                 return
+            # os especialistas das arenas onde você lutou (num panteão, várias) vêm
+            # depois do treino geral
+            arenas = [a for a, n in self._arenas_gravadas.most_common() if n >= self.MINIMO_GRAVADO_ARENA]
+            self._fila_especialistas += [a for a in arenas if a not in self._fila_especialistas]
+            if arenas:
+                nomes = ", ".join(a.removeprefix("GG_") for a in arenas)
+                self._notificar(f"🎯 Depois do treino geral: especialistas de {nomes}")
             self._pedir_treino()  # aprende com tudo o que já foi gravado
 
     LIDERANDO_MINIMO_S = 60  # de jogo da desafiante para "estar na frente" valer
@@ -464,6 +474,7 @@ class Orquestrador(QtCore.QObject):
             if self._treinar_de_novo:
                 self._treinar_de_novo = False
                 self.treinar()
+            self._proximo_da_fila()
             return
         (PASTA / "treino.log").write_text(log)  # a tabela de resultado fica aqui
         if codigo == 0 and "modelo salvo" in log:
@@ -479,6 +490,7 @@ class Orquestrador(QtCore.QObject):
         if self._treinar_de_novo:
             self._treinar_de_novo = False
             self.treinar()
+        self._proximo_da_fila()  # especialistas da sua última gravação
 
     def _registrar_substituida(self):
         """Uma desafiante nova chegou com a anterior ainda sem resultado (dois
@@ -615,6 +627,9 @@ class Orquestrador(QtCore.QObject):
             self.cerebro.reduzida, teclas, self._recompensa_quadro, self._vida,
             self._eventos_quadro, self._estado_jogo,
         )
+        estado = self._estado_jogo
+        if estado is not None and eh_arena(estado["cena"]):
+            self._arenas_gravadas[estado["cena"]] += 1
         return texto, {a: float(t) for a, t in zip(ACOES, teclas)}
 
     def soltar_teclas(self):
@@ -782,20 +797,34 @@ class Orquestrador(QtCore.QObject):
             return
         estado = self._estado_jogo
         ordem = list(estado.get("estatuas") or []) if estado else []
-        for estatua, venceu in self.juiz.pegar_lutas():
+        for estatua, sala, venceu in self.juiz.pegar_lutas():
             if self._mosca_joga:
-                avisos = self.curriculo.registrar(estatua, venceu, ordem)
-                if self._ultima_arena is not None:  # quem jogou: especialista, candidato ou a geral
-                    avisos += self.especialistas.registrar_luta(*self._ultima_arena, venceu)
+                # o currículo é das estátuas; os especialistas, de toda luta (panteão também)
+                avisos = self.curriculo.registrar(estatua, venceu, ordem) if estatua else []
+                arena, quem = self._ultima_arena or (sala, "geral")
+                if sala and arena != sala:  # a luta que terminou não é a que ela vinha jogando
+                    arena, quem = sala, "geral"
+                if arena:  # quem jogou: especialista, candidato ou a geral
+                    avisos += self.especialistas.registrar_luta(arena, quem, venceu)
                 for aviso in avisos:
                     self._notificar(aviso)
                     self._info_treino, self._info_ate = aviso, time.monotonic() + 15
             self._ultima_arena = None
         self.jogo.estatua_alvo = self.curriculo.proxima() if self._juiz_ativo else ""
-        if self.treino is None and self._mosca_joga:
+        if self._fila_especialistas:
+            self._proximo_da_fila()
+        elif self.treino is None and self._mosca_joga:
             arena = self.especialistas.precisa_treinar()
             if arena:
                 self.treinar_especialista(arena)
+
+    MINIMO_GRAVADO_ARENA = 1800  # quadros (1 min) seus numa arena para treinar o especialista dela
+
+    def _proximo_da_fila(self):
+        """Especialistas das arenas da sua gravação, um de cada vez, sem atrapalhar
+        o treino geral (que vai primeiro)."""
+        if self.treino is None and self._fila_especialistas:
+            self.treinar_especialista(self._fila_especialistas.pop(0))
 
     def _escolher_cerebro(self):
         """Numa arena com especialista, joga ele (o candidato, enquanto é avaliado);

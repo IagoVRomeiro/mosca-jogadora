@@ -163,12 +163,19 @@ class TesteRede(unittest.TestCase):
             juiz.MAGIA_ALVO_S = antigo
 
     def test_lutas_do_salao_chegam_uma_vez(self):
-        self.mandar(lutas=[[3, "GG_Statue_Gruz", 1]])  # referência
+        self.mandar(lutas=[[3, "GG_Statue_Gruz", "GG_Gruz_Mother", 1]])  # referência
         self.assertEqual(self.juiz.pegar_lutas(), [])
-        self.mandar(lutas=[[3, "GG_Statue_Gruz", 1], [4, "GG_Statue_Gruz", 0]])
-        self.mandar(lutas=[[3, "GG_Statue_Gruz", 1], [4, "GG_Statue_Gruz", 0]])  # repetido
-        self.assertEqual(self.juiz.pegar_lutas(), [("GG_Statue_Gruz", False)])
-        self.assertEqual(self.juiz.pegar_lutas(), [])
+        self.mandar(lutas=[[3, "GG_Statue_Gruz", "GG_Gruz_Mother", 1], [4, "GG_Statue_Gruz", "GG_Gruz_Mother", 0]])
+        self.mandar(lutas=[[3, "GG_Statue_Gruz", "GG_Gruz_Mother", 1], [4, "GG_Statue_Gruz", "GG_Gruz_Mother", 0]])
+        self.assertEqual(self.juiz.pegar_lutas(), [("GG_Statue_Gruz", "GG_Gruz_Mother", False)])
+        # panteão: sem estátua, com a sala de cada chefe
+        self.mandar(lutas=[[5, "", "GG_Vengefly", 1], [6, "", "GG_Gruz_Mother", 0]])
+        self.assertEqual(self.juiz.pegar_lutas(), [("", "GG_Vengefly", True), ("", "GG_Gruz_Mother", False)])
+
+    def test_lutas_do_plugin_anterior_sem_a_sala(self):
+        self.mandar(lutas=[[1, "GG_Statue_Gruz", 1]])
+        self.mandar(lutas=[[1, "GG_Statue_Gruz", 1], [2, "GG_Statue_Gruz", 0]])
+        self.assertEqual(self.juiz.pegar_lutas(), [("GG_Statue_Gruz", "", False)])
 
     def test_jogo_reaberto_recomeca_a_contagem_de_abates(self):
         self.mandar(inimigos_mortos=50, mortos=[[50, "Crawler 1"]])
