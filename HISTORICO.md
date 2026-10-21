@@ -5,14 +5,14 @@ o NeuroMechFly (FlyGym), o cérebro pode ser a fiação real do conectoma FlyWir
 e ela joga só vendo a tela e apertando teclas.
 
 Quase tudo aconteceu em dois dias, 13 e 14/10/2026, e continuou em 16, 18, 19,
-20 e 21/10: 94 commits, 72 versões treinadas, 1.000 partidas da mosca (~20,9 h
+20 e 21/10: 96 commits, 73 versões treinadas, 1.000 partidas da mosca (~20,9 h
 de jogo) registradas no Supabase.
 
 Os horários vêm dos commits do git (a partir de 13/10 18:27) e dos treinos
 registrados no Supabase. O que veio antes do primeiro commit está marcado como
 **"antes das 18:27"**.
 
-## Onde estamos (21/10, 01:10)
+## Onde estamos (21/10, 01:30)
 
 - **Campeã:** #68 (rede inventada, com memória), desde 20/10 ~16:20: venceu a
   #64 por −9,7 × −16,3 por minuto (+41%), e depois a #69, a #70 e a #71.
@@ -21,6 +21,10 @@ registrados no Supabase. O que veio antes do primeiro commit está marcado como
 - **Currículo de chefes:** desde 21/10 01:08, um chefe de cada vez. Ela passa
   para a próxima estátua quando vence 7 das últimas 10 lutas, revisa um chefe
   já dominado a cada 4 lutas, e o painel pede exemplos seus se ela empacar.
+- **Especialistas por chefe:** desde 21/10 01:30, cada arena ganha um cérebro
+  próprio, treinado só com as lutas dela, a cada 10 lutas. O novo joga as 10
+  seguintes e assume se vencer pelo menos tanto quanto antes. Fora das arenas
+  joga a versão geral, como sempre.
 - **Onde ela treina:** nas estátuas do **Salão dos Deuses**, no automático:
   desde 20/10 16:06, ao fim de cada luta, perdendo ou vencendo, o plugin a
   leva de volta à mesma luta e no mesmo nível (55 voltas seguidas sem falha,
@@ -97,6 +101,7 @@ Cada solução que foi trocada por outra melhor, com o período em que esteve em
 | Peso da Magia e do Foco no treino | Magia até 15×, Foco até 3× | 14/10 20:13 → 21/10 01:02 | Magia até 5×, Foco até 6× |
 | Cura com 1-2 máscaras | +0,3 a mais | 14/10 14:15 → 21/10 01:02 | +1,0 a mais; magia no vazio e magia em vez de curar: −0,5 cada |
 | Revezar os cérebros no treino | Uma vez cada (mlp, conectoma, mlp...) | 13/10 21:16 → 21/10 01:08 | A outra arquitetura a cada 3 treinos |
+| Cérebro nas arenas | O mesmo cérebro geral para todos os chefes | 14/10 19:35 → 21/10 01:30 | Um especialista por arena (avaliado por vitórias em 10 lutas) |
 | Desenho do cérebro | Amostra de ~17 mil neurônios, como no FlyWire | 13/10 → 21/10 00:44 | Silhueta dos 139 mil e posições mais simétricas (só a ilustração) |
 
 ---
@@ -416,6 +421,15 @@ conectar com o jogo aberto: desligar e ligar resolve.
 | 21/10 00:53 | **Desenho mais simétrico** | o exemplar do FlyWire ficou girado e com a lâmina esquerda dobrada |
 | 21/10 01:02 | **Magia até 5×, Foco até 6×**, cura com pouca vida +1,0, punições de magia | ela tocava a magia 11% do tempo e curava 0,01 vez por minuto |
 | 21/10 01:08 | **Currículo de chefes** e **a outra arquitetura a cada 3 treinos** | 137 de 142 min na Gruz Mother sem melhorar; o conectoma não vence desde a #46 |
+| 21/10 01:30 | **Especialistas por chefe** | um cérebro de 64 interneurônios para mais de 40 chefes aprende um e esquece parte do outro |
+
+**Especialistas.** O cérebro não sabe qual chefe enfrenta (só vê a tela e
+lembra ~4 s) e não aprende durante o jogo: aprende em lotes, a cada treino.
+Cada arena agora tem uma versão própria, que parte da campeã geral e é afinada
+só com as lutas dali. No ensaio da Gruz Mother (~126 mil quadros da arena), a
+validação foi de 0,377 para 0,130. A maior parte desses quadros é dela lutando:
+o especialista refina o estilo dela, dando mais peso às tentativas que deram
+certo, mas o que mais ensina continuam sendo lutas suas contra cada chefe.
 
 **Você × ela nas arenas (29 min seus, 142 dela).** Por minuto: golpes 54 × 19,
 dano tomado 3,9 × 10,1, curas 2,7 × 0,01, chefes vencidos 1,8 × 0,3. Ela tocava
@@ -468,12 +482,14 @@ luta, como deveria. A média alta vinha das muitas derrotas perto do fim.
 1. **Exemplos seus por chefe:** algumas lutas inteiras contra o chefe atual do
    currículo (Ctrl+Alt+G), curando com pouca vida em vez de soltar magia. É o
    que mais ensina; o painel avisa quando ela empaca.
-2. **Conferir no jogo o currículo:** a troca de estátua (o plugin leva o
+2. **Ver o primeiro especialista assumir:** depois de 10 lutas num chefe, o
+   painel treina o especialista dele; nas 10 seguintes ele é avaliado.
+3. **Conferir no jogo o currículo:** a troca de estátua (o plugin leva o
    Cavaleiro até ela) ainda não foi vista funcionando; o log do BepInEx diz
    quantas estátuas ele achou e a luta de cada volta.
-3. **Ver se a cura aparece:** a #72 é a primeira com o Foco a 6×; curas por
+4. **Ver se a cura aparece:** a #72 é a primeira com o Foco a 6×; curas por
    minuto e magia no vazio dizem se o rebalanceamento funcionou.
-4. **Proteger o torneio de salas sem nada** e julgar pelas métricas de luta
+5. **Proteger o torneio de salas sem nada** e julgar pelas métricas de luta
    (dano no chefe e derrotas por minuto), com as rodadas no mesmo chefe.
-5. **Bordas de espinho por esquiva:** uma queda depois de uma esquiva marca a
+6. **Bordas de espinho por esquiva:** uma queda depois de uma esquiva marca a
    borda onde a esquiva começou, mais para dentro que a real.
