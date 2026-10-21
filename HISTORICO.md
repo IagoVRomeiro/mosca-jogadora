@@ -4,19 +4,23 @@ Uma mosca-das-frutas (*Drosophila*) aprendendo a jogar Hollow Knight. O corpo é
 o NeuroMechFly (FlyGym), o cérebro pode ser a fiação real do conectoma FlyWire,
 e ela joga só vendo a tela e apertando teclas.
 
-Quase tudo aconteceu em dois dias, 13 e 14/10/2026, e continuou em 16, 18, 19
-e 20/10: 88 commits, 69 versões treinadas, 995 partidas da mosca (~20,8 h de
-jogo) registradas no Supabase.
+Quase tudo aconteceu em dois dias, 13 e 14/10/2026, e continuou em 16, 18, 19,
+20 e 21/10: 94 commits, 72 versões treinadas, 1.000 partidas da mosca (~20,9 h
+de jogo) registradas no Supabase.
 
 Os horários vêm dos commits do git (a partir de 13/10 18:27) e dos treinos
 registrados no Supabase. O que veio antes do primeiro commit está marcado como
 **"antes das 18:27"**.
 
-## Onde estamos (20/10, 23:00)
+## Onde estamos (21/10, 01:10)
 
 - **Campeã:** #68 (rede inventada, com memória), desde 20/10 ~16:20: venceu a
-  #64 por −9,7 × −16,3 por minuto (+41%).
-- **Em disputa:** #69 (conectoma).
+  #64 por −9,7 × −16,3 por minuto (+41%), e depois a #69, a #70 e a #71.
+- **Em disputa:** #72 (rede inventada), a primeira treinada com a cura e a
+  magia rebalanceadas.
+- **Currículo de chefes:** desde 21/10 01:08, um chefe de cada vez. Ela passa
+  para a próxima estátua quando vence 7 das últimas 10 lutas, revisa um chefe
+  já dominado a cada 4 lutas, e o painel pede exemplos seus se ela empacar.
 - **Onde ela treina:** nas estátuas do **Salão dos Deuses**, no automático:
   desde 20/10 16:06, ao fim de cada luta, perdendo ou vencendo, o plugin a
   leva de volta à mesma luta e no mesmo nível (55 voltas seguidas sem falha,
@@ -89,6 +93,11 @@ Cada solução que foi trocada por outra melhor, com o período em que esteve em
 | Loop nas arenas do Salão | Punido como em qualquer sala | 13/10 22:55 → 20/10 14:44 | Não conta (lá ir e voltar é lutar) |
 | Perder no Salão dos Deuses | Não contava (o Cavaleiro acorda do sonho, não morre) | 14/10 19:35 → 20/10 15:05 | Morte (−8), pela luta não terminada |
 | Voltar para a luta | Você a colocava de novo na estátua | 14/10 19:35 → 20/10 14:44 | Plugin: abre o desafio e entra no mesmo nível (só derrota até 15:14; depois também vitória; confiável desde 16:06) |
+| Qual chefe enfrentar | Sempre a mesma estátua | 20/10 14:44 → 21/10 01:08 | Currículo: avança por domínio (7 de 10), revisa os dominados, avisa quando empaca |
+| Peso da Magia e do Foco no treino | Magia até 15×, Foco até 3× | 14/10 20:13 → 21/10 01:02 | Magia até 5×, Foco até 6× |
+| Cura com 1-2 máscaras | +0,3 a mais | 14/10 14:15 → 21/10 01:02 | +1,0 a mais; magia no vazio e magia em vez de curar: −0,5 cada |
+| Revezar os cérebros no treino | Uma vez cada (mlp, conectoma, mlp...) | 13/10 21:16 → 21/10 01:08 | A outra arquitetura a cada 3 treinos |
+| Desenho do cérebro | Amostra de ~17 mil neurônios, como no FlyWire | 13/10 → 21/10 00:44 | Silhueta dos 139 mil e posições mais simétricas (só a ilustração) |
 
 ---
 
@@ -160,7 +169,7 @@ sozinha sem nunca piorar quem está jogando.
 que neurônios e ligações são os da mosca real e só a força de cada grupo é
 aprendida. O primeiro conectoma foi o treino #12, às 21:15.
 
-## 3. As disputas (13/10 22:32 → 20/10 16:24)
+## 3. As disputas (13/10 22:32 → 21/10 00:53)
 
 | Versão | Treinada em | Cérebro | Resultado | Recompensa/min (desafiante × campeã) |
 |---|---|---|---|---|
@@ -211,7 +220,10 @@ aprendida. O primeiro conectoma foi o treino #12, às 21:15.
 | #66 | 20/10 07:54 | mlp | interrompida | — |
 | #67 | 20/10 14:21 | conectoma | perdeu (empate, no Salão dos Deuses) | −22,1 × −22,6 |
 | **#68** | 20/10 15:26 | **mlp** | **🏆 venceu a #64** (no Salão dos Deuses) | −9,7 × −16,3 (**+41%**) |
-| #69 | 20/10 16:24 | conectoma | em disputa | — |
+| #69 | 20/10 16:24 | conectoma | perdeu | −12,0 × −14,6 |
+| #70 | 20/10 23:30 | mlp | perdeu | −16,6 × −13,9 |
+| #71 | 21/10 00:13 | conectoma | perdeu | −15,9 × −15,2 |
+| #72 | 21/10 00:53 | mlp | em disputa | — |
 
 A #15 foi a **primeira vitória do cérebro real**, e a #21 o venceu de novo. Depois
 vieram duas campeãs mlp com memória (#29 e #35), de novo o cérebro real (#40 e
@@ -395,6 +407,31 @@ guarda a tecla vetada, o treino aprende com ela parando.
 jogo não o via ("Game controller set to None"). No Proton ele só aparece se
 conectar com o jogo aberto: desligar e ligar resolve.
 
+## 11. O que o histórico mostrou: cura, um chefe só e o painel (21/10, 00:44 → 01:08)
+
+| Data e hora | O que entrou | Por quê |
+|---|---|---|
+| 21/10 00:44 | **Silhueta do cérebro** com os 139 mil neurônios | a amostra de 17 mil, sozinha, parecia espalhada |
+| 21/10 00:49 | **Painel meio a meio** | um texto longo encolhia o outro cartão (572 × 2684 px) |
+| 21/10 00:53 | **Desenho mais simétrico** | o exemplar do FlyWire ficou girado e com a lâmina esquerda dobrada |
+| 21/10 01:02 | **Magia até 5×, Foco até 6×**, cura com pouca vida +1,0, punições de magia | ela tocava a magia 11% do tempo e curava 0,01 vez por minuto |
+| 21/10 01:08 | **Currículo de chefes** e **a outra arquitetura a cada 3 treinos** | 137 de 142 min na Gruz Mother sem melhorar; o conectoma não vence desde a #46 |
+
+**Você × ela nas arenas (29 min seus, 142 dela).** Por minuto: golpes 54 × 19,
+dano tomado 3,9 × 10,1, curas 2,7 × 0,01, chefes vencidos 1,8 × 0,3. Ela tocava
+a magia 11% do tempo (você, quase nunca) e segurava o Foco 1% (você, 6%): a
+Magia pesava até 15× no treino desde 14/10 20:13, e a alma ia toda para ela.
+
+**Gruz Mother.** 167 lutas, 44 vitórias (26%). Nas que ela perdia, já tinha
+tirado em média 66% da vida do chefe: chegava perto e morria, justamente onde
+curar faria diferença. Em ~2 h na mesma luta, nada melhorou (≈0,4 vitória e
+≈10 danos por minuto). Ela aprende sobretudo imitando você, e você tinha só
+3 min de exemplo contra esse chefe: repetir a luta dá treino, não ensino.
+
+**Ferir o chefe não estava inflado.** A suspeita era o Salão aumentar a vida do
+chefe depois do primeiro golpe. Medido: nas lutas vencidas, ~96% do chefe por
+luta, como deveria. A média alta vinha das muitas derrotas perto do fim.
+
 ---
 
 ## O que se aprendeu no caminho
@@ -417,6 +454,9 @@ conectar com o jogo aberto: desligar e ligar resolve.
 - **O lugar decide o placar.** Numa sala sem inimigos, o torneio não mede
   nada e o treino copia o vício. Para saber se uma versão ficou pior, o teste
   justo é nas mesmas telas, que nenhuma viu.
+- **Um peso de treino corrige um problema e pode criar outro.** A Magia a 15×
+  fez a magia aparecer (14/10), e uma semana depois era ela que não deixava
+  alma para curar.
 - **Um bloqueio precisa de saída.** Segurar as teclas da mosca na volta da luta
   travou tudo: o Cavaleiro deitado esperava um botão que ninguém apertava.
 - **Dados limpos antes de cérebro maior.** A memória só entrou depois que o
@@ -425,14 +465,15 @@ conectar com o jogo aberto: desligar e ligar resolve.
 
 ## Próximos passos
 
-1. **Combate no Salão dos Deuses, no automático:** escolher a luta na estátua e
-   deixar a mosca repetir; trocar de chefe quando ela começar a vencer.
-2. **Correção ao vivo pelo controle** sempre que qualquer versão errar,
-   principalmente esquiva, magia e cura em segurança.
-3. **Proteger o torneio de salas sem nada:** anular a disputa (e pesar menos no
-   treino) quando ela ficar muito tempo na mesma sala sem lutar nem explorar.
-4. **Bordas de espinho por esquiva:** uma queda depois de uma esquiva marca a
-   borda onde a esquiva começou, mais para dentro que a real (na arena dos
-   Mantis Lords, x≈24,9 em vez de ~21). Se ela ficar presa no meio, ajustar.
-5. **Conferir** o equilíbrio das recompensas novas: com loop −1,2 ela pode
-   ficar medrosa; se a esquiva continuar fraca, um prêmio por desviar de golpes.
+1. **Exemplos seus por chefe:** algumas lutas inteiras contra o chefe atual do
+   currículo (Ctrl+Alt+G), curando com pouca vida em vez de soltar magia. É o
+   que mais ensina; o painel avisa quando ela empaca.
+2. **Conferir no jogo o currículo:** a troca de estátua (o plugin leva o
+   Cavaleiro até ela) ainda não foi vista funcionando; o log do BepInEx diz
+   quantas estátuas ele achou e a luta de cada volta.
+3. **Ver se a cura aparece:** a #72 é a primeira com o Foco a 6×; curas por
+   minuto e magia no vazio dizem se o rebalanceamento funcionou.
+4. **Proteger o torneio de salas sem nada** e julgar pelas métricas de luta
+   (dano no chefe e derrotas por minuto), com as rodadas no mesmo chefe.
+5. **Bordas de espinho por esquiva:** uma queda depois de uma esquiva marca a
+   borda onde a esquiva começou, mais para dentro que a real.
