@@ -7,7 +7,7 @@ import time
 import unittest
 from pathlib import Path
 
-from mosca.juiz import DetectoresPelaPosicao, JuizDoJogo, MemoriaDePerigos, eventos_entre
+from mosca.juiz import DetectoresPelaPosicao, JuizDoJogo, MemoriaDePerigos, SaidasDoSalao, eventos_entre
 
 
 def estado(**mudancas):
@@ -326,6 +326,28 @@ class TestePerigos(unittest.TestCase):
             self.m.passo(estado(cena="GG_Mantis_Lords_V", x=30.0, y=7.4, no_chao=True), [])
         self.m.passo(estado(cena="GG_Mantis_Lords_V", x=30.1, y=6.9, no_chao=False), ["perigo"])
         self.assertEqual(self.m.bordas, [])
+
+
+class TesteSaidasDoSalao(unittest.TestCase):
+    def setUp(self):
+        self.s = SaidasDoSalao(Path(tempfile.mkdtemp()) / "saidas.json")
+
+    def test_a_saida_esquerda_ja_comeca_vetada(self):
+        perto = estado(cena="GG_Workshop", x=0.5, y=6.4)
+        self.assertEqual(self.s.vetar(perto), {"Esquerda", "Esquiva", "Super Investida"})
+        self.assertEqual(self.s.vetar(estado(cena="GG_Workshop", x=40.0, y=6.4)), set())  # longe: livre
+        self.assertEqual(self.s.vetar(estado(cena="GG_Gruz_Mother", x=0.5, y=6.4)), set())  # arena: livre
+
+    def test_aprende_uma_saida_nova(self):
+        self.s.passo(estado(cena="GG_Workshop", x=206.0, y=20.0, vx=8.0))
+        self.s.passo(estado(cena="GG_Atrium", x=1.0, y=6.0))
+        self.assertEqual(self.s.vetar(estado(cena="GG_Workshop", x=205.0, y=20.0)),
+                         {"Direita", "Esquiva", "Super Investida"})
+
+    def test_ir_para_a_luta_nao_e_saida(self):
+        self.s.passo(estado(cena="GG_Workshop", x=90.0, y=6.4, vx=0.0))
+        self.s.passo(estado(cena="GG_Gruz_Mother", x=10.0, y=6.0))
+        self.assertEqual(len(self.s.bordas), 1)  # só a inicial
 
 
 if __name__ == "__main__":

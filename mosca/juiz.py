@@ -273,9 +273,9 @@ class MemoriaDePerigos:
     HISTORICO_S = 2.0
     MAXIMO = 1000
 
-    def __init__(self, arquivo=PASTA / "memoria_perigos.json", dt=1 / 30):
+    def __init__(self, arquivo=PASTA / "memoria_perigos.json", dt=1 / 30, iniciais=()):
         self.arquivo = Path(arquivo)
-        self.bordas = json.loads(self.arquivo.read_text()) if self.arquivo.exists() else []
+        self.bordas = json.loads(self.arquivo.read_text()) if self.arquivo.exists() else [list(b) for b in iniciais]
         self._hist = collections.deque(maxlen=int(self.HISTORICO_S / dt))
 
     def passo(self, estado, eventos):
@@ -293,7 +293,10 @@ class MemoriaDePerigos:
         cena, x, y, _ = firmes[-1]
         if abs(estado["x"] - x) < 0.3:  # caiu de cima, sem andar para uma borda
             return
-        lado = 1 if estado["x"] > x else -1
+        self.marcar(cena, x, y, 1 if estado["x"] > x else -1)
+
+    def marcar(self, cena, x, y, lado):
+        """Uma borda (ou saída) a não atravessar: perto dela, não ir para o `lado`."""
         for borda in self.bordas:
             if borda[0] == cena and borda[3] == lado and abs(borda[1] - x) < self.JUNTAR and abs(borda[2] - y) < self.JUNTAR:
                 borda[1] = round(min(borda[1], x) if lado > 0 else max(borda[1], x), 2)  # a mais cautelosa
@@ -316,6 +319,37 @@ class MemoriaDePerigos:
             if -self.ALEM < (x - estado["x"]) * lado < self.MARGEM:
                 vetadas |= {"Direita" if lado > 0 else "Esquerda", "Esquiva"}
         return vetadas
+
+
+class SaidasDoSalao(MemoriaDePerigos):
+    """Saídas da sala das estátuas (GG_Workshop) que ela não deve atravessar, por
+    enquanto: perto delas, andar, esquivar ou a Super Investida para lá é vetado
+    (o mesmo reflexo da beira dos espinhos). Começa com a única que ela já usou (a
+    borda esquerda, para o GG_Atrium) e aprende as outras: se ela achar uma saída
+    nova para uma sala que não é arena, a saída fica marcada e não passa mais."""
+
+    SALA = "GG_Workshop"
+    MARGEM = 3.0  # a Super Investida e a esquiva vão longe
+    INICIAIS = ([SALA, -1.3, 6.4, -1],)  # medido nas gravações: x -1,4 a -1,2, y 6,4, andando para a esquerda
+
+    def __init__(self, arquivo=PASTA / "memoria_saidas.json", dt=1 / 30):
+        super().__init__(arquivo, dt, self.INICIAIS)
+        self._antes = None
+
+    def passo(self, estado, eventos=()):
+        """Guarda a última posição no salão; se ela saiu para uma sala que não é
+        arena (nem o salão), marca a saída."""
+        if estado is None:
+            return
+        antes, self._antes = self._antes, estado
+        if (antes is not None and antes["cena"] == self.SALA and estado["cena"] != self.SALA
+                and not eh_arena(estado["cena"]) and not estado["cena"].startswith("Menu")):
+            lado = (1 if antes["vx"] > 0 else -1) if abs(antes["vx"]) > 0.5 else (1 if antes["x"] > 100 else -1)
+            self.marcar(self.SALA, antes["x"], antes["y"], lado)
+
+    def vetar(self, estado):
+        vetadas = super().vetar(estado)
+        return vetadas | {"Super Investida"} if vetadas else vetadas
 
 
 class DetectoresPelaPosicao:
