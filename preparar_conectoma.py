@@ -24,6 +24,7 @@ geral de cada ligação ajustável. Cada grupo é uma unidade com a atividade m�
 seus neurônios. Simular os 138 mil neurônios um a um em tempo real não cabe.
 """
 
+import sys
 import time
 from pathlib import Path
 
@@ -37,6 +38,7 @@ ARQUIVO_ANOTACOES = DADOS / "anotacoes_783.tsv"
 ARQUIVO_NEURONIOS = DADOS / "neuronios_783.csv"
 ARQUIVO_LIGACOES = DADOS / "ligacoes_783.parquet"
 ARQUIVO_SAIDA = DADOS / "conectoma_mosca.npz"
+ARQUIVO_FUNDO = DADOS / "fundo_cerebro.npz"  # silhueta do desenho (só o painel usa)
 URL_CONECTOMA = "https://github.com/philshiu/Drosophila_brain_model/raw/main"
 URL_ANOTACOES = (
     "https://github.com/flyconnectome/flywire_annotations/raw/main/"
@@ -45,6 +47,7 @@ URL_ANOTACOES = (
 
 GRUPOS_CENTRAIS = 1500  # grupos centrais mantidos (os que mais ligam olho -> saída)
 AMOSTRA_DESENHO = 16000  # neurônios com posição, para o desenho do cérebro
+FUNDO_PIXELS = (440, 220)  # resolução da silhueta (largura, altura)
 CAMADAS = {"visual": "visual_projection", "central": "central", "descendente": "descending"}
 
 
@@ -105,7 +108,33 @@ def entre_grupos(pesos, de, para):
     return (m / np.maximum(total, 1)).astype(np.float32)
 
 
+def fundo_do_desenho():
+    """Silhueta do cérebro: a densidade dos ~139 mil neurônios (vista de frente).
+    A amostra que acende no painel (16 mil pontos) sozinha não mostra a forma:
+    os pontos ficavam espalhados. Gera ARQUIVO_FUNDO, em coordenadas do FlyWire."""
+    pos = pd.read_csv(ARQUIVO_ANOTACOES, sep="\t", usecols=["pos_x", "pos_y"]).dropna().to_numpy(np.float64)
+    (x0, x1), (y0, y1) = (np.percentile(pos[:, k], [0.05, 99.95]) for k in (0, 1))
+    margem_x, margem_y = 0.03 * (x1 - x0), 0.03 * (y1 - y0)
+    x0, x1, y0, y1 = x0 - margem_x, x1 + margem_x, y0 - margem_y, y1 + margem_y
+    largura, altura = FUNDO_PIXELS
+    h, _, _ = np.histogram2d(pos[:, 0], pos[:, 1], bins=(largura, altura), range=((x0, x1), (y0, y1)))
+    # desfoque gaussiano (separável, sem scipy): os pontos viram tecido
+    t = np.arange(-6, 7)
+    nucleo = np.exp(-t**2 / (2 * 1.6**2))
+    nucleo /= nucleo.sum()
+    for eixo in (0, 1):
+        h = np.apply_along_axis(lambda v: np.convolve(v, nucleo, mode="same"), eixo, h)
+    densidade = np.log1p(h)
+    densidade = np.clip(densidade / np.percentile(densidade[densidade > 0], 99), 0, 1).astype(np.float32)
+    np.savez_compressed(ARQUIVO_FUNDO, densidade=densidade, x=np.array([x0, x1]), y=np.array([y0, y1]),
+                        neuronios=len(pos))
+    print(f"silhueta do cérebro: {num(len(pos))} neurônios, salva em {ARQUIVO_FUNDO.relative_to(PASTA)}")
+
+
 def main():
+    if "--fundo" in sys.argv:  # só a silhueta do desenho (rápido)
+        fundo_do_desenho()
+        return
     inicio = time.time()
     ids, anotacoes, pesos = carregar()
     n = len(ids)
@@ -168,6 +197,7 @@ def main():
     )
     tamanho = ARQUIVO_SAIDA.stat().st_size / 1e6
     print(f"\nsalvo em {ARQUIVO_SAIDA.relative_to(PASTA)} ({tamanho:.1f} MB) em {time.time() - inicio:.0f} s")
+    fundo_do_desenho()
 
 
 if __name__ == "__main__":

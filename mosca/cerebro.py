@@ -11,7 +11,7 @@ import collections
 import numpy as np
 
 from .conectoma import carregar_conectoma
-from .config import ACOES, DURACAO_PULSO_S, QUADRO_MS
+from .config import ACOES, DURACAO_PULSO_S, PASTA, QUADRO_MS
 from .olho import ATRASO_OLHO, GRADE_OLHO, _N_PERIFERIA, entrada, lembrar, reduzir, retrato
 
 
@@ -29,10 +29,23 @@ class FormaReal:
         self.posicoes = np.column_stack(
             [(pos[:, 0] - (x0 + x1) / 2) * escala, -(pos[:, 1] - (y0 + y1) / 2) * escala]
         ).astype(np.float32)
+        self.fundo = self._fundo((x0 + x1) / 2, (y0 + y1) / 2, escala)
         self.classe = conectoma["desenho_classe"]
         self.tipo = conectoma["desenho_tipo"]
         self.grupo = {k: conectoma[f"desenho_grupo_{k}"] for k in self.CAMADAS}
         self.nomes_grupos = {k: conectoma[f"grupos_{k}"] for k in self.CAMADAS}
+
+    @staticmethod
+    def _fundo(cx, cy, escala):
+        """Silhueta (preparar_conectoma.py --fundo) nas coordenadas do painel:
+        (densidade[x, y] de baixo para cima, (x0, y0, largura, altura)), ou None."""
+        arquivo = PASTA / "dados_conectoma" / "fundo_cerebro.npz"
+        if not arquivo.exists():
+            return None
+        with np.load(arquivo) as f:
+            densidade, (x0, x1), (y0, y1) = f["densidade"], f["x"], f["y"]
+        # no FlyWire y cresce para baixo: inverte as linhas para o dorsal ficar em cima
+        return densidade[:, ::-1], ((x0 - cx) * escala, -(y1 - cy) * escala, (x1 - x0) * escala, (y1 - y0) * escala)
 
 
 class CerebroDemo:

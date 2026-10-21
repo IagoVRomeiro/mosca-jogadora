@@ -157,7 +157,20 @@ class CartaoCerebro(QtWidgets.QFrame):
         grafico.setCursor(QtCore.Qt.CursorShape.CrossCursor)
         self.vista.setRange(xRange=(-1.5, 1.5), yRange=(-0.8, 0.8), padding=0.02)
         pos = cerebro.posicoes
-        self.base = pg.ScatterPlotItem(pos=pos, size=2.2, pen=None, brush=pg.mkBrush(*COR_REPOUSO))
+        # Silhueta com todos os ~139 mil neurônios: a amostra que acende, sozinha,
+        # ficava espalhada e não mostrava a forma do cérebro
+        fundo = getattr(getattr(cerebro, "real", None), "fundo", None)
+        if fundo is not None:
+            densidade, (fx, fy, fw, fh) = fundo
+            cor = np.array(COR_REPOUSO[:3], np.float32)
+            lut = np.zeros((256, 4), np.uint8)
+            nivel = np.linspace(0, 1, 256)
+            lut[:, :3] = (cor * (0.35 + 0.45 * nivel[:, None])).astype(np.uint8)
+            lut[:, 3] = (np.clip(nivel * 1.6, 0, 1) ** 1.2 * 150).astype(np.uint8)
+            silhueta = pg.ImageItem(densidade, levels=(0, 1), lut=lut)
+            silhueta.setRect(QtCore.QRectF(fx, fy, fw, fh))
+            self.vista.addItem(silhueta)
+        self.base = pg.ScatterPlotItem(pos=pos, size=1.8, pen=None, brush=pg.mkBrush(*COR_REPOUSO))
         self.camada_estimulo = pg.ScatterPlotItem(size=3.2, pen=None, brush=pg.mkBrush(*COR_ESTIMULADO))
         self.brilho = pg.ScatterPlotItem(size=9, pen=None, brush=pg.mkBrush(255, 196, 70, 40))
         self.camada_disparo = pg.ScatterPlotItem(size=3.5, pen=None, brush=pg.mkBrush(*COR_DISPARO))
