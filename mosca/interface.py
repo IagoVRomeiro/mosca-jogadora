@@ -501,5 +501,9 @@ class Painel(QtWidgets.QWidget):
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(14)
+        # Meio a meio sempre: sem isto, um texto que muda (eventos, torneio) alargava
+        # um cartão e encolhia o outro; texto longo demais é cortado
+        for cartao in (self.cartao_cerebro, self.cartao_mosca):
+            cartao.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored, QtWidgets.QSizePolicy.Policy.Preferred)
         layout.addWidget(self.cartao_cerebro, stretch=1)
         layout.addWidget(self.cartao_mosca, stretch=1)
