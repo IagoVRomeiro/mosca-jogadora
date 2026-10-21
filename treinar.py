@@ -64,6 +64,9 @@ PRIMEIRA_CAMADA = {"mlp": ("w1", "b1"), "conectoma": ("A", "a")}
 I_ESQ, I_DIR = ACOES.index("Esquerda"), ACOES.index("Direita")
 ULTIMA_CAMADA = {"mlp": ("w2", "b2"), "conectoma": ("R", "r")}  # uma coluna por ação
 NADA_NOVO = 3  # código de saída: treinou e não aprendeu nada mensurável
+# Especialista de uma arena (--especialista CENA): só os quadros dela
+PASTA_ESPECIALISTAS = PASTA / "especialistas"
+MINIMO_QUADROS_ESPECIALISTA = 1800  # 1 min de luta na arena, entre treino e validação
 LOTE = 256
 TAXA = 1e-3
 VALIDACAO = 0.2  # o fim de cada sessão fica de fora do treino, para medir de verdade
@@ -217,6 +220,44 @@ def versao_do_codigo():
     for arquivo in [PASTA / "jogar.py", PASTA / "treinar.py", *sorted((PASTA / "mosca").glob("*.py"))]:
         h.update(arquivo.read_bytes())
     return h.hexdigest()[:12]
+
+
+def cenas_da_sessao(pasta):
+    """A sala (cena do jogo) de cada quadro de uma gravação ("" sem o plugin). Lê
+    só a coluna da sala, não as telas."""
+    cenas = []
+    for arquivo in sorted(Path(pasta).glob("parte_*.npz")):
+        with np.load(arquivo) as parte:
+            n = len(parte["teclas"])
+            if "jogo_cena" not in parte.files:
+                cenas += [""] * n
+                continue
+            nomes = [str(c) for c in parte["jogo_cenas"]]
+            cenas += [nomes[i] if i >= 0 else "" for i in parte["jogo_cena"]]
+    return np.array(cenas)
+
+
+def pastas_da_arena(cena):
+    """Todas as gravações (suas e dela, mesmo as antigas ainda guardadas) que
+    passaram pela arena, com a sala de cada quadro."""
+    todas = {p.name: p for p in sorted(PASTA_GRAVACOES.glob("*")) if p.is_dir()}
+    todas |= {f"mosca_{p.name}": p for p in sorted(PASTA_GRAVACOES_MOSCA.glob("*")) if p.is_dir()}
+    pastas, cenas = {}, {}
+    for nome, pasta in sorted(todas.items(), key=lambda item: item[1].name):
+        c = cenas_da_sessao(pasta)
+        if (c == cena).any():
+            pastas[nome], cenas[nome] = pasta, c
+    return pastas, cenas
+
+
+def so_a_arena(dados, nomes, cenas, cena):
+    """Treino e validação só com os quadros da arena (a memória e o "antes" de cada
+    quadro continuam vindo da gravação inteira)."""
+    na_arena = np.concatenate([cenas[n] == cena for n in nomes])
+    if len(na_arena) != len(dados.retratos):
+        raise SystemExit("as salas não batem com os quadros da gravação (cache antigo?)")
+    dados.treino = dados.treino[na_arena[dados.treino]]
+    dados.valid = dados.valid[na_arena[dados.valid]]
 
 
 def pastas_de_sessoes():
@@ -678,6 +719,8 @@ def candidatos_de_partida(arquitetura):
             for t in banco._pedir("GET", "/rest/v1/treinos?select=id,config&order=id.desc&limit=100"):
                 if achados >= CANDIDATOS_SUPABASE:
                     break
+                if (t.get("config") or {}).get("especialista"):  # de uma arena só: não serve de base geral
+                    continue
                 if (t.get("config") or {}).get("arquitetura", "mlp") != arquitetura or t["id"] in vistos:
                     continue
                 arquivo, _ = baixar_treino(t["id"], PASTA / "modelos_base")
@@ -687,6 +730,19 @@ def candidatos_de_partida(arquitetura):
     except Exception as e:  # sem internet: fica com os locais
         print(f"⚠ sem candidatas do Supabase ({e})")
     return candidatos
+
+
+def candidatos_de_especialista(cena, arquitetura):
+    """O especialista atual da arena (se for deste cérebro), como ponto de partida."""
+    arquivo = PASTA_ESPECIALISTAS / f"{cena}.npz"
+    if not arquivo.exists():
+        return []
+    with np.load(arquivo) as m:
+        if (str(m["arquitetura"]) if "arquitetura" in m.files else "mlp") != arquitetura:
+            return []
+        info = arquivo.with_suffix(".json")
+        tid = json.loads(info.read_text()).get("treino_id") if info.exists() else None
+        return [({k: m[k] for k in m.files}, tid)]
 
 
 def escolher_partida(dados, arquitetura, candidatos):
@@ -855,11 +911,19 @@ def main():
         "--ensaio", action="store_true",
         help="treina e mostra o resultado, sem salvar nem registrar (não cria desafiante)",
     )
+    parser.add_argument(
+        "--especialista", metavar="CENA",
+        help="especialista de uma arena (ex.: GG_Gruz_Mother): só os quadros dela; vira candidato",
+    )
     args = parser.parse_args()
     arquitetura = args.arquitetura or arquitetura_da_campea()
-    print(f"cérebro: {arquitetura}")
+    especialista = args.especialista
+    print(f"cérebro: {arquitetura}" + (f" · especialista de {especialista}" if especialista else ""))
     inicio = time.time()
-    pastas = pastas_de_sessoes()
+    if especialista:
+        pastas, cenas_por_sessao = pastas_da_arena(especialista)
+    else:
+        pastas = pastas_de_sessoes()
     sessoes = carregar_sessoes(pastas)
     print(f"olho de {len(sessoes)} sessões pronto em {time.time() - inicio:.0f} s (cache em {PASTA_CACHE.name}/)")
     total = sum(len(s["retratos"]) for s in sessoes)
@@ -874,6 +938,11 @@ def main():
     nomes_sessoes = [s["nome"] for s in sessoes]
     dados = Dados(sessoes)
     del sessoes  # os retratos já estão em `dados`; libera a memória
+    if especialista:
+        so_a_arena(dados, nomes_sessoes, cenas_por_sessao, especialista)
+        if len(dados.treino) + len(dados.valid) < MINIMO_QUADROS_ESPECIALISTA // SUBAMOSTRA:
+            print(f"Pouca luta em {especialista} (mínimo {MINIMO_QUADROS_ESPECIALISTA} quadros).")
+            return
     dados.normalizar()
     pesar_pela_vantagem(dados)
     for i, nome in enumerate(nomes_sessoes):
@@ -892,7 +961,10 @@ def main():
     base, base_id = None, None
     if not args.do_zero:
         print("escolhendo o ponto de partida (a melhor nos dados de agora):")
-        base, base_id = escolher_partida(dados, arquitetura, candidatos_de_partida(arquitetura))
+        candidatos = candidatos_de_partida(arquitetura)
+        if especialista:  # o especialista atual da arena e a campeã geral
+            candidatos = [c for c in candidatos_de_especialista(especialista, arquitetura)] + candidatos[:1]
+        base, base_id = escolher_partida(dados, arquitetura, candidatos)
     if base is not None:
         print(f"partindo da versão #{base_id} (o que ela sabe não se perde)")
     rede, perda_validacao, aprendeu = treinar(dados, arquitetura, base)
@@ -906,7 +978,9 @@ def main():
         return
 
     # Salva num temporário e troca de uma vez: o painel nunca lê um modelo pela metade
-    temporario = ARQUIVO_SAIDA.with_name(ARQUIVO_SAIDA.stem + ".tmp.npz")
+    saida = PASTA_ESPECIALISTAS / f"{especialista}.candidato.npz" if especialista else ARQUIVO_SAIDA
+    saida.parent.mkdir(exist_ok=True)
+    temporario = saida.with_name(saida.stem + ".tmp.npz")
     extras = {}
     if arquitetura == "conectoma":  # nomes dos grupos: o painel acende os neurônios reais
         conectoma = carregar_conectoma()
@@ -942,6 +1016,8 @@ def main():
             "peso_correcao": PESO_CORRECAO, "peso_tela": PESO_TELA, "espelhar": ESPELHAR,
             "toque_s": TOQUE_S, "arquitetura": arquitetura,
             "partiu_de": base_id,
+            "especialista": especialista,
+            "quadros_arena": int(len(dados.treino) + len(dados.valid)) * SUBAMOSTRA if especialista else None,
         },
         "codigo_versao": versao_do_codigo(),
     }
@@ -952,8 +1028,13 @@ def main():
     )
     print(mensagem)
     # O painel lê o .json para dizer, nas partidas, qual treino estava jogando
-    ARQUIVO_INFO_MODELO.write_text(json.dumps({"treino_id": treino_id, "n_quadros": total}))
-    os.replace(temporario, ARQUIVO_SAIDA)
+    saida.with_suffix(".json").write_text(json.dumps({"treino_id": treino_id, "n_quadros": total,
+                                                      "especialista": especialista}))
+    os.replace(temporario, saida)
+    if especialista:
+        print(f"especialista salvo em {saida.relative_to(PASTA)} ({time.time() - inicio:.0f} s): "
+              "ele joga as próximas lutas da arena e assume se vencer pelo menos tanto quanto antes.")
+        return
     print(f"modelo salvo em {ARQUIVO_SAIDA.name} ({time.time() - inicio:.0f} s).")
     apagadas = limpar_partidas_antigas_da_mosca()
     if apagadas:

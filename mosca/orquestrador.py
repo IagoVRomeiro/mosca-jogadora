@@ -15,7 +15,8 @@ from registro import registrar_partida, marcar_torneio
 from .aprendizado import Gravador, Imitacao, Torneio
 from .correcao import Correcao
 from .curriculo import Curriculo
-from .juiz import DetectoresPelaPosicao, JuizDoJogo, MemoriaDePerigos
+from .especialistas import PASTA_ESPECIALISTAS, Especialistas
+from .juiz import DetectoresPelaPosicao, JuizDoJogo, MemoriaDePerigos, eh_arena
 from .config import ACOES, ARQUIVO_DESAFIANTE, PASTA, PASTA_GRAVACOES_MOSCA, QUADRO_MS, ROTULO_TECLA
 from .estimulos import DetectorLoop, DetectorParada, DetectorPresa, ExploradorSalas, LeitorHUD
 from .interface import Painel
@@ -58,6 +59,7 @@ class Orquestrador(QtCore.QObject):
             self.pela_posicao = DetectoresPelaPosicao()
             self.perigos = MemoriaDePerigos()
             self.curriculo = Curriculo()
+            self.especialistas = Especialistas(carregar=Imitacao.carregar)
             try:
                 self.juiz = JuizDoJogo()
             except OSError as e:  # porta ocupada (outro painel aberto?)
@@ -70,6 +72,9 @@ class Orquestrador(QtCore.QObject):
         self._treino_pendente = False  # correções esperando a disputa (desafiante na frente)
         self._recompensas = collections.deque()  # (instante, valor) dos últimos 10 s
         self._ultimo_evento = (None, 0.0)
+        self._especialista = None  # (arena, "atual"/"candidato") quando um especialista joga
+        self._ultima_arena = None  # (arena, quem jogou) da luta em andamento, para o veredito
+        self._treino_especialista = None  # arena do treino em andamento, se for de especialista
         self._recompensa_quadro = 0.0
         self.partida = None  # o que a mosca fez desde que ligou "Controlar jogo"
         self._envios = []  # threads de registro de partidas
@@ -179,6 +184,13 @@ class Orquestrador(QtCore.QObject):
     def _torneio_quadro(self):
         """Depois de cada quadro em que a mosca jogou de fato."""
         t = self.torneio
+        if self._especialista is not None:
+            # quem joga é o especialista da arena: a disputa das versões gerais não
+            # anda, mas o tempo de jogo conta para o próximo treino geral
+            t.estado["mosca_desde_treino"] += QUADRO_MS / 1000
+            if not t.em_disputa and self.treino is None and t.ciclo_cumprido(self.CICLO_S):
+                self._ciclo()
+            return
         trocar = t.contar(self.papel, QUADRO_MS / 1000, self._recompensa_quadro)
         resultado = t.veredito()
         if resultado:
@@ -239,6 +251,10 @@ class Orquestrador(QtCore.QObject):
         self.treinar()
 
     def _texto_torneio(self):
+        if self._especialista is not None:
+            texto = self.especialistas.texto(*self._especialista)
+            curriculo = getattr(self, "curriculo", None)
+            return f"{texto} · {curriculo.texto()}" if curriculo is not None and curriculo.texto() else texto
         texto = self._texto_da_disputa()
         curriculo = getattr(self, "curriculo", None)
         if texto and curriculo is not None and curriculo.texto():
@@ -404,6 +420,23 @@ class Orquestrador(QtCore.QObject):
         self._info_treino = f"🧠 Treinando a mosca ({'conectoma' if arquitetura == 'conectoma' else 'rede inventada'})…"
         processo.start(sys.executable, ["-u", str(PASTA / "treinar.py"), "--arquitetura", arquitetura])
 
+    def treinar_especialista(self, arena):
+        """Treina (em outro processo) o especialista de uma arena: vira candidato."""
+        if self.treino is not None:
+            return
+        campea = self.modelos["campea"]
+        arquitetura = getattr(campea, "arquitetura", "mlp") if campea is not None else "mlp"
+        processo = QtCore.QProcess(self)
+        processo.setWorkingDirectory(str(PASTA))
+        processo.setProcessChannelMode(QtCore.QProcess.ProcessChannelMode.MergedChannels)
+        processo.readyReadStandardOutput.connect(self._saida_treino)
+        processo.finished.connect(self._fim_treino)
+        self._log_treino = []
+        self.treino, self._treino_especialista = processo, arena
+        self._info_treino = f"🎯 Treinando o especialista de {arena.removeprefix('GG_')}…"
+        processo.start(sys.executable, ["-u", str(PASTA / "treinar.py"), "--arquitetura", arquitetura,
+                                        "--especialista", arena])
+
     def _saida_treino(self):
         texto = bytes(self.treino.readAllStandardOutput()).decode(errors="replace")
         self._log_treino.append(texto)
@@ -412,8 +445,27 @@ class Orquestrador(QtCore.QObject):
 
     def _fim_treino(self, codigo, _status):
         log = "".join(self._log_treino)
-        (PASTA / "treino.log").write_text(log)  # a tabela de resultado fica aqui
         self.treino = None
+        arena, self._treino_especialista = self._treino_especialista, None
+        if arena is not None:
+            PASTA_ESPECIALISTAS.mkdir(exist_ok=True)
+            (PASTA_ESPECIALISTAS / f"{arena}.log").write_text(log)
+            nome = arena.removeprefix("GG_")
+            if codigo == 0 and "especialista salvo" in log:
+                texto = f"🎯 Especialista novo de {nome}: joga as próximas lutas de lá e assume se for melhor"
+            elif "nada novo aprendido" in log:
+                texto = f"🎯 Especialista de {nome}: nada novo; tenta de novo depois de mais lutas"
+            elif "Pouca luta" in log:
+                texto = f"🎯 Pouca luta em {nome} para um especialista ainda"
+            else:
+                texto = f"⚠ O treino do especialista de {nome} falhou (veja especialistas/{arena}.log)"
+            self.especialistas.treinou(arena)
+            self._avisar(texto, 15)
+            if self._treinar_de_novo:
+                self._treinar_de_novo = False
+                self.treinar()
+            return
+        (PASTA / "treino.log").write_text(log)  # a tabela de resultado fica aqui
         if codigo == 0 and "modelo salvo" in log:
             self._nova_desafiante()
         elif "nada novo aprendido" in log:  # não vale uma disputa: espera mais dados
@@ -732,10 +784,43 @@ class Orquestrador(QtCore.QObject):
         ordem = list(estado.get("estatuas") or []) if estado else []
         for estatua, venceu in self.juiz.pegar_lutas():
             if self._mosca_joga:
-                for aviso in self.curriculo.registrar(estatua, venceu, ordem):
+                avisos = self.curriculo.registrar(estatua, venceu, ordem)
+                if self._ultima_arena is not None:  # quem jogou: especialista, candidato ou a geral
+                    avisos += self.especialistas.registrar_luta(*self._ultima_arena, venceu)
+                for aviso in avisos:
                     self._notificar(aviso)
                     self._info_treino, self._info_ate = aviso, time.monotonic() + 15
+            self._ultima_arena = None
         self.jogo.estatua_alvo = self.curriculo.proxima() if self._juiz_ativo else ""
+        if self.treino is None and self._mosca_joga:
+            arena = self.especialistas.precisa_treinar()
+            if arena:
+                self.treinar_especialista(arena)
+
+    def _escolher_cerebro(self):
+        """Numa arena com especialista, joga ele (o candidato, enquanto é avaliado);
+        fora dela, a campeã ou a desafiante geral. Trocar de cérebro fecha a partida,
+        para cada uma ficar com o treino que jogou."""
+        if getattr(self, "especialistas", None) is None:
+            return
+        estado = self._estado_jogo
+        cena = estado["cena"] if estado else ""
+        modelo, quem = self.especialistas.modelo(cena) if eh_arena(cena) else (None, None)
+        if eh_arena(cena) and self._mosca_joga:
+            self._ultima_arena = (cena, quem or "geral")
+        self._especialista = (cena, quem) if modelo is not None else None
+        desejado = modelo if modelo is not None else self.modelos[self.papel]
+        if desejado is None or self.cerebro.modelo is desejado:
+            return
+        if modelo is not None:
+            modelo.papel = f"especialista de {cena.removeprefix('GG_')}"
+        jogando = self.partida is not None
+        if jogando:
+            self._terminar_partida()
+        self.cerebro.modelo = desejado
+        self.painel.cartao_cerebro.atualizar_selecao()
+        if jogando:
+            self._comecar_partida()
 
     PLUGIN_SURDO_S = 1.0  # sem o plugin contar teclas lidas por isto: volta ao XTest
 
@@ -830,6 +915,7 @@ class Orquestrador(QtCore.QObject):
         )
 
     def tick(self):
+        self._escolher_cerebro()
         imagem = self.jogo.quadro()
         _, acoes = self.cerebro.passo(imagem)
         self._ler_hud(imagem)  # depois do cérebro: usa o movimento que o olho viu

@@ -233,7 +233,7 @@ def trazer():
     aqui = max(treino_local("modelo_mosca.json"), treino_local("modelo_desafiante.json"))
     # a mais recente que ainda não disputou (uma que já perdeu aqui não volta)
     linhas = banco._pedir("GET", "/rest/v1/treinos?select=id,quadros,config&modelo_arquivo=not.is.null"
-                                 "&config->torneio=is.null&order=id.desc&limit=1")
+                                 "&config->torneio=is.null&config->especialista=is.null&order=id.desc&limit=1")
     if not linhas or linhas[0]["id"] <= aqui:
         print(f"Nada novo: o treino mais recente sem disputa no Supabase é o "
               f"#{linhas[0]['id'] if linhas else '?'}, e aqui já está o #{aqui}")
