@@ -7,14 +7,11 @@ Atualiza sozinho a cada minuto. Recompensa por minuto: maior é melhor; a barra
 fina em cada versão é a incerteza (2 erros padrão entre as partidas).
 
 Os gráficos de versão são das versões gerais (as que disputam o torneio). Os
-especialistas de cada chefe e o currículo do Salão dos Deuses ficam nas tabelas
-de baixo (lidos de curriculo.json e de especialistas/, que o painel da mosca
-escreve).
+chefes (currículo e especialistas) ficam no painel de chefes (chefes.py).
 """
 
 import mosca  # noqa: F401  (configura Qt antes de importar o resto)
 
-import json
 import sys
 import threading
 import time
@@ -25,8 +22,6 @@ import pyqtgraph as pg
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from comparar import METRICAS, Versao, carregar, comparar_duas, texto_melhoria, todas
-from mosca.curriculo import Curriculo, nome_do_chefe
-from mosca.especialistas import PASTA_ESPECIALISTAS
 from mosca.interface import COR_BORDA, COR_CARTAO, COR_TEXTO, COR_TEXTO_FRACO, ESTILO, cabecalho, rotulo
 from registro import Supabase
 
@@ -114,8 +109,7 @@ class PainelEvolucao(QtWidgets.QWidget):
         self.d_campea = Destaque("Campeã atual")
         self.d_jogo = Destaque("A mosca já jogou")
         self.d_torneios = Destaque("Torneios")
-        self.d_chefes = Destaque("Chefes dominados")
-        for d in (self.d_melhoria, self.d_campea, self.d_jogo, self.d_torneios, self.d_chefes):
+        for d in (self.d_melhoria, self.d_campea, self.d_jogo, self.d_torneios):
             destaques.addWidget(d)
         layout.addLayout(destaques)
 
@@ -151,25 +145,10 @@ class PainelEvolucao(QtWidgets.QWidget):
             pequenos.addWidget(g)
         layout.addLayout(pequenos, stretch=2)
 
-        # Embaixo: torneios das versões gerais, currículo de chefes e especialistas
-        baixo = QtWidgets.QHBoxLayout()
+        # Embaixo: torneios das versões gerais
+        layout.addWidget(rotulo("TORNEIOS (VERSÕES GERAIS)", "secao"))
         self.tabela = self._tabela(["Desafiante", "Contra", "Resultado", "Ela /min", "Campeã /min", "Melhoria"])
-        self.t_curriculo = self._tabela(["Chefe", "Últimas 10", "Situação"])
-        self.t_especialistas = self._tabela(["Arena", "Treino", "Quem joga", "Vitórias (últimas 10)"])
-        self.l_panteoes = rotulo("", "fraco")
-        self.l_panteoes.setWordWrap(True)
-        for titulo, tabela, extra, peso in (
-            ("TORNEIOS (VERSÕES GERAIS)", self.tabela, None, 3),
-            ("CURRÍCULO DE CHEFES", self.t_curriculo, self.l_panteoes, 2),
-            ("ESPECIALISTAS POR CHEFE", self.t_especialistas, None, 3),
-        ):
-            coluna = QtWidgets.QVBoxLayout()
-            coluna.addWidget(rotulo(titulo, "secao"))
-            coluna.addWidget(tabela)
-            if extra is not None:
-                coluna.addWidget(extra)
-            baixo.addLayout(coluna, stretch=peso)
-        layout.addLayout(baixo)
+        layout.addWidget(self.tabela)
 
         self._dados = None
         self._carregando = False
@@ -255,50 +234,6 @@ class PainelEvolucao(QtWidgets.QWidget):
         self._linha_do_tempo(versoes)
         self._detalhes(versoes, recentes, arquitetura)
         self._torneios(config)
-        self._curriculo()
-        self._especialistas(config)
-
-    def _curriculo(self):
-        c = Curriculo()
-        e = c.estado
-        linhas = []
-        for estatua, h in sorted(e.get("historico", {}).items(),
-                                 key=lambda item: (item[0] != c.atual, item[0] not in e["dominados"], item[0])):
-            situacao = ("🎯 atual" if estatua == c.atual else "✅ dominado" if estatua in e["dominados"]
-                        else "⏭ pulado" if estatua in e.get("pulados", []) else "")
-            linhas.append([nome_do_chefe(estatua), f"{sum(h)}/{len(h)}", situacao])
-        self._preencher(self.t_curriculo, linhas,
-                        "nenhuma luta ainda: escolha uma estátua no Salão dos Deuses e ligue a mosca")
-        dominados = len(e.get("dominados", []))
-        h = e.get("historico", {}).get(c.atual, [])
-        self.d_chefes.definir(f"{dominados}", f"atual: {nome_do_chefe(c.atual)} ({sum(h)}/{len(h)})"
-                              if c.atual else "currículo ainda não começou")
-        progresso = c.progresso_panteoes(e.get("panteoes", []))
-        self.l_panteoes.setText(
-            "Panteões (chefes dominados nas estátuas): "
-            + " · ".join(f"{porta.removeprefix('GG_')} {feitos}/{total}" for porta, feitos, total in progresso)
-            if progresso else "Panteões: aparecem depois que ela passar pela sala das portas (GG_Atrium)")
-
-    def _especialistas(self, config):
-        estado = PASTA_ESPECIALISTAS / "estado.json"
-        arenas = json.loads(estado.read_text()) if estado.exists() else {}
-        linhas = []
-        for arena, a in sorted(arenas.items()):
-            info = {}
-            for quem in ("candidato", "atual"):
-                arquivo = PASTA_ESPECIALISTAS / (f"{arena}.candidato.json" if quem == "candidato" else f"{arena}.json")
-                if arquivo.exists():
-                    info[quem] = json.loads(arquivo.read_text()).get("treino_id")
-            joga = "candidato" if "candidato" in info else "especialista" if "atual" in info else "versão geral"
-            treino = " · ".join(f"#{tid}" + (" (cand.)" if quem == "candidato" else "")
-                                for quem, tid in sorted(info.items()) if tid) or "—"
-            lutas = a.get("lutas", {})
-            vitorias = " · ".join(f"{nome} {sum(lutas[k])}/{len(lutas[k])}"
-                                  for k, nome in (("atual", "esp."), ("candidato", "cand."), ("geral", "geral"))
-                                  if lutas.get(k))
-            linhas.append([arena.removeprefix("GG_"), treino, joga, vitorias or "—"])
-        self._preencher(self.t_especialistas, linhas,
-                        "nenhum ainda: o painel treina o de uma arena a cada 10 lutas dela ali")
 
     @staticmethod
     def _campea():
