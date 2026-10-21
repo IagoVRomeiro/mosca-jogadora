@@ -250,12 +250,22 @@ def pastas_da_arena(cena):
     return pastas, cenas
 
 
-def so_a_arena(dados, nomes, cenas, cena):
+def so_a_arena(dados, nomes, cenas, cena, pastas):
     """Treino e validação só com os quadros da arena (a memória e o "antes" de cada
-    quadro continuam vindo da gravação inteira)."""
-    na_arena = np.concatenate([cenas[n] == cena for n in nomes])
-    if len(na_arena) != len(dados.retratos):
-        raise SystemExit("as salas não batem com os quadros da gravação (cache antigo?)")
+    quadro continuam vindo da gravação inteira). Uma gravação que cresceu entre ler
+    as salas e carregar as telas (a mosca jogando durante o treino) é relida; se
+    ainda assim não bater, fica de fora."""
+    partes = []
+    for i, n in enumerate(nomes):
+        quadros = int((dados.sessao == i).sum())
+        c = cenas[n]
+        if len(c) != quadros:
+            c = cenas_da_sessao(pastas[n])
+        if len(c) != quadros:
+            print(f"  {n}: as salas não batem com os quadros ({len(c)} x {quadros}); fica de fora")
+            c = np.full(quadros, "")
+        partes.append(c == cena)
+    na_arena = np.concatenate(partes)
     dados.treino = dados.treino[na_arena[dados.treino]]
     dados.valid = dados.valid[na_arena[dados.valid]]
 
@@ -939,7 +949,7 @@ def main():
     dados = Dados(sessoes)
     del sessoes  # os retratos já estão em `dados`; libera a memória
     if especialista:
-        so_a_arena(dados, nomes_sessoes, cenas_por_sessao, especialista)
+        so_a_arena(dados, nomes_sessoes, cenas_por_sessao, especialista, pastas)
         if len(dados.treino) + len(dados.valid) < MINIMO_QUADROS_ESPECIALISTA // SUBAMOSTRA:
             print(f"Pouca luta em {especialista} (mínimo {MINIMO_QUADROS_ESPECIALISTA} quadros).")
             return

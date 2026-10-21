@@ -112,3 +112,22 @@ class TesteLutasNoPainel(unittest.TestCase):
     def test_sem_saber_quem_jogou_conta_como_a_geral(self):
         r = self.orq([("", "GG_Hornet_1", False)], ultima_arena=("GG_Vengefly", "atual"))
         self.assertEqual(r["especialistas"], [("GG_Hornet_1", "geral", False)])
+
+
+class TesteSoAArena(unittest.TestCase):
+    """treinar.so_a_arena: gravação que cresceu durante o treino não derruba o treino."""
+
+    def test_gravacao_que_cresceu_e_relida_ou_fica_de_fora(self):
+        import types
+        from unittest import mock
+        import treinar
+        dados = types.SimpleNamespace(sessao=np.array([0, 0, 0, 1, 1]), retratos=np.zeros((5, 1)),
+                                      treino=np.arange(5), valid=np.array([], int))
+        cenas = {"a": np.array(["X", "Y", "X"]), "b": np.array(["X"])}  # "b" cresceu: 1 sala, 2 quadros
+        with mock.patch.object(treinar, "cenas_da_sessao", return_value=np.array(["X"])):
+            treinar.so_a_arena(dados, ["a", "b"], cenas, "X", {"a": None, "b": None})
+        self.assertEqual(list(dados.treino), [0, 2])  # "b" ficou de fora; o treino seguiu
+        dados.treino = np.arange(5)
+        with mock.patch.object(treinar, "cenas_da_sessao", return_value=np.array(["X", "X"])):
+            treinar.so_a_arena(dados, ["a", "b"], cenas, "X", {"a": None, "b": None})
+        self.assertEqual(list(dados.treino), [0, 2, 3, 4])  # relida: "b" entra
