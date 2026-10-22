@@ -26,13 +26,18 @@ class TesteCurriculo(unittest.TestCase):
         self.assertEqual(self.c.atual, "GG_Statue_Gruz")
         self.assertEqual(self.c.proxima(), "GG_Statue_Gruz")
 
-    def test_domina_com_7_de_10_e_vai_para_o_proximo(self):
-        avisos = self.lutar("GG_Statue_Gruz", [True] * 6 + [False] * 3)
-        self.assertEqual(avisos, [])  # 6 de 9
-        avisos = self.lutar("GG_Statue_Gruz", [True])  # 7 de 10
+    def test_domina_com_10_vitorias_e_vai_para_o_proximo(self):
+        avisos = self.lutar("GG_Statue_Gruz", [True, False] * 9 + [True])  # 10 vitórias em 19 lutas
+        self.assertEqual(avisos[:-1], [])
+        self.assertIn("Dominou Gruz (10 vitórias)", avisos[-1])
         self.assertEqual(self.c.atual, "GG_Statue_FalseKnight")
-        self.assertIn("Dominou Gruz", avisos[0])
         self.assertIn("GG_Statue_Gruz", self.c.estado["dominados"])
+        self.assertEqual(self.c.dominou[0], "GG_Statue_Gruz")
+
+    def test_9_vitorias_ainda_nao_dominam(self):
+        self.lutar("GG_Statue_Gruz", [True] * 9 + [False] * 20)
+        self.assertEqual(self.c.atual, "GG_Statue_Gruz")
+        self.assertIsNone(self.c.dominou)
 
     def test_fica_no_chefe_atual_sem_revisar_os_dominados(self):
         self.lutar("GG_Statue_Gruz", [True] * 10)
@@ -69,7 +74,7 @@ class TesteCurriculo(unittest.TestCase):
         self.lutar("GG_Statue_Gruz", [True, False])
         de_novo = Curriculo(self.c.arquivo)
         self.assertEqual(de_novo.atual, "GG_Statue_Gruz")
-        self.assertEqual(de_novo.texto(), "currículo: Gruz 1/2")
+        self.assertEqual(de_novo.texto(), "currículo: Gruz 1/10 vitórias")
 
     def test_panteao_pronto_quando_todos_os_chefes_dominados(self):
         panteoes = [{"porta": "GG_Boss_Door_1", "liberado": True,

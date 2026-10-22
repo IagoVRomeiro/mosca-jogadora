@@ -65,6 +65,7 @@ class CapturaJanela:
     PORTA_PLUGIN = 47124  # mod/MoscaEventos: ações que a mosca está segurando
     pelo_plugin = False  # ligado pelo painel quando o plugin diz que aceita teclas
     estatua_alvo = ""  # currículo: a estátua da próxima luta no Salão dos Deuses
+    nivel_alvo = ""  # e o nível (0 Sintonizado, 1 Ascendido, 2 Radiante; "" o que você escolheu)
     _sock_plugin = None
 
     # Teclas padrão do Hollow Knight
@@ -124,7 +125,8 @@ class CapturaJanela:
         if self._sock_plugin is None:
             self._sock_plugin = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         # "1|" com a mosca no controle: o plugin só a leva de volta à luta assim
-        pacote = f"{1 if self.controlando else 0}|" + ",".join(sorted(acoes)) + f"|{self.estatua_alvo}"
+        pacote = (f"{1 if self.controlando else 0}|" + ",".join(sorted(acoes))
+                  + f"|{self.estatua_alvo}|{self.nivel_alvo}")
         try:
             self._sock_plugin.sendto(pacote.encode(), ("127.0.0.1", self.PORTA_PLUGIN))
         except OSError:

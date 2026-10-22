@@ -19,7 +19,8 @@
 // (perdendo ou vencendo), o plugin abre o desafio (Cima) e entra de novo no
 // mesmo nível, sem você precisar colocá-la. Só com a mosca no controle.
 // Currículo: o painel pode pedir outra estátua (terceiro campo do pacote:
-// "1|Esquerda|GG_Statue_Gorb"); o plugin leva o Cavaleiro até ela. O plugin
+// "1|Esquerda|GG_Statue_Gorb") e o nível (quarto: 0 Sintonizado, 1 Ascendido,
+// 2 Radiante); o plugin leva o Cavaleiro até ela e entra nesse nível. O plugin
 // conta ao painel as estátuas liberadas ("estatuas", da esquerda para a direita)
 // e o resultado de cada luta de chefe, de estátua ou de panteão ("lutas":
 // [número, estátua ("" no panteão), sala, venceu]).
@@ -74,6 +75,7 @@ public class Plugin : BaseUnityPlugin
     const float PANTEOES_S = 5f;
     internal static int derrotas;  // lutas perdidas no Salão (o painel conta como morte)
     internal static string estatuaAlvo = "", alvoDaVez;  // pedida pelo painel; a desta volta
+    internal static int nivelPedido = -1;  // pelo painel (-1: o que você escolheu na estátua)
     internal static int numeroDaLuta;
     internal static readonly System.Collections.Generic.List<(int, string, string, bool)> lutas =
         new System.Collections.Generic.List<(int, string, string, bool)>();
@@ -213,6 +215,7 @@ public class Plugin : BaseUnityPlugin
             var partes = ultimo.Split('|');  // painel antigo: só as ações
             moscaNoControle = partes.Length < 2 || partes[0] == "1";
             estatuaAlvo = partes.Length >= 3 ? partes[2] : "";
+            nivelPedido = partes.Length >= 4 && int.TryParse(partes[3], out var n) ? n : -1;
             foreach (var nome in partes[partes.Length >= 2 ? 1 : 0].Split(','))
                 foreach (var acao in AcoesDe(nome, ih.inputActions)) daMosca.Add(acao);
         }
@@ -292,7 +295,7 @@ public class Plugin : BaseUnityPlugin
             alvoDaVez = estatuaEscolhida;
             if (!string.IsNullOrEmpty(estatuaAlvo) && estatuaAlvo != estatuaEscolhida && IrParaEstatua(hc, estatuaAlvo))
                 alvoDaVez = estatuaAlvo;
-            Logger.LogInfo($"Mosca jogadora: de volta à luta de {alvoDaVez} (nível {nivelEscolhido + 1})");
+            Logger.LogInfo($"Mosca jogadora: de volta à luta de {alvoDaVez} (nível {(nivelPedido >= 0 ? nivelPedido : nivelEscolhido) + 1})");
         }
         if (repetindo && agora >= proximoCima)  // Cima até o desafio abrir (AoAbrirDesafio)
         {
@@ -431,7 +434,7 @@ static class AoAbrirDesafio
             Plugin.segurando = false;
             return;
         }
-        __instance.StartCoroutine(Entrar(__instance, Plugin.nivelEscolhido));
+        __instance.StartCoroutine(Entrar(__instance, Plugin.nivelPedido >= 0 ? Plugin.nivelPedido : Plugin.nivelEscolhido));
     }
 
     static System.Collections.IEnumerator Entrar(BossChallengeUI ui, int nivel)

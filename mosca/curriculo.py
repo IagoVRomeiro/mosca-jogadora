@@ -3,8 +3,10 @@ de chefe quando ficar boa contra o atual.
 
 - O chefe atual é o da primeira luta dela (a estátua que você escolheu) ou o de
   uma estátua que você escolher depois.
-- Domínio: PARA_AVANCAR vitórias nas últimas JANELA lutas dele. Só aí ela passa
-  para a próxima estátua liberada, da esquerda para a direita (a ordem do Salão).
+- Domínio: VITORIAS_PARA_DOMINAR vitórias dela contra ele, sem a sua ajuda (desde
+  21/10; antes eram 7 das últimas 10). Aí o cérebro que aprendeu fica guardado
+  como o especialista daquele chefe (o painel faz a cópia, especialistas/dominados)
+  e ela passa para a próxima estátua liberada, da esquerda para a direita.
 - Empacou: a cada EMPACOU_MIN sem dominar, o painel pede exemplos seus daquele
   chefe. Ela não pula o chefe nem sai dele para revisar outro (PULAR_MIN e
   REVISAO_A_CADA desligados desde 21/10: cada chefe tem o seu especialista, então
@@ -33,7 +35,8 @@ def nome_do_chefe(estatua):
 
 
 class Curriculo:
-    JANELA, PARA_AVANCAR = 10, 7
+    JANELA, PARA_AVANCAR = 10, 7  # JANELA: as últimas lutas guardadas (para mostrar)
+    VITORIAS_PARA_DOMINAR = 10
     REVISAO_A_CADA = None  # None: nenhuma luta de revisão de chefes já dominados (era 4)
     EMPACOU_MIN, PULAR_MIN = 30, None  # None: nunca pula o chefe atual (era 60 min)
 
@@ -43,6 +46,11 @@ class Curriculo:
                        "lutas": 0, "avisou": False, "salas": {}, "panteoes_prontos": []}
         if self.arquivo.exists():
             self.estado.update(json.loads(self.arquivo.read_text()))
+        # vitórias de cada chefe (para o domínio); quem já tinha lutas começa com as
+        # vitórias das últimas JANELA guardadas
+        if "vitorias" not in self.estado:
+            self.estado["vitorias"] = {e: sum(h) for e, h in self.estado["historico"].items()}
+        self.dominou = None  # (estátua, sala) do chefe que acabou de ser dominado
 
     @property
     def atual(self):
@@ -74,13 +82,15 @@ class Curriculo:
         historico = e["historico"].setdefault(estatua, [])
         historico.append(1 if venceu else 0)
         del historico[:-self.JANELA]
+        vitorias = e["vitorias"][estatua] = e["vitorias"].get(estatua, 0) + (1 if venceu else 0)
         e["lutas"] += 1
         if estatua == self.atual:
             minutos = (agora - e["desde"]) / 60
-            if len(historico) >= self.JANELA and sum(historico) >= self.PARA_AVANCAR:
+            if vitorias >= self.VITORIAS_PARA_DOMINAR:
                 e["dominados"].append(estatua)
+                self.dominou = (estatua, e.get("salas", {}).get(estatua, ""))
                 seguinte = self._seguinte(ordem)
-                avisos.append(f"🏆 Dominou {nome_do_chefe(estatua)} ({sum(historico)}/{len(historico)})"
+                avisos.append(f"🏆 Dominou {nome_do_chefe(estatua)} ({vitorias} vitórias)"
                               + (f": agora {nome_do_chefe(seguinte)}" if seguinte else ": todos dominados!"))
                 if seguinte:
                     self._comecar(seguinte, agora)
@@ -93,7 +103,7 @@ class Curriculo:
                     self._comecar(seguinte, agora)
             elif minutos >= self.EMPACOU_MIN * (e["avisou"] + 1):  # de novo a cada EMPACOU_MIN
                 e["avisou"] = int(e["avisou"]) + 1
-                avisos.append(f"🧩 Empacou em {nome_do_chefe(estatua)} ({sum(historico)}/{len(historico)}): "
+                avisos.append(f"🧩 Empacou em {nome_do_chefe(estatua)} ({vitorias}/{self.VITORIAS_PARA_DOMINAR} vitórias): "
                               "grave algumas lutas suas contra ele (Ctrl+Alt+G)")
         self.salvar()
         return avisos
@@ -143,7 +153,8 @@ class Curriculo:
             return ""
         h = self.estado["historico"].get(self.atual, [])
         dominados = len(self.estado["dominados"])
-        return (f"currículo: {nome_do_chefe(self.atual)} {sum(h)}/{len(h)}"
+        v = self.estado.get("vitorias", {}).get(self.atual, 0)
+        return (f"currículo: {nome_do_chefe(self.atual)} {v}/{self.VITORIAS_PARA_DOMINAR} vitórias"
                 + (f" · {dominados} dominado{'s' if dominados > 1 else ''}" if dominados else ""))
 
     def salvar(self):

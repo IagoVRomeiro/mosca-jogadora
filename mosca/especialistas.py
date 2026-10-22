@@ -21,6 +21,7 @@ com o .json do treino. O estado (lutas de cada um) fica em especialistas/estado.
 """
 
 import json
+import shutil
 from pathlib import Path
 
 from .config import PASTA
@@ -146,6 +147,24 @@ class Especialistas:
         a["lutas"]["candidato"], a["lutas"]["rival"] = [], []
         a["vez"] = "candidato"
         self.salvar()
+
+    def guardar_dominado(self, cena, origem):
+        """O cérebro que aprendeu a vencer este chefe: fica guardado para sempre em
+        dominados/ e vira o especialista da arena (se ela ainda não tinha um).
+        `origem`: o arquivo .npz do cérebro que jogava. Devolve o treino dele."""
+        origem = Path(origem)
+        info = origem.with_suffix(".json")
+        treino = json.loads(info.read_text()).get("treino_id") if info.exists() else None
+        destinos = [self.pasta / "dominados" / f"{cena}.npz"]
+        if not self.arquivo(cena, "atual").exists():
+            destinos.append(self.arquivo(cena, "atual"))
+        for destino in destinos:
+            destino.parent.mkdir(parents=True, exist_ok=True)
+            if destino.resolve() != origem.resolve():
+                shutil.copyfile(origem, destino)
+            destino.with_suffix(".json").write_text(json.dumps({"treino_id": treino, "especialista": cena,
+                                                                "dominado": True}))
+        return treino
 
     def revisar(self):
         """Vereditos que já dá para dar (ex.: candidato que, pelas regras novas, já

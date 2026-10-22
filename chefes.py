@@ -204,14 +204,17 @@ class PainelChefes(QtWidgets.QWidget):
         e = c.estado
         sala_de = e.get("salas", {})
         situacoes = {}
+        vitorias = e.get("vitorias", {})
+        meta = c.VITORIAS_PARA_DOMINAR
         for estatua, h in e.get("historico", {}).items():
             marca = ("🎯 atual" if estatua == c.atual else "✅ dominado" if estatua in e["dominados"]
                      else "⏭ pulado" if estatua in e.get("pulados", []) else "")
-            situacoes[sala_de.get(estatua, estatua)] = f"{marca} · {sum(h)}/{len(h)}" if marca else f"{sum(h)}/{len(h)}"
-        h = e.get("historico", {}).get(c.atual, [])
-        self.d_dominados.definir(f"{len(e.get('dominados', []))}", "7 vitórias nas últimas 10 domina um chefe")
+            v = f"{vitorias.get(estatua, sum(h))}/{meta}"
+            situacoes[sala_de.get(estatua, estatua)] = f"{marca} · {v}" if marca else v
+        self.d_dominados.definir(f"{len(e.get('dominados', []))}",
+                                 f"{meta} vitórias dela, sem a sua ajuda, dominam um chefe (Sintonizado)")
         self.d_atual.definir(nome_do_chefe(c.atual) if c.atual else "—",
-                             f"{sum(h)}/{len(h)} nas últimas lutas" if c.atual else "currículo ainda não começou")
+                             f"{vitorias.get(c.atual, 0)}/{meta} vitórias" if c.atual else "currículo ainda não começou")
         pulados = [p for p in e.get("pulados", []) if p not in e.get("dominados", [])]
         self.d_pulados.definir(f"{len(pulados)}", ", ".join(nome_do_chefe(p) for p in pulados) or "nenhum")
         proprios = [a for a, (joga, _) in especialistas.items() if joga != "versão geral"]
@@ -263,8 +266,8 @@ class PainelChefes(QtWidgets.QWidget):
                 self.t_chefes.setItem(i, j, item)
         self.t_chefes.blockSignals(False)
         self.l_rodape.setText(
-            "🎯 = chefe atual do currículo. Currículo: situação e vitórias nas últimas 10 lutas dela na estátua "
-            "(7/10 domina). Esp. × geral: vitórias do especialista, do candidato e da versão geral naquela arena. "
+            "🎯 = chefe atual do currículo. Currículo: situação e vitórias dela na estátua, sem a sua ajuda "
+            "(10 dominam: o cérebro fica guardado em especialistas/dominados). Esp. × geral: vitórias do especialista, do candidato e da versão geral naquela arena. "
             "Lutas cortadas pelo começo ou fim de uma gravação não contam. "
             "Salas \"V\" (ex.: Gruz Mother V) são outras versões da luta, com especialista próprio.")
         if salas:
@@ -292,7 +295,7 @@ class PainelChefes(QtWidgets.QWidget):
                                     f"{r_ela['vitorias'] / r_ela['lutas']:.0%} · {r_ela['segundos_por_luta']:.0f} s por luta")
             recentes = ela[-JANELA:]
             self.d_recente.definir(f"{sum(x['venceu'] for x in recentes)}/{len(recentes)}",
-                                   "domínio no currículo: 7/10")
+                                   "as lutas mais recentes dela aqui")
             self.d_melhor.definir(f"{r_ela['melhor_chefe']}%", "da vida do chefe numa luta só")
         else:
             for d in (self.d_vitorias, self.d_recente, self.d_melhor):

@@ -629,6 +629,7 @@ class Orquestrador(QtCore.QObject):
             self.correcao.eventos(self._eventos_quadro, agora)
         mudanca = self.correcao.passo(voce, agora) if self.jogo.controlando else None
         if mudanca == "assumiu":
+            self._ajudou_na_luta = True  # vitória com a sua ajuda não conta para o domínio
             self.jogo.soltar_tudo()
             self.gravador_correcao = Gravador(sufixo="_correcao")
             self._notificar("🧑 Você assumiu: solte o teclado e a mosca volta em 2 s")
@@ -877,6 +878,10 @@ class Orquestrador(QtCore.QObject):
         estado = self._estado_jogo
         ordem = list(estado.get("estatuas") or []) if estado else []
         for estatua, sala, venceu in self.juiz.pegar_lutas():
+            ajudou, self._ajudou_na_luta = getattr(self, "_ajudou_na_luta", False), False
+            if ajudou:  # você assumiu nesta luta: ela aprende com isso, mas a luta não conta
+                self._ultima_arena = None
+                continue
             if self._mosca_joga:
                 # o currículo é das estátuas; os especialistas, de toda luta (panteão também)
                 avisos = self.curriculo.registrar(estatua, venceu, ordem, sala=sala) if estatua else []
@@ -886,17 +891,37 @@ class Orquestrador(QtCore.QObject):
                     arena, quem = sala, "geral"
                 if arena:  # quem jogou: especialista, candidato ou a geral
                     avisos += self.especialistas.registrar_luta(arena, quem, venceu)
+                if self.curriculo.dominou:
+                    avisos.append(self._guardar_dominado(*self.curriculo.dominou))
+                    self.curriculo.dominou = None
                 for aviso in avisos:
                     self._notificar(aviso)
                     self._info_treino, self._info_ate = aviso, time.monotonic() + 15
             self._ultima_arena = None
         self.jogo.estatua_alvo = self.curriculo.proxima() if self._juiz_ativo else ""
+        self.jogo.nivel_alvo = self.NIVEL_DAS_LUTAS if self._juiz_ativo else ""
         if self._fila_especialistas:
             self._proximo_da_fila()
         elif self.treino is None and self._mosca_joga:
             arena = self.especialistas.precisa_treinar()
             if arena:
                 self.treinar_especialista(arena)
+
+    # Nível das lutas que o plugin repete: 0 Sintonizado (o dos panteões), por enquanto todos
+    NIVEL_DAS_LUTAS = 0
+
+    def _guardar_dominado(self, estatua, sala):
+        """Ela venceu o chefe VITORIAS_PARA_DOMINAR vezes: o cérebro que jogava (o
+        especialista da arena, ou a versão geral) fica guardado como o especialista
+        daquele chefe."""
+        sala = sala or (self._ultima_arena or ("",))[0]
+        if not sala:
+            return f"⚠ Não sei a sala de {estatua}: o cérebro não foi guardado"
+        especialista = self.especialistas.arquivo(sala, "atual")
+        origem = especialista if especialista.exists() else (
+            ARQUIVO_DESAFIANTE if self.papel == "desafiante" else PASTA / "modelo_mosca.npz")
+        treino = self.especialistas.guardar_dominado(sala, origem)
+        return f"💾 Cérebro #{treino} guardado como o especialista de {sala.removeprefix('GG_')}"
 
     MINIMO_GRAVADO_ARENA = 1800  # quadros (1 min) seus numa arena para treinar o especialista dela
 

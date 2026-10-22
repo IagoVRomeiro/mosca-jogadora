@@ -86,6 +86,18 @@ class TesteEspecialistas(unittest.TestCase):
         avisos = self.e.revisar()
         self.assertIn("descartado", avisos[0])
 
+    def test_guardar_o_cerebro_que_dominou(self):
+        origem = Path(tempfile.mkdtemp()) / "modelo_mosca.npz"
+        np.savez(origem, x=np.ones(1))
+        origem.with_suffix(".json").write_text(json.dumps({"treino_id": 68}))
+        self.assertEqual(self.e.guardar_dominado(ARENA, origem), 68)
+        self.assertTrue((self.pasta / "dominados" / f"{ARENA}.npz").exists())
+        self.assertTrue(self.e.arquivo(ARENA, "atual").exists())  # sem especialista: ele vira o da arena
+        self.criar("atual", 80)  # com especialista: só a cópia em dominados/
+        self.assertEqual(self.e.guardar_dominado(ARENA, self.e.arquivo(ARENA, "atual")), 80)
+        guardado = json.loads((self.pasta / "dominados" / f"{ARENA}.json").read_text())
+        self.assertEqual((guardado["treino_id"], guardado["dominado"]), (80, True))
+
     def test_estado_fica_salvo(self):
         self.lutar("geral", [True, False])
         de_novo = Especialistas(self.pasta)
@@ -100,7 +112,7 @@ class TesteLutasNoPainel(unittest.TestCase):
     """O painel manda cada luta terminada para o currículo (só as de estátua) e
     para o especialista da sala (estátua ou panteão)."""
 
-    def orq(self, lutas, ultima_arena=None):
+    def orq(self, lutas, ultima_arena=None, ajudou=False):
         import types
         from mosca.orquestrador import Orquestrador
         registros = {"curriculo": [], "especialistas": []}
@@ -108,7 +120,8 @@ class TesteLutasNoPainel(unittest.TestCase):
             juiz=types.SimpleNamespace(pegar_lutas=lambda: lutas, panteoes=[]),
             _estado_jogo={"estatuas": []}, _juiz_ativo=True, _mosca_joga=True, _ultima_arena=ultima_arena,
             curriculo=types.SimpleNamespace(registrar=lambda e, v, o, sala="": registros["curriculo"].append((e, v)) or [],
-                                            proxima=lambda: "", panteoes_novos_prontos=lambda p: []),
+                                            proxima=lambda: "", panteoes_novos_prontos=lambda p: [], dominou=None),
+            NIVEL_DAS_LUTAS=0, _ajudou_na_luta=ajudou,
             especialistas=types.SimpleNamespace(
                 registrar_luta=lambda a, q, v: registros["especialistas"].append((a, q, v)) or [],
                 precisa_treinar=lambda: None),
@@ -127,6 +140,11 @@ class TesteLutasNoPainel(unittest.TestCase):
         r = self.orq([("GG_Statue_Gruz", "GG_Gruz_Mother", False)], ultima_arena=("GG_Gruz_Mother", "candidato"))
         self.assertEqual(r["curriculo"], [("GG_Statue_Gruz", False)])
         self.assertEqual(r["especialistas"], [("GG_Gruz_Mother", "candidato", False)])
+
+    def test_luta_com_a_sua_ajuda_nao_conta(self):
+        r = self.orq([("GG_Statue_Gruz", "GG_Gruz_Mother", True)], ultima_arena=("GG_Gruz_Mother", "atual"),
+                     ajudou=True)
+        self.assertEqual(r, {"curriculo": [], "especialistas": []})
 
     def test_sem_saber_quem_jogou_conta_como_a_geral(self):
         r = self.orq([("", "GG_Hornet_1", False)], ultima_arena=("GG_Vengefly", "atual"))
