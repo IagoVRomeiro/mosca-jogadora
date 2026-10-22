@@ -6,11 +6,15 @@ parte da campeã geral (ou do especialista anterior) e é afinada só com as lut
 daquela arena, suas e dela (treinar.py --especialista CENA).
 
 - Treino: a cada LUTAS_PARA_TREINAR lutas da arena sem candidato pendente.
-- Avaliação: o candidato joga as próximas LUTAS_AVALIACAO lutas da arena. Assume
-  se vencer pelo menos tanto quanto quem jogava antes (o especialista atual, ou a
-  versão geral nas últimas lutas dela ali); senão, é descartado.
-- No jogo: dentro da arena joga o especialista (o candidato, enquanto é avaliado);
-  fora dela, a campeã ou a desafiante geral, como sempre.
+- Avaliação: o candidato reveza as lutas com quem jogava antes (o especialista
+  atual, ou a versão geral), até ter LUTAS_AVALIACAO lutas. Assume se vencer pelo
+  menos tanto quanto o rival nesse mesmo período (com menos de 3 lutas do rival, a
+  referência são as últimas dele antes); senão, é descartado. E é descartado na
+  hora em que não tiver mais como alcançar o rival, para o melhor voltar a jogar.
+  Até 21/10 o candidato jogava todas as lutas da avaliação: o especialista da
+  Gruz Mother que vencia 7 de 10 ficou de fora enquanto um candidato perdia 6 de 6.
+- No jogo: dentro da arena joga o especialista; fora dela, a campeã ou a
+  desafiante geral, como sempre.
 
 Arquivos em especialistas/: <cena>.npz (o atual) e <cena>.candidato.npz, cada um
 com o .json do treino. O estado (lutas de cada um) fica em especialistas/estado.json.
@@ -43,11 +47,12 @@ class Especialistas:
         return self.pasta / (f"{cena}.npz" if quem == "atual" else f"{cena}.candidato.npz")
 
     def quem_joga(self, cena):
-        """'candidato' (em avaliação), 'atual' ou None (sem especialista: a geral)."""
-        for quem in ("candidato", "atual"):
-            if self.arquivo(cena, quem).exists():
-                return quem
-        return None
+        """'candidato' (na vez dele, em avaliação), 'atual' ou None (a versão geral)."""
+        atual = "atual" if self.arquivo(cena, "atual").exists() else None
+        if self.arquivo(cena, "candidato").exists():
+            vez = self.estado.get(cena, {}).get("vez", "candidato")
+            return "candidato" if vez == "candidato" else atual
+        return atual
 
     def modelo(self, cena):
         """(modelo, quem) do especialista desta arena, ou (None, None)."""
@@ -71,38 +76,59 @@ class Especialistas:
         ou 'geral'). Devolve avisos (o candidato assumiu ou foi descartado)."""
         a = self._da_arena(cena)
         lutas = a["lutas"]
-        lutas.setdefault(quem, []).append(1 if venceu else 0)
+        resultado = 1 if venceu else 0
+        lutas.setdefault(quem, []).append(resultado)
+        avaliando = self.arquivo(cena, "candidato").exists()
+        if avaliando and quem != "candidato":  # o rival do candidato, no mesmo período
+            lutas.setdefault("rival", []).append(resultado)
         for k in lutas:
             del lutas[k][:-max(self.LUTAS_AVALIACAO, self.LUTAS_PARA_TREINAR)]
         a["desde_treino"] += 1
         avisos = []
-        if quem == "candidato" and len(lutas["candidato"]) >= self.LUTAS_AVALIACAO:
-            avisos.append(self._veredito(cena))
+        if avaliando:
+            a["vez"] = "rival" if quem == "candidato" else "candidato"  # revezam
+            veredito = self._veredito(cena)
+            if veredito:
+                avisos.append(veredito)
         self.salvar()
         return avisos
 
+    def _alvo(self, cena):
+        """Quantas vitórias em LUTAS_AVALIACAO o candidato precisa: as do rival no
+        mesmo período (com 3+ lutas), senão as do rival antes da avaliação."""
+        lutas = self.estado[cena]["lutas"]
+        rival = lutas.get("rival", [])
+        if len(rival) < 3:
+            rival = (lutas["atual"] if self.arquivo(cena, "atual").exists() else lutas["geral"])[-self.LUTAS_AVALIACAO:]
+        return sum(rival) / len(rival) * self.LUTAS_AVALIACAO if rival else 0
+
     def _veredito(self, cena):
+        """Decide o candidato quando ele completa a avaliação, ou antes, se ele já
+        não tem como alcançar o rival. Devolve o aviso, ou None (ainda avaliando)."""
         a = self.estado[cena]
         lutas = a["lutas"]
-        candidato = sum(lutas["candidato"][-self.LUTAS_AVALIACAO:])
-        referencia = lutas["atual"] if self.arquivo(cena, "atual").exists() else lutas["geral"]
-        antes = referencia[-self.LUTAS_AVALIACAO:]
-        # proporção: a referência pode ter menos lutas guardadas
-        alvo = sum(antes) / len(antes) * self.LUTAS_AVALIACAO if antes else 0
+        feitas = lutas["candidato"][-self.LUTAS_AVALIACAO:]
+        candidato, faltam = sum(feitas), self.LUTAS_AVALIACAO - len(feitas)
+        alvo = self._alvo(cena)
+        if faltam > 0 and candidato + faltam >= alvo:
+            return None
         cand = self.arquivo(cena, "candidato")
         nome = cena.removeprefix("GG_")
-        if candidato >= alvo:
+        if faltam <= 0 and candidato >= alvo:
             atual = self.arquivo(cena, "atual")
             for origem, destino in ((cand, atual), (cand.with_suffix(".json"), atual.with_suffix(".json"))):
                 if origem.exists():
                     origem.replace(destino)
             lutas["atual"] = list(lutas["candidato"])
-            texto = f"🎯 Especialista de {nome} assumiu: {candidato}/{self.LUTAS_AVALIACAO} vitórias (antes {alvo:.0f})"
+            texto = f"🎯 Especialista de {nome} assumiu: {candidato}/{self.LUTAS_AVALIACAO} vitórias (o rival, {alvo:.0f})"
         else:
             for arquivo in (cand, cand.with_suffix(".json")):
                 arquivo.unlink(missing_ok=True)
-            texto = f"🎯 Especialista novo de {nome} descartado: {candidato}/{self.LUTAS_AVALIACAO} (antes {alvo:.0f})"
-        lutas["candidato"] = []
+            cedo = f" já na luta {len(feitas)}" if faltam > 0 else ""
+            texto = (f"🎯 Especialista novo de {nome} descartado{cedo}: {candidato}/{len(feitas)} "
+                     f"(o rival, {alvo:.0f} em {self.LUTAS_AVALIACAO})")
+        lutas["candidato"], lutas["rival"] = [], []
+        a.pop("vez", None)
         a["desde_treino"] = 0
         return texto
 
@@ -117,16 +143,33 @@ class Especialistas:
         """Treino desta arena terminou (com candidato novo ou sem novidade)."""
         a = self._da_arena(cena)
         a["desde_treino"] = 0
-        a["lutas"]["candidato"] = []
+        a["lutas"]["candidato"], a["lutas"]["rival"] = [], []
+        a["vez"] = "candidato"
         self.salvar()
+
+    def revisar(self):
+        """Vereditos que já dá para dar (ex.: candidato que, pelas regras novas, já
+        não alcança o rival). Devolve os avisos."""
+        avisos = []
+        for cena in list(self.estado):
+            if self.arquivo(cena, "candidato").exists():
+                veredito = self._veredito(cena)
+                if veredito:
+                    avisos.append(veredito)
+        if avisos:
+            self.salvar()
+        return avisos
 
     def texto(self, cena, quem):
         if not quem:
             return ""
         nome = cena.removeprefix("GG_")
-        if quem == "candidato":
-            feitas = self.estado.get(cena, {}).get("lutas", {}).get("candidato", [])
-            return f"🎯 candidato de {nome} {sum(feitas)}/{len(feitas)} (avaliando {self.LUTAS_AVALIACAO})"
+        lutas = self.estado.get(cena, {}).get("lutas", {})
+        if self.arquivo(cena, "candidato").exists():
+            feitas, rival = lutas.get("candidato", []), lutas.get("rival", [])
+            vez = "candidato" if quem == "candidato" else "especialista atual"
+            return (f"🎯 {nome}: vez do {vez} · candidato {sum(feitas)}/{len(feitas)} × "
+                    f"rival {sum(rival)}/{len(rival)} (avaliando)")
         return f"🎯 especialista de {nome}"
 
     def salvar(self):

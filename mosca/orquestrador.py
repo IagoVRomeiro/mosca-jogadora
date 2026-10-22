@@ -64,6 +64,8 @@ class Orquestrador(QtCore.QObject):
             self.saidas = SaidasDoSalao()
             self.curriculo = Curriculo()
             self.especialistas = Especialistas(carregar=Imitacao.carregar)
+            for aviso in self.especialistas.revisar():  # candidato que já não alcança o rival sai
+                print(aviso)
             try:
                 self.juiz = JuizDoJogo()
             except OSError as e:  # porta ocupada (outro painel aberto?)

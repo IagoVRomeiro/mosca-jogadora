@@ -43,29 +43,48 @@ class TesteEspecialistas(unittest.TestCase):
         self.e.treinou(ARENA)
         self.assertIsNone(self.e.precisa_treinar())
 
-    def test_candidato_joga_e_assume_se_vencer_pelo_menos_tanto(self):
+    def test_candidato_reveza_com_a_geral_e_assume_se_vencer_pelo_menos_tanto(self):
         self.lutar("geral", [True] * 3 + [False] * 7)  # a geral venceu 3 de 10
         self.criar("candidato", 80)
         self.e.treinou(ARENA)
         modelo, quem = self.e.modelo(ARENA)
-        self.assertEqual(quem, "candidato")
-        self.assertEqual(modelo, "modelo:GG_Gruz_Mother.candidato.npz")
-        avisos = self.lutar("candidato", [True] * 4 + [False] * 6)
-        self.assertIn("assumiu", avisos[0])
+        self.assertEqual((modelo, quem), ("modelo:GG_Gruz_Mother.candidato.npz", "candidato"))
+        avisos = []
+        for i in range(19):  # revezam: candidato, geral, ...; na 10ª do candidato (a 19ª), o veredito
+            quem = self.e.quem_joga(ARENA) or "geral"
+            self.assertEqual(quem, "candidato" if i % 2 == 0 else "geral")
+            venceu = i % 4 == 0 if quem == "candidato" else i % 6 == 1  # cand. 5/10, geral ~2/10
+            avisos += self.e.registrar_luta(ARENA, quem, venceu)
+        self.assertIn("assumiu", avisos[-1])
         self.assertTrue(self.e.arquivo(ARENA, "atual").exists())
         self.assertFalse(self.e.arquivo(ARENA, "candidato").exists())
-        self.assertEqual(json.loads(self.e.arquivo(ARENA, "atual").with_suffix(".json").read_text())["treino_id"], 80)
         self.assertEqual(self.e.modelo(ARENA)[1], "atual")
 
-    def test_candidato_pior_e_descartado(self):
+    def test_candidato_sai_assim_que_nao_alcanca_o_atual(self):
         self.criar("atual", 80)
-        self.lutar("atual", [True] * 6 + [False] * 4)
-        self.criar("candidato", 81)
+        self.lutar("atual", [True] * 7 + [False] * 3)  # o atual vence 7 de 10
+        self.criar("candidato", 104)
         self.e.treinou(ARENA)
-        avisos = self.lutar("candidato", [True] * 5 + [False] * 5)
-        self.assertIn("descartado", avisos[0])
+        avisos = []
+        for _ in range(3):
+            self.assertEqual(self.e.quem_joga(ARENA), "candidato")
+            avisos += self.e.registrar_luta(ARENA, "candidato", False)
+            self.assertEqual(self.e.quem_joga(ARENA), "atual")  # revezam: agora o atual
+            avisos += self.e.registrar_luta(ARENA, "atual", True)
+        # o atual venceu as 3 lutas dele na avaliação (ritmo de 10/10); o candidato, 0/3,
+        # chegaria no máximo a 7: sai já na luta 3
+        self.assertIn("descartado já na luta 3", avisos[-1])
         self.assertFalse(self.e.arquivo(ARENA, "candidato").exists())
         self.assertEqual(self.e.quem_joga(ARENA), "atual")
+
+    def test_revisar_descarta_candidato_que_ja_perdeu(self):
+        self.criar("atual", 80)
+        self.lutar("atual", [True] * 7 + [False] * 3)
+        self.criar("candidato", 104)
+        self.e.treinou(ARENA)
+        self.e.estado[ARENA]["lutas"]["candidato"] = [0] * 6  # como o #104: 0 de 6
+        avisos = self.e.revisar()
+        self.assertIn("descartado", avisos[0])
 
     def test_estado_fica_salvo(self):
         self.lutar("geral", [True, False])
