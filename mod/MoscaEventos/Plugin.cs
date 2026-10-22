@@ -114,6 +114,26 @@ public class Plugin : BaseUnityPlugin
         ("Pausar", a => a.pause),  // Esc ou Start do controle: o painel tira a mosca do jogo
     };
 
+    // O inimigo vivo mais perto do Cavaleiro: [dx, dy] (positivo: à direita / acima),
+    // para o painel saber se um golpe ou uma magia tem para onde ir
+    static string InimigoMaisPerto(HeroController hc)
+    {
+        if (hc == null) return "null";
+        var eu = hc.transform.position;
+        HealthManager perto = null;
+        float melhor = float.MaxValue;
+        foreach (var hm in FindObjectsByType<HealthManager>(FindObjectsSortMode.None))
+        {
+            if (hm == null || hm.isDead || hm.hp <= 0 || !hm.gameObject.activeInHierarchy) continue;
+            var d = (hm.transform.position - eu).sqrMagnitude;
+            if (d < melhor) { melhor = d; perto = hm; }
+        }
+        if (perto == null) return "null";
+        var dif = perto.transform.position - eu;
+        var c = CultureInfo.InvariantCulture;
+        return $"[{dif.x.ToString("F2", c)},{dif.y.ToString("F2", c)}]";
+    }
+
     // A lista dos panteões é grande: vai só a cada PANTEOES_S
     string MandarPanteoes()
     {
@@ -359,6 +379,8 @@ public class Plugin : BaseUnityPlugin
             .Append(",\"inimigos_mortos\":").Append(inimigosMortos)
             .Append(",\"chefes_derrotados\":").Append(chefesDerrotados)
             .Append(",\"derrotas\":").Append(derrotas)
+            .Append(",\"inimigo\":").Append(InimigoMaisPerto(hc))
+            .Append(",\"olhando_direita\":").Append(hc != null && hc.cState.facingRight ? "true" : "false")
             .Append(",\"estatuas\":[").Append(estatuasJson).Append(']')
             .Append(MandarPanteoes())
             .Append(",\"lutas\":[").Append(string.Join(",", lutas.ConvertAll(l => $"[{l.Item1},\"{l.Item2.Replace("\"", "")}\",\"{l.Item3.Replace("\"", "")}\",{(l.Item4 ? 1 : 0)}]"))).Append(']')

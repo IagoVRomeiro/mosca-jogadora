@@ -64,7 +64,10 @@ PRIMEIRA_CAMADA = {"mlp": ("w1", "b1"), "conectoma": ("A", "a")}
 I_ESQ, I_DIR = ACOES.index("Esquerda"), ACOES.index("Direita")
 ULTIMA_CAMADA = {"mlp": ("w2", "b2"), "conectoma": ("R", "r")}  # uma coluna por ação
 NADA_NOVO = 3  # código de saída: treinou e não aprendeu nada mensurável
-# Especialista de uma arena (--especialista CENA): só os quadros dela
+# Especialista de uma arena (--especialista CENA): só os quadros dela. Lá as suas
+# lutas pesam mais e as dela menos (multiplicam os pesos de sempre): o especialista
+# da Gruz Mother tinha Atacar e Esquiva em ~90% dos quadros, de tanto imitar ela
+FATOR_ESPECIALISTA = {"mosca": 0.5, "voce": 2.0, "correcao": 2.0}
 PASTA_ESPECIALISTAS = PASTA / "especialistas"
 MINIMO_QUADROS_ESPECIALISTA = 1800  # 1 min de luta na arena, entre treino e validação
 LOTE = 256
@@ -935,6 +938,10 @@ def main():
     else:
         pastas = pastas_de_sessoes()
     sessoes = carregar_sessoes(pastas)
+    if especialista:
+        for s in sessoes:
+            quem = "mosca" if s["da_mosca"] else "correcao" if s["nome"].endswith("_correcao") else "voce"
+            s["peso"] = s["peso"] * FATOR_ESPECIALISTA[quem]
     print(f"olho de {len(sessoes)} sessões pronto em {time.time() - inicio:.0f} s (cache em {PASTA_CACHE.name}/)")
     total = sum(len(s["retratos"]) for s in sessoes)
     quadros_mosca = sum(len(s["retratos"]) for s in sessoes if s["da_mosca"])

@@ -387,7 +387,9 @@ class ReflexoDaParede:
         x, sala = estado["x"], estado["cena"]
         if self.parede and (self.parede[0] != sala or abs(x - self.parede[1]) > self.LONGE):
             self.parede = None
-        if "Direita" in apertadas and "Esquerda" not in apertadas:
+        if "olhando_direita" in estado:  # plugin novo: para onde o Cavaleiro olha de verdade
+            self.olhando = 1 if estado["olhando_direita"] else -1
+        elif "Direita" in apertadas and "Esquerda" not in apertadas:
             self.olhando = 1
         elif "Esquerda" in apertadas and "Direita" not in apertadas:
             self.olhando = -1
@@ -422,6 +424,69 @@ class ReflexoDaParede:
         if lado == self.olhando and abs(estado["x"] - x) < self.PERTO:
             return {"Esquiva", "Super Investida"}
         return set()
+
+
+class ReflexoDeMira:
+    """Golpe e magia só com o inimigo onde eles pegam (o plugin manda o inimigo vivo
+    mais perto, [dx, dy] em relação ao Cavaleiro, e para onde ele olha).
+
+    - Golpe com o inimigo fora do ALCANCE: vetado (evento "golpe_no_vazio" se ela
+      tentou). Inimigo atrás dela, na altura do golpe de lado: em vez do golpe, ela
+      vira para ele (o golpe sai no quadro seguinte, já de frente).
+    - Magia de frente (a bola de fogo, sem Cima nem Baixo): sem inimigo, ou com ele
+      atrás ou muito acima/abaixo, é vetada; atrás e na altura, ela vira. Com Cima
+      (grito) ou Baixo (mergulho), passa.
+    Só nas arenas de chefe (fora delas, golpear o "vazio" quebra paredes falsas) e só
+    com o plugin novo (que manda "inimigo").
+    """
+
+    ALCANCE_X, ALCANCE_Y = 4.5, 4.0
+    DE_LADO_Y = 2.0  # até esta diferença de altura o golpe é de lado (acima: golpe para cima)
+    MAGIA_Y = 3.0
+    MAGIAS = ("Magia", "Magia Rápida")
+
+    def __init__(self):
+        self._antes = set()
+
+    def decidir(self, estado, querendo):
+        """(teclas vetadas, lado para onde virar ou None, motivo) para este quadro."""
+        if estado is None or "inimigo" not in estado or estado.get("morta") or not eh_arena(estado["cena"]):
+            return set(), None, None
+        inimigo = estado["inimigo"]
+        olhando = 1 if estado.get("olhando_direita") else -1
+        vetadas, virar, motivo = set(), None, None
+        if inimigo is None:
+            vetadas = {"Atacar"} | set(self.MAGIAS)
+            return vetadas & querendo, None, "nenhum inimigo"
+        dx, dy = inimigo
+        lado = 1 if dx > 0 else -1
+        atras = lado != olhando and abs(dx) > 0.5
+        if "Atacar" in querendo:
+            if abs(dx) > self.ALCANCE_X or abs(dy) > self.ALCANCE_Y:
+                vetadas.add("Atacar")
+                motivo = "golpe fora do alcance"
+            elif atras and abs(dy) < self.DE_LADO_Y:
+                vetadas.add("Atacar")
+                virar, motivo = lado, "virou para o inimigo"
+        for magia in self.MAGIAS:
+            if magia in querendo and not ({"Cima", "Baixo"} & querendo):
+                if abs(dy) > self.MAGIA_Y:
+                    vetadas.add(magia)
+                    motivo = motivo or "magia sem o inimigo na frente"
+                elif atras:
+                    vetadas.add(magia)
+                    virar, motivo = lado, motivo or "virou para o inimigo"
+        return vetadas, virar, motivo
+
+    def passo(self, estado, apertadas):
+        """Eventos: "golpe_no_vazio" quando ela começa um golpe sem inimigo ao alcance."""
+        novas, self._antes = apertadas - self._antes, set(apertadas)
+        if "Atacar" not in novas or estado is None or "inimigo" not in estado or not eh_arena(estado["cena"]):
+            return []
+        inimigo = estado["inimigo"]
+        if inimigo is None or abs(inimigo[0]) > self.ALCANCE_X or abs(inimigo[1]) > self.ALCANCE_Y:
+            return ["golpe_no_vazio"]
+        return []
 
 
 class DetectoresPelaPosicao:

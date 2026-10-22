@@ -73,6 +73,7 @@ class LeitorHUD:
         # 58% na parede; 140 golpes por minuto, só 8% acertando
         "esquiva_na_parede": -0.1,
         "golpe_na_parede": -0.05,
+        "golpe_no_vazio": -0.05,  # golpe sem nenhum inimigo ao alcance (pelo plugin)
         # a mais no dano ao cair em espinhos ou ácido (erro evitável). -1 até 20/10:
         # na arena dos Mantis Lords ela caía 11,7 vezes por minuto (você, 0,21)
         "perigo": -2.0,

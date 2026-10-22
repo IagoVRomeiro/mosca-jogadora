@@ -7,8 +7,8 @@ import time
 import unittest
 from pathlib import Path
 
-from mosca.juiz import (DetectoresPelaPosicao, JuizDoJogo, MemoriaDePerigos, ReflexoDaParede, SaidasDoSalao,
-                        eventos_entre)
+from mosca.juiz import (DetectoresPelaPosicao, JuizDoJogo, MemoriaDePerigos, ReflexoDaParede, ReflexoDeMira,
+                        SaidasDoSalao, eventos_entre)
 
 
 def estado(**mudancas):
@@ -365,6 +365,45 @@ class TesteReflexoDaParede(unittest.TestCase):
     def test_golpe_andando_nao_conta(self):
         eventos = self.jogar(40, x=lambda i: 10.0 + i * 0.3, teclas=lambda i: {"Atacar"} if i == 20 else set())
         self.assertEqual(eventos, [])
+
+
+class TesteReflexoDeMira(unittest.TestCase):
+    def setUp(self):
+        self.m = ReflexoDeMira()
+
+    def decidir(self, inimigo, querendo, olhando_direita=True, cena="GG_Gruz_Mother"):
+        return self.m.decidir(estado(cena=cena, inimigo=inimigo, olhando_direita=olhando_direita), set(querendo))
+
+    def test_golpe_com_o_inimigo_na_frente_passa(self):
+        self.assertEqual(self.decidir([2.0, 0.5], {"Atacar"}), (set(), None, None))
+
+    def test_golpe_longe_e_vetado(self):
+        vetadas, virar, motivo = self.decidir([8.0, 0.0], {"Atacar"})
+        self.assertEqual((vetadas, virar), ({"Atacar"}, None))
+        self.assertIn("fora do alcance", motivo)
+
+    def test_inimigo_atras_vira_em_vez_de_golpear(self):
+        vetadas, virar, _ = self.decidir([-2.0, 0.0], {"Atacar"}, olhando_direita=True)
+        self.assertEqual((vetadas, virar), ({"Atacar"}, -1))
+
+    def test_golpe_para_cima_com_inimigo_acima_passa(self):
+        self.assertEqual(self.decidir([-0.3, 3.0], {"Atacar", "Cima"})[0], set())
+
+    def test_bola_de_fogo_com_inimigo_atras_vira_e_grito_passa(self):
+        self.assertEqual(self.decidir([-3.0, 0.0], {"Magia"})[:2], ({"Magia"}, -1))
+        self.assertEqual(self.decidir([-3.0, 0.0], {"Magia", "Cima"})[0], set())
+
+    def test_sem_inimigo_nao_golpeia_nem_solta_magia(self):
+        self.assertEqual(self.decidir(None, {"Atacar", "Magia", "Esquerda"})[0], {"Atacar", "Magia"})
+
+    def test_fora_da_arena_e_sem_plugin_nao_mexe(self):
+        self.assertEqual(self.decidir(None, {"Atacar"}, cena="Crossroads_01"), (set(), None, None))
+        self.assertEqual(self.m.decidir(estado(cena="GG_Gruz_Mother"), {"Atacar"}), (set(), None, None))
+
+    def test_golpe_no_vazio(self):
+        e = estado(cena="GG_Gruz_Mother", inimigo=[9.0, 0.0], olhando_direita=True)
+        self.assertEqual(self.m.passo(e, {"Atacar"}), ["golpe_no_vazio"])
+        self.assertEqual(self.m.passo(e, {"Atacar"}), [])  # segurando: não é golpe novo
 
 
 class TesteSaidasDoSalao(unittest.TestCase):
