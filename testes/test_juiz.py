@@ -7,7 +7,8 @@ import time
 import unittest
 from pathlib import Path
 
-from mosca.juiz import DetectoresPelaPosicao, JuizDoJogo, MemoriaDePerigos, SaidasDoSalao, eventos_entre
+from mosca.juiz import (DetectoresPelaPosicao, JuizDoJogo, MemoriaDePerigos, ReflexoDaParede, SaidasDoSalao,
+                        eventos_entre)
 
 
 def estado(**mudancas):
@@ -326,6 +327,44 @@ class TestePerigos(unittest.TestCase):
             self.m.passo(estado(cena="GG_Mantis_Lords_V", x=30.0, y=7.4, no_chao=True), [])
         self.m.passo(estado(cena="GG_Mantis_Lords_V", x=30.1, y=6.9, no_chao=False), ["perigo"])
         self.assertEqual(self.m.bordas, [])
+
+
+class TesteReflexoDaParede(unittest.TestCase):
+    def setUp(self):
+        self.r = ReflexoDaParede()
+
+    def jogar(self, quadros, x=lambda i: 10.0, teclas=lambda i: set(), jogo=lambda i: (), **outros):
+        eventos = []
+        for i in range(quadros):
+            eventos += self.r.passo(estado(cena="GG_Gruz_Mother", x=x(i), **outros), teclas(i), jogo(i))
+        return eventos
+
+    def test_esquiva_que_nao_sai_do_lugar_marca_a_parede_e_veta(self):
+        eventos = self.jogar(15, teclas=lambda i: {"Direita", "Esquiva"} if i < 3 else {"Direita"})
+        self.assertEqual(eventos, ["esquiva_na_parede"])
+        perto = estado(cena="GG_Gruz_Mother", x=10.5)
+        self.assertEqual(self.r.vetar(perto), {"Esquiva", "Super Investida"})
+        self.jogar(1, teclas=lambda i: {"Esquerda"})  # virou para o outro lado: pode esquivar
+        self.assertEqual(self.r.vetar(perto), set())
+
+    def test_esquiva_que_anda_nao_e_parede(self):
+        eventos = self.jogar(15, x=lambda i: 10.0 + i * 0.5, teclas=lambda i: {"Direita", "Esquiva"} if i < 3 else set())
+        self.assertEqual(eventos, [])
+        self.assertIsNone(self.r.parede)
+
+    def test_afastando_da_parede_a_marca_some(self):
+        self.jogar(15, teclas=lambda i: {"Direita", "Esquiva"} if i < 3 else {"Direita"})
+        self.jogar(1, x=lambda i: 14.0)
+        self.assertIsNone(self.r.parede)
+
+    def test_golpe_parado_sem_acertar_e_golpe_na_parede(self):
+        teclas = lambda i: {"Atacar"} if i in (20, 40) else set()
+        eventos = self.jogar(60, teclas=teclas, jogo=lambda i: ("acerto",) if i == 43 else ())
+        self.assertEqual(eventos, ["golpe_na_parede"])  # o segundo acertou
+
+    def test_golpe_andando_nao_conta(self):
+        eventos = self.jogar(40, x=lambda i: 10.0 + i * 0.3, teclas=lambda i: {"Atacar"} if i == 20 else set())
+        self.assertEqual(eventos, [])
 
 
 class TesteSaidasDoSalao(unittest.TestCase):

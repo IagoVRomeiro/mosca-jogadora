@@ -352,6 +352,78 @@ class SaidasDoSalao(MemoriaDePerigos):
         return vetadas | {"Super Investida"} if vetadas else vetadas
 
 
+class ReflexoDaParede:
+    """Esquiva e golpe contra a parede (posição real do Cavaleiro, pelo plugin).
+
+    - Esquiva: se em ESQUIVA_QUADROS ela não andou ESQUIVA_MINIMA, bateu numa parede
+      daquele lado: evento "esquiva_na_parede" e a parede fica marcada. Enquanto ela
+      estiver perto dela (PERTO) e virada para ela, a esquiva e a Super Investida
+      para lá são vetadas. A marca some quando ela se afasta (LONGE).
+    - Golpe: começou parada (andou menos de PARADA em PARADA_QUADROS) ou grudada na
+      parede e nenhum golpe acertou em GOLPE_QUADROS: evento "golpe_na_parede".
+    A direção em que ela olha é a da última tecla de lado apertada (a esquiva vai
+    para onde o Cavaleiro olha).
+    """
+
+    ESQUIVA_QUADROS, ESQUIVA_MINIMA = 10, 1.0
+    PERTO, LONGE = 1.5, 3.0
+    PARADA_QUADROS, PARADA, GOLPE_QUADROS = 15, 0.2, 8
+
+    def __init__(self):
+        self.reiniciar()
+
+    def reiniciar(self):
+        self.olhando = 1
+        self.parede = None  # (sala, x, lado)
+        self._xs = collections.deque(maxlen=self.PARADA_QUADROS + 1)
+        self._esquivas, self._golpes = [], []  # (quadros que faltam, x ao começar, lado) / (faltam, golpes)
+        self._antes = set()
+
+    def passo(self, estado, apertadas, eventos_jogo=()):
+        """Um quadro com ela jogando. Devolve os eventos novos."""
+        if estado is None or estado["morta"]:
+            self.reiniciar()
+            return []
+        x, sala = estado["x"], estado["cena"]
+        if self.parede and (self.parede[0] != sala or abs(x - self.parede[1]) > self.LONGE):
+            self.parede = None
+        if "Direita" in apertadas and "Esquerda" not in apertadas:
+            self.olhando = 1
+        elif "Esquerda" in apertadas and "Direita" not in apertadas:
+            self.olhando = -1
+        novas = apertadas - self._antes
+        self._antes = set(apertadas)
+        self._xs.append(x)
+        eventos = []
+        if "Esquiva" in novas:
+            self._esquivas.append([self.ESQUIVA_QUADROS, x, self.olhando])
+        for e in self._esquivas:
+            e[0] -= 1
+            if e[0] == 0 and abs(x - e[1]) < self.ESQUIVA_MINIMA:
+                eventos.append("esquiva_na_parede")
+                self.parede = (sala, e[1], e[2])
+        self._esquivas = [e for e in self._esquivas if e[0] > 0]
+        acertou = "acerto" in eventos_jogo
+        if "Atacar" in novas:
+            parada = len(self._xs) > self.PARADA_QUADROS and abs(self._xs[-1] - self._xs[0]) < self.PARADA
+            if parada or estado.get("na_parede"):
+                self._golpes.append(self.GOLPE_QUADROS)
+        if acertou:
+            self._golpes = []
+        self._golpes = [g - 1 for g in self._golpes]
+        eventos += ["golpe_na_parede"] * sum(1 for g in self._golpes if g == 0)
+        self._golpes = [g for g in self._golpes if g > 0]
+        return eventos
+
+    def vetar(self, estado):
+        if not self.parede or estado is None or estado["cena"] != self.parede[0]:
+            return set()
+        sala, x, lado = self.parede
+        if lado == self.olhando and abs(estado["x"] - x) < self.PERTO:
+            return {"Esquiva", "Super Investida"}
+        return set()
+
+
 class DetectoresPelaPosicao:
     """Parada, presa, andando em círculos e lugar novo pela posição real do
     Cavaleiro (unidades do jogo; ele anda ~8/s), no lugar das estimativas pela

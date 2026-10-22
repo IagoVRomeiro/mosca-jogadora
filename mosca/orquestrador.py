@@ -17,7 +17,7 @@ from .aprendizado import Gravador, Imitacao, Torneio
 from .correcao import Correcao
 from .curriculo import Curriculo
 from .especialistas import PASTA_ESPECIALISTAS, Especialistas
-from .juiz import DetectoresPelaPosicao, JuizDoJogo, MemoriaDePerigos, SaidasDoSalao, eh_arena
+from .juiz import DetectoresPelaPosicao, JuizDoJogo, MemoriaDePerigos, ReflexoDaParede, SaidasDoSalao, eh_arena
 from .config import ACOES, ARQUIVO_DESAFIANTE, PASTA, PASTA_GRAVACOES_MOSCA, QUADRO_MS, ROTULO_TECLA
 from .estimulos import DetectorLoop, DetectorParada, DetectorPresa, ExploradorSalas, LeitorHUD
 from .interface import Painel
@@ -62,6 +62,7 @@ class Orquestrador(QtCore.QObject):
             self.pela_posicao = DetectoresPelaPosicao()
             self.perigos = MemoriaDePerigos()
             self.saidas = SaidasDoSalao()
+            self.parede = ReflexoDaParede()
             self.curriculo = Curriculo()
             self.especialistas = Especialistas(carregar=Imitacao.carregar)
             for aviso in self.especialistas.revisar():  # candidato que já não alcança o rival sai
@@ -731,6 +732,7 @@ class Orquestrador(QtCore.QObject):
         "parede": "forçando a parede", "sem_novidade": "nada de novo há 1 min",
         "magia": "soltou magia", "magia_sem_alvo": "magia no vazio",
         "magia_com_vida_baixa": "magia em vez de curar",
+        "esquiva_na_parede": "esquiva na parede", "golpe_na_parede": "golpe na parede",
     }
 
     # Reflexo de sair do lugar: moscas paradas demais fazem movimentos
@@ -817,7 +819,10 @@ class Orquestrador(QtCore.QObject):
         saida = self.saidas.vetar(self.juiz.estado) if self.prender_no_salao else set()
         if saida & apertando:
             self._ultimo_evento = ("reflexo: não sai da sala das estátuas", time.monotonic())
-        vetadas |= saida
+        parede = self.parede.vetar(self.juiz.estado)
+        if parede & apertando:
+            self._ultimo_evento = ("reflexo: não esquiva contra a parede", time.monotonic())
+        vetadas |= saida | parede
         return {a: (0.0 if a in vetadas else v) for a, v in acoes.items()}
 
     def _pular_na_escalada(self):
@@ -1007,6 +1012,8 @@ class Orquestrador(QtCore.QObject):
             self.perigos.passo(self.juiz.estado, eventos)
             if self.prender_no_salao and self._mosca_joga:
                 self.saidas.passo(self.juiz.estado)
+            if self._mosca_joga:  # esquiva e golpe contra a parede
+                eventos += self.parede.passo(self.juiz.estado, set(self.jogo.apertadas), eventos)
         else:  # pela tela (movimento da câmera)
             detector = self.presa
             eventos += self.parada.passo(
