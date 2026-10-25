@@ -1,4 +1,4 @@
-# Histórico da mosca jogadora
+# Histórico da Mosca Knight
 
 Uma mosca-das-frutas (*Drosophila*) aprendendo a jogar Hollow Knight. O corpo é
 o NeuroMechFly (FlyGym), o cérebro pode ser a fiação real do conectoma FlyWire,
@@ -138,7 +138,7 @@ jogos, começando pelo Hollow Knight? Antes do primeiro commit já existiam:
   ocupar menos) e as suas teclas.
 - **Estímulos pelo HUD**, lidos pela tela: dano é ruim; acertar e pegar geo é
   bom; ficar parada é ruim.
-- **Supabase** (projeto "mosca knight"): treinos, sessões e partidas registrados
+- **Supabase** (projeto "Mosca Knight"): treinos, sessões e partidas registrados
   por REST, com a chave só no `.env`. Repositório privado no GitHub.
 
 **Treinos #1 (17:59), #2 (18:12) e #3 (18:23):** imitação pura das suas

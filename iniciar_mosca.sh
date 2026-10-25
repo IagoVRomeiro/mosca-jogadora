@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Abre tudo da mosca jogadora: o Hollow Knight (pela Steam), o painel e o painel de
+# Abre tudo da Mosca Knight: o Hollow Knight (pela Steam), o painel e o painel de
 # evolução. Não liga o "Controlar jogo": o jogo abre no menu, e a mosca apertando
 # teclas ali poderia escolher opções do menu. Carregue o save e ligue no painel.
 #
-# Uso: ./iniciar_mosca.sh   (ou o atalho/ícone "Mosca jogadora")
+# Uso: ./iniciar_mosca.sh   (ou o atalho/ícone "Mosca Knight")
 
 PASTA="$(cd "$(dirname "$0")" && pwd)"
 PYTHON="$PASTA/.venv-flygym/bin/python"
@@ -12,7 +12,7 @@ cd "$PASTA" || exit 1
 
 avisar() {  # notificação na tela (e no log)
     echo "$(date '+%H:%M:%S') $1" >> "$LOG"
-    command -v notify-send > /dev/null && notify-send -a "Mosca jogadora" "Mosca jogadora" "$1"
+    command -v notify-send > /dev/null && notify-send -a "Mosca Knight" "Mosca Knight" "$1"
 }
 
 janela_do_jogo() { xwininfo -root -tree 2> /dev/null | grep -q '"Hollow Knight"'; }

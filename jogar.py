@@ -1,4 +1,4 @@
-"""Mosca jogadora: painel do cérebro + a mosca jogando num PC 3D.
+"""Mosca Knight: painel do cérebro + a mosca jogando num PC 3D.
 
 Uso:
     .venv-flygym/bin/python jogar.py              # jogo de demonstração

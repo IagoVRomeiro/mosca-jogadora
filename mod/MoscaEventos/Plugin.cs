@@ -1,4 +1,4 @@
-// Mosca jogadora: o "juiz" de dentro do jogo. A mosca continua vendo só a tela;
+// Mosca Knight: o "juiz" de dentro do jogo. A mosca continua vendo só a tela;
 // este plugin só conta ao painel o que aconteceu (vida, geo, golpes, sala...).
 //
 // 30 vezes por segundo manda um JSON por UDP para 127.0.0.1:47123 com o estado
@@ -35,7 +35,7 @@ using BepInEx;
 using HarmonyLib;
 using UnityEngine;
 
-[BepInPlugin("mosca.jogadora.eventos", "Mosca jogadora: eventos", "1.0.0")]
+[BepInPlugin("mosca.knight.eventos", "Mosca Knight: eventos", "1.0.0")]
 public class Plugin : BaseUnityPlugin
 {
     internal static int golpes, inimigosMortos, chefesDerrotados;
@@ -100,8 +100,8 @@ public class Plugin : BaseUnityPlugin
         teclas.Client.Blocking = false;
         // o jogo continua rodando e lendo as teclas fora de foco
         Application.runInBackground = true;
-        new Harmony("mosca.jogadora.eventos").PatchAll(typeof(Plugin).Assembly);
-        Logger.LogInfo($"Mosca jogadora: mandando eventos para a porta {PORTA}");
+        new Harmony("mosca.knight.eventos").PatchAll(typeof(Plugin).Assembly);
+        Logger.LogInfo($"Mosca Knight: mandando eventos para a porta {PORTA}");
     }
 
     // nome no painel (mosca/config.py) -> ação do jogo
@@ -187,7 +187,7 @@ public class Plugin : BaseUnityPlugin
         }
         var json = string.Join(",", partes);
         if (json != panteoesJson)
-            Logger.LogInfo($"Mosca jogadora: {partes.Count} panteões encontrados");
+            Logger.LogInfo($"Mosca Knight: {partes.Count} panteões encontrados");
         panteoesJson = json;
     }
 
@@ -198,7 +198,7 @@ public class Plugin : BaseUnityPlugin
         var lista = Estatuas();
         var json = string.Join(",", lista.ConvertAll(e => "\"" + e.gameObject.name.Replace("\"", "") + "\""));
         if (json != estatuasJson)
-            Logger.LogInfo($"Mosca jogadora: {lista.Count} estátuas liberadas para o currículo");
+            Logger.LogInfo($"Mosca Knight: {lista.Count} estátuas liberadas para o currículo");
         estatuasJson = json;
     }
 
@@ -309,20 +309,20 @@ public class Plugin : BaseUnityPlugin
             if (voltaDoPanteao)
             {
                 alvoDaVez = portaEscolhida;
-                Logger.LogInfo($"Mosca jogadora: recomeçando o panteão {alvoDaVez}");
+                Logger.LogInfo($"Mosca Knight: recomeçando o panteão {alvoDaVez}");
                 return;
             }
             alvoDaVez = estatuaEscolhida;
             if (!string.IsNullOrEmpty(estatuaAlvo) && estatuaAlvo != estatuaEscolhida && IrParaEstatua(hc, estatuaAlvo))
                 alvoDaVez = estatuaAlvo;
-            Logger.LogInfo($"Mosca jogadora: de volta à luta de {alvoDaVez} (nível {(nivelPedido >= 0 ? nivelPedido : nivelEscolhido) + 1})");
+            Logger.LogInfo($"Mosca Knight: de volta à luta de {alvoDaVez} (nível {(nivelPedido >= 0 ? nivelPedido : nivelEscolhido) + 1})");
         }
         if (repetindo && agora >= proximoCima)  // Cima até o desafio abrir (AoAbrirDesafio)
         {
             if (tentativas >= TENTATIVAS)
             {
                 repetindo = segurando = false;
-                Logger.LogInfo("Mosca jogadora: o desafio não abriu; ela segue sozinha");
+                Logger.LogInfo("Mosca Knight: o desafio não abriu; ela segue sozinha");
                 return;
             }
             tentativas++;

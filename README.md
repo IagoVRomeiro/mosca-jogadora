@@ -1,4 +1,4 @@
-# Mosca jogadora 🪰🎮
+# Mosca Knight 🪰🎮
 
 Uma mosca-das-frutas (*Drosophila melanogaster*) aprendendo a jogar **Hollow Knight**.
 

@@ -505,7 +505,7 @@ class Painel(QtWidgets.QWidget):
     def __init__(self, cerebro, mosca):
         super().__init__()
         self.setObjectName("raiz")
-        self.setWindowTitle("Mosca jogadora")
+        self.setWindowTitle("Mosca Knight")
         self.cartao_cerebro = CartaoCerebro(cerebro)
         self.cartao_mosca = CartaoMosca(mosca)
         layout = QtWidgets.QHBoxLayout(self)

@@ -145,7 +145,7 @@ class Orquestrador(QtCore.QObject):
 
     @staticmethod
     def _notificar(texto):
-        QtCore.QProcess.startDetached("notify-send", ["-a", "Mosca jogadora", "-t", "3000", "Mosca jogadora", texto])
+        QtCore.QProcess.startDetached("notify-send", ["-a", "Mosca Knight", "-t", "3000", "Mosca Knight", texto])
 
     def alternar_controle(self, ligado):
         self.jogo.controlando = ligado

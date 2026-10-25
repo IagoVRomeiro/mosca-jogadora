@@ -11,7 +11,7 @@ esac
 
 PAINEL=$(ps -eo pid,args | awk '$2 ~ /python$/ && $3 == "jogar.py" {print $1}')
 if [ -z "$PAINEL" ]; then
-    notify-send -a "Mosca jogadora" "Mosca jogadora" "O painel não está aberto: abra com Ctrl+Alt+M" 2> /dev/null
+    notify-send -a "Mosca Knight" "Mosca Knight" "O painel não está aberto: abra com Ctrl+Alt+M" 2> /dev/null
     exit 1
 fi
 kill -s "$SINAL" $PAINEL

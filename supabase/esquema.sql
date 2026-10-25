@@ -1,4 +1,4 @@
--- Registro do aprendizado da mosca jogadora (esquema completo, como está hoje).
+-- Registro do aprendizado da Mosca Knight (esquema completo, como está hoje).
 -- Para um projeto Supabase novo: cole tudo no SQL Editor e rode uma vez.
 -- Pode rodar de novo sem problema (tudo é "if not exists").
 

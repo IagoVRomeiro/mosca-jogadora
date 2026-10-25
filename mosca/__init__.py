@@ -1,4 +1,4 @@
-"""Mosca jogadora: a mosca da Drosophila jogando Hollow Knight.
+"""Mosca Knight: a mosca da Drosophila jogando Hollow Knight.
 
 Módulos: config, jogo, olho, estimulos, aprendizado, cerebro, corpo3d, interface,
 orquestrador. O ponto de entrada é o jogar.py, na raiz do projeto.
